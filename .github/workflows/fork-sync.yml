@@ -37,6 +37,9 @@ jobs:
           GH_TOKEN: ${{ secrets.FORK_SYNC_TOKEN }}
           GH_REPO: ${{ github.repository }}
         run: |
+          # Without this, a rejected FORK_SYNC_TOKEN is invisible here: bash -e takes the
+          # while loop's status, which is 0. The push step only runs when there is a sync.
+          set -o pipefail
           gh workflow list --all --limit 200 --json path,state \
             --jq '.[] | select(.state=="active") | select(.path | startswith(".github/workflows/fork-") | not) | .path' |
             while read -r p; do
