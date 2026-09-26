@@ -9,7 +9,8 @@ import { ServerConnection } from "../../services/server-connection"
 import { Updater } from "../../services/updater"
 import { UpdatePreflight } from "../../services/update-preflight"
 import { Npm } from "@opencode/util/npm"
-import { OPENCODE_ARTIFACT, OPENCODE_CHANNEL, OPENCODE_VERSION } from "../../version"
+import { OPENCODE_ARTIFACT, OPENCODE_CHANNEL } from "../../version"
+import { OPENCODE_DISPLAY_VERSION } from "../../fork-version" // fork: display version (F-005)
 import { Env } from "../../env"
 
 export default Runtime.handler(Commands, (input) =>
@@ -67,7 +68,7 @@ export default Runtime.handler(Commands, (input) =>
     yield* run({
       app: {
         name: process.env.OPENCODE_CLIENT ?? OPENCODE_ARTIFACT,
-        version: OPENCODE_VERSION,
+        version: OPENCODE_DISPLAY_VERSION, // fork: display version (F-005)
         channel: process.env.OPENCODE_TUI_CHANNEL ?? OPENCODE_CHANNEL,
       },
       server: {

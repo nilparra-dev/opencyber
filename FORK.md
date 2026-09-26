@@ -19,7 +19,7 @@ These are the configured values for this fork.
 | Variable               | Value                                       | Description                                       |
 | ---------------------- | ------------------------------------------- | ------------------------------------------------- |
 | `FORK_OWNER`           | `nilparra-dev`                              | Owner of the fork                                 |
-| `FORK_REPO`            | `opencodenil`                               | Fork repository name                              |
+| `FORK_REPO`            | `opencyber`                                 | Fork repository name                              |
 | `UPSTREAM_URL`         | `https://github.com/anomalyco/opencode.git` | Original repository                               |
 | `UPSTREAM_TAG_PATTERN` | `^v2\.[0-9]+\.[0-9]+$`                      | Upstream releases we follow (stable V2 tags only) |
 | `FORK_BRANCH`          | `custom`                                    | Main fork branch (our code)                       |
@@ -40,7 +40,7 @@ origin/custom  ────────●──○──○──────�
 ```
 
 - **Remotes:**
-  - `origin`: our fork (`github.com/nilparra-dev/opencodenil`).
+  - `origin`: our fork (`github.com/nilparra-dev/opencyber`).
   - `upstream`: `anomalyco/opencode`. **Never** push to `upstream`.
 - **What we follow: release tags, not a branch tip.** The sync merges the newest stable tag matching `UPSTREAM_TAG_PATTERN` (`v2.0.16`, `v2.0.17`…). A tag is exactly what upstream shipped, so `custom` is always "upstream release X plus our changes". Upstream's `v2` branch runs ahead of the latest tag; we never merge it directly.
 - **Branches:**
@@ -62,7 +62,7 @@ origin/custom  ────────●──○──○──────�
 
 Until September 2026 the fork followed `upstream/dev`, the V1 line (`opencode-ai`, `packages/opencode`). V1 went into maintenance while upstream's work moved to `v2`, so the fork moved too: `custom` was rebuilt from the `v2.0.16` tag with the fork changes ported, and the old `custom` history was joined with an `ours` merge so no force-push was needed. The V1-only patches were retired (see the end of section 7).
 
-The V2 fork build (`opencodenil`, section 10) shares the official V2 `opencode`'s database (F-004), so it sees the same sessions and logins. **Log in to Anthropic with "Claude Pro/Max"** from `opencodenil` the first time. A V1 login imported by the official V2 `opencode` uses a generic `oauth` method that has no refresh and is not recognized as a subscription, so it would not work either.
+The V2 fork build (`opencyber`, section 10) shares the official V2 `opencode`'s database (F-004), so it sees the same sessions and logins. **Log in to Anthropic with "Claude Pro/Max"** from `opencyber` the first time. A V1 login imported by the official V2 `opencode` uses a generic `oauth` method that has no refresh and is not recognized as a subscription, so it would not work either.
 
 ---
 
@@ -85,19 +85,19 @@ Starting from an existing upstream clone:
 
 ```bash
 # Option A: create the public fork (copy all branches, not only the default one)
-gh repo fork anomalyco/opencode --fork-name opencodenil --clone=false --default-branch-only=false
+gh repo fork anomalyco/opencode --fork-name opencyber --clone=false --default-branch-only=false
 # Option B: create an empty private repository
-gh repo create nilparra-dev/opencodenil --private
+gh repo create nilparra-dev/opencyber --private
 
 git remote rename origin upstream          # the current clone points at anomalyco → it becomes upstream
-git remote add origin https://github.com/nilparra-dev/opencodenil.git
+git remote add origin https://github.com/nilparra-dev/opencyber.git
 git remote set-url --push upstream DISABLED # prevents accidental pushes to upstream
 git fetch upstream --tags
 
 tag=$(git tag -l 'v2.*' | grep -E '^v2\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
 git checkout -b custom "$tag"
 git push -u origin custom
-gh repo edit nilparra-dev/opencodenil --default-branch custom
+gh repo edit nilparra-dev/opencyber --default-branch custom
 # Option A: delete the branches copied by the fork that could trigger upstream workflows
 git push origin --delete dev v2
 ```
@@ -121,7 +121,7 @@ On Windows, the repository may contain symlinks. Enable Developer Mode (Settings
 1. It cannot push commits that modify `.github/workflows/**`, and upstream changes those often. The result is the error `refusing to allow a GitHub App to create or update workflow ... without workflows permission`.
 2. PRs created with `GITHUB_TOKEN` **do not trigger** other workflows, so CI would never run on the sync PR.
 
-Create a **fine-grained personal access token** scoped to `nilparra-dev/opencodenil` with these permissions:
+Create a **fine-grained personal access token** scoped to `nilparra-dev/opencyber` with these permissions:
 
 | Permission    | Level                                        |
 | ------------- | -------------------------------------------- |
@@ -135,7 +135,7 @@ Create a **fine-grained personal access token** scoped to `nilparra-dev/opencode
 Store it as a secret:
 
 ```bash
-gh secret set FORK_SYNC_TOKEN --repo nilparra-dev/opencodenil   # paste the token when prompted
+gh secret set FORK_SYNC_TOKEN --repo nilparra-dev/opencyber   # paste the token when prompted
 ```
 
 Set a reminder before it expires. Once it expires, `fork-sync` cannot disable workflows, push the sync branch or manage its PR.
@@ -146,15 +146,15 @@ Keep this token out of repository code execution. Do not define it at job scope 
 
 ```bash
 # Allow auto-merge and merge commits, both required for the sync PR
-gh repo edit nilparra-dev/opencodenil \
+gh repo edit nilparra-dev/opencyber \
   --enable-auto-merge \
   --enable-merge-commit \
   --delete-branch-on-merge=false
 
 # Labels used by the workflows
-gh label create fork-sync            --color 0E8A16 --description "Automated upstream sync PR" --repo nilparra-dev/opencodenil
-gh label create fork-sync-conflict   --color D93F0B --description "Upstream sync needs conflict resolution" --repo nilparra-dev/opencodenil
-gh label create needs-review         --color FBCA04 --description "Resolved by an agent; needs human review" --repo nilparra-dev/opencodenil
+gh label create fork-sync            --color 0E8A16 --description "Automated upstream sync PR" --repo nilparra-dev/opencyber
+gh label create fork-sync-conflict   --color D93F0B --description "Upstream sync needs conflict resolution" --repo nilparra-dev/opencyber
+gh label create needs-review         --color FBCA04 --description "Resolved by an agent; needs human review" --repo nilparra-dev/opencyber
 ```
 
 👤 In the UI (Settings → Branches → Add rule, or Rulesets) for the `custom` branch:
@@ -179,9 +179,9 @@ Upstream ships many workflows (`publish.yml`, `deploy.yml`, `triage.yml`, `test.
 The `fork-sync` workflow automatically disables every workflow whose file name does not start with `fork-`, and does so on every run, so it also covers new workflows that upstream adds later. For the first time, run it by hand:
 
 ```bash
-gh workflow list --repo nilparra-dev/opencodenil --all --limit 200 --json path,state \
+gh workflow list --repo nilparra-dev/opencyber --all --limit 200 --json path,state \
   --jq '.[] | select(.state=="active") | select(.path | startswith(".github/workflows/fork-") | not) | .path' |
-  while read -r p; do gh workflow disable "$(basename "$p")" --repo nilparra-dev/opencodenil; done
+  while read -r p; do gh workflow disable "$(basename "$p")" --repo nilparra-dev/opencyber; done
 ```
 
 **Convention:** every fork workflow is named `.github/workflows/fork-*.yml`. No upstream file will ever have that prefix, so fork workflows never conflict.
@@ -189,8 +189,8 @@ gh workflow list --repo nilparra-dev/opencodenil --all --limit 200 --json path,s
 ### 2.7 Verify the setup
 
 ```bash
-gh workflow run fork-sync.yml --repo nilparra-dev/opencodenil
-gh run watch --repo nilparra-dev/opencodenil
+gh workflow run fork-sync.yml --repo nilparra-dev/opencyber
+gh run watch --repo nilparra-dev/opencyber
 ```
 
 Expected result: the workflow finishes green and one of these three things happens:
@@ -239,7 +239,7 @@ fork-sync.yml ──► disables upstream workflows that are not fork-*
 - An open `fork-sync-conflict` issue is kept current by editing its body, not by adding a comment on every run.
 - The sync PR is updated by pushing `sync-upstream`, which is a bot branch. `custom` is **never** force-pushed.
 - The `publish` jobs only load a bundle and push, so their checkouts are blobless (`filter: blob:none`). The jobs that merge (`fork-sync`'s `sync`, `fork-resolve`) use full clones: in a blobless clone the merge fetches missing blobs lazily from `origin`, which does not serve upstream-only objects, and the merge fails with `upload-pack: not our ref`.
-- Conflict reports need Issues enabled on the repository (`gh repo edit nilparra-dev/opencodenil --enable-issues`); `fork-resolve` is also triggered by them.
+- Conflict reports need Issues enabled on the repository (`gh repo edit nilparra-dev/opencyber --enable-issues`); `fork-resolve` is also triggered by them.
 
 ---
 
@@ -254,13 +254,14 @@ All of these files are **fork-only**: upstream does not have them, so they never
 | `.github/workflows/fork-sync.yml`                           | Automatic sync with upstream releases (section 3)                              |
 | `.github/workflows/fork-ci.yml`                             | Fork CI on standard GitHub runners (4.2)                                       |
 | `.github/workflows/fork-resolve.yml`                        | (Optional) Conflict resolution by an agent (4.3)                               |
-| `.github/workflows/fork-release.yml`                        | Builds and publishes `opencodenil` releases (4.5)                              |
+| `.github/workflows/fork-release.yml`                        | Builds and publishes `opencyber` releases (4.5)                                |
 | `.github/actions/fork-setup-bun/action.yml`                 | Bun setup for fork workflows, caching `node_modules` by lockfile (4.4)         |
-| `script/fork-install.ps1`, `script/fork-install.sh`         | Install or update `opencodenil` from this repository's releases (section 10)   |
+| `script/fork-install.ps1`, `script/fork-install.sh`         | Install or update `opencyber` from this repository's releases (section 10)     |
 | `packages/core/src/plugin/provider/fork-anthropic-oauth.ts` | Claude Pro/Max login (ledger F-002)                                            |
 | `packages/core/test/plugin/fork-anthropic-oauth.test.ts`    | Tests for it                                                                   |
-| `packages/cli/src/services/fork-updater.ts`                 | `opencodenil` updates from this repository's releases (ledger F-003)           |
-| `packages/cli/src/fork-shared-state.ts`                     | `opencodenil` shares the official install's database and TUI state (F-004)     |
+| `packages/cli/src/services/fork-updater.ts`                 | `opencyber` updates from this repository's releases (ledger F-003)             |
+| `packages/cli/src/fork-shared-state.ts`                     | `opencyber` shares the official install's database and TUI state (F-004)       |
+| `packages/cli/src/fork-version.ts`                          | The ` (Cyber)` display version shown by the TUI and `--version` (F-005)        |
 
 The only changes to upstream files are the ones in the ledger (section 7).
 
@@ -303,13 +304,13 @@ Fork workflows use this action instead of upstream's `.github/actions/setup-bun`
 
 ### 4.5 `fork-release.yml`
 
-Builds `opencodenil` with upstream's own `packages/cli/script/build.ts` and publishes it to this repository's GitHub Releases (not npm).
+Builds `opencyber` with upstream's own `packages/cli/script/build.ts` and publishes it to this repository's GitHub Releases (not npm).
 
-- **Version:** `<upstream release>-nil.<N>`, for example `2.0.16-nil.1`. The upstream part is the newest `v2.X.Y` tag contained in `custom`; `N` counts our releases on top of it and restarts at 1 with each upstream release. Nobody writes versions by hand. The `-nil.N` suffix is a SemVer prerelease on purpose: `+nil.N` build metadata is ignored by npm and most tools, so two fork builds of the same upstream release would look identical.
+- **Version:** `<upstream release>-cyber.<N>`, for example `2.0.18-cyber.1`. The upstream part is the newest `v2.X.Y` tag contained in `custom`; `N` counts our releases on top of it and restarts at 1 with each upstream release. Nobody writes versions by hand. The `-cyber.N` suffix is a SemVer prerelease on purpose: `+cyber.N` build metadata is ignored by npm and most tools, so two fork builds of the same upstream release would look identical. Release tags, service discovery and `parseReleaseVersion` all reject anything that is not plain SemVer, so the machine version stays untouched; human-facing surfaces append ` (Cyber)` to it (F-005).
 - **When:** a push to `custom` publishes when the upstream release it contains has no fork release yet (a merged `fork-sync` PR), or when `packages/`, `patches/`, `bun.lock` or the root `package.json` changed since the last fork release (a merged fork change that affects the binary). Pushes that only touch docs, workflows or the install scripts publish nothing; the install scripts are downloaded from `custom` when used. Running the workflow by hand always publishes the next `N`.
-- **Platforms:** Windows x64 and Linux x64, both cross-compiled from one Linux runner as upstream does. Each release has `opencodenil-windows-x64.zip`, `opencodenil-linux-x64.tar.gz` and `SHA256SUMS`. The binaries are not code-signed.
-- **Channel `nil`:** the build sets `OPENCODE_CHANNEL=nil`. In V2 the channel selects the background server registration and its port, so `opencodenil` gets `service-nil.json` and its own port. With the official `latest` channel, the fork and the official `opencode` would share one background server and restart it on every version mismatch, and the Claude Pro/Max login (F-002) only works in the fork's server. Everything else is shared with the official install: configuration in `~/.config/opencode`, the database `opencode.db` and the TUI state of the `latest` channel (F-004). Upstream's `latest` and `beta` channels share `opencode.db` the same way; a server ignores migrations newer than its own, which covers the hours between an official release and the fork release that follows it. Service environment variables (`opencodenil service set env …`) are still per channel.
-- **Updates:** the fork build replaces upstream's updater with `ForkUpdater` (ledger F-003). It asks this repository's GitHub Releases for the latest `-nil.N` release and installs it by running `script/fork-install.*` from `custom` with `OPENCODENIL_VERSION` set. Only the binary in `~/.opencodenil/bin` updates itself; `bun run dev` and other copies do not. Updates install automatically when `opencodenil` starts unless the shared config sets `"update": "notify"` or `"disable"` (or `OPENCODE_DISABLE_AUTOUPDATE=1`); the fork defaults to `auto` where upstream defaults to `notify`. `opencodenil upgrade` installs the latest release on demand.
+- **Platforms:** Windows x64 and Linux x64, both cross-compiled from one Linux runner as upstream does. Each release has `opencyber-windows-x64.zip`, `opencyber-linux-x64.tar.gz` and `SHA256SUMS`. The binaries are not code-signed.
+- **Channel `cyber`:** the build sets `OPENCODE_CHANNEL=cyber`. In V2 the channel selects the background server registration and its port, so `opencyber` gets `service-cyber.json` and its own port. With the official `latest` channel, the fork and the official `opencode` would share one background server and restart it on every version mismatch, and the Claude Pro/Max login (F-002) only works in the fork's server. Everything else is shared with the official install: configuration in `~/.config/opencode`, the database `opencode.db` and the TUI state of the `latest` channel (F-004). Upstream's `latest` and `beta` channels share `opencode.db` the same way; a server ignores migrations newer than its own, which covers the hours between an official release and the fork release that follows it. Service environment variables (`opencyber service set env …`) are still per channel.
+- **Updates:** the fork build replaces upstream's updater with `ForkUpdater` (ledger F-003). It asks this repository's GitHub Releases for the latest `-cyber.N` release and installs it by running `script/fork-install.*` from `custom` with `OPENCYBER_VERSION` set. Only the binary in `~/.opencyber/bin` updates itself; `bun run dev` and other copies do not. Updates install automatically when `opencyber` starts unless the shared config sets `"update": "notify"` or `"disable"` (or `OPENCODE_DISABLE_AUTOUPDATE=1`); the fork defaults to `auto` where upstream defaults to `notify`. `opencyber upgrade` installs the latest release on demand.
 - **Notes:** the upstream release with a link to its notes, the ledger table from section 7, and the fork-only commits since the previous fork release.
 - The build job runs repository code with a read-only token; a separate `publish` job creates the release.
 
@@ -444,8 +445,9 @@ gh pr merge sync-upstream --auto --merge
 | ----- | ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
 | F-001 | `AGENTS.md` (line 1)                                                                | Agents know this is a fork and read `FORK.md` first                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | Fork infrastructure                                                                                                                    | No                                  |
 | F-002 | `packages/core/src/plugin/provider.ts` (one import and one `ProviderPlugins` entry) | `ForkAnthropicOAuthPlugin` from the fork-only `fork-anthropic-oauth.ts` is registered. It (1) adds a "Claude Pro/Max" OAuth method with refresh to the `anthropic` integration, keeping method ID `claude-pro-max`; (2) with that credential active, rewrites every Anthropic HTTP request so the system field is exactly the Claude Code identity, opencode's system prompt becomes the first user turn, and the Claude Code headers are sent (`anthropic-beta` appended to existing betas, `User-Agent`, `x-app`); (3) stops retries on subscription-window exhaustion; (4) makes concurrent refreshes of one rotating refresh token share a single token request. API-key auth and other providers are untouched. Upstream already sends OAuth credentials to Anthropic as a bearer token | Claude Pro/Max login; Anthropic rejects consumer OAuth requests that do not look like Claude Code, and rejects replayed refresh tokens | No (upstream removed it on purpose) |
-| F-003 | `packages/cli/src/index.ts` (the `Updater` import and its `Effect.provide` line)    | The CLI provides `ForkUpdater.layer` from the fork-only `fork-updater.ts` instead of upstream's `Updater.layer`, keeping the `Updater.Service` interface. It (1) treats `~/.opencodenil/bin/opencodenil[.exe]` as the only updatable install (method `curl`); (2) reads the latest release from this repository's GitHub Releases; (3) upgrades by running `script/fork-install.*` from `custom` with `OPENCODENIL_VERSION`; (4) defaults the update policy to `auto` while honoring `update`/`autoupdate` in the shared config and `OPENCODE_DISABLE_AUTOUPDATE`. Upstream's `updater.ts` stays untouched                                                                                                                                                                                   | Upstream's updater only knows the official installer, npm-style managers and Homebrew, and checks opencode.ai for versions             | No                                  |
-| F-004 | `packages/cli/src/index.ts` (one side-effect import of `./fork-shared-state`)       | In the published build (channel `nil`), `fork-shared-state.ts` defaults `OPENCODE_DISABLE_CHANNEL_DB=1` and `OPENCODE_TUI_CHANNEL=latest` before anything reads them, so `opencodenil` uses the official install's `opencode.db` and TUI state while keeping its own background server (`service-nil.json`, own port). Source runs (channel `local`) and explicit environment values are unaffected                                                                                                                                                                                                                                                                                                                                                                                          | The fork should see the same sessions, logins, API keys and recent models as the official `opencode`                                   | No                                  |
+| F-003 | `packages/cli/src/index.ts` (the `Updater` import and its `Effect.provide` line)    | The CLI provides `ForkUpdater.layer` from the fork-only `fork-updater.ts` instead of upstream's `Updater.layer`, keeping the `Updater.Service` interface. It (1) treats `~/.opencyber/bin/opencyber[.exe]` as the only updatable install (method `curl`); (2) reads the latest release from this repository's GitHub Releases; (3) upgrades by running `script/fork-install.*` from `custom` with `OPENCYBER_VERSION`; (4) defaults the update policy to `auto` while honoring `update`/`autoupdate` in the shared config and `OPENCODE_DISABLE_AUTOUPDATE`. Upstream's `updater.ts` stays untouched                                                                                                                                                                                         | Upstream's updater only knows the official installer, npm-style managers and Homebrew, and checks opencode.ai for versions             | No                                  |
+| F-004 | `packages/cli/src/index.ts` (one side-effect import of `./fork-shared-state`)       | In the published `cyber` build, `fork-shared-state.ts` defaults `OPENCODE_DISABLE_CHANNEL_DB=1` and `OPENCODE_TUI_CHANNEL=latest` before anything reads them, so `opencyber` uses the official install's `opencode.db` and TUI state while keeping its own background server (`service-cyber.json`, own port). Source runs (channel `local`) and explicit environment values are unaffected                                                                                                                                                                                                                                                                                                                                                                                                  | The fork should see the same sessions, logins, API keys and recent models as the official `opencode`                                   | No                                  |
+| F-005 | `packages/cli/src` and `packages/cli/test/mini-host.test.ts`                        | The human-facing surfaces read `OPENCODE_DISPLAY_VERSION` from the fork-only `fork-version.ts`, which is `<build version> (Cyber)`: `src/index.ts` passes it to `Runtime.run` so `--version` prints it, `src/commands/handlers/default.ts` hands it to the TUI as `app.version`, `src/mini-host.ts` sets the mini host `version`, and `test/mini-host.test.ts` asserts it. The build version in `version.ts`, service discovery, observability and the updater keep the plain SemVer value                                                                                                                                                                                                                                                                                                   | Show the fork's name without breaking release tags, service discovery or `parseReleaseVersion`, which need plain SemVer                | No                                  |
 
 To check that the ledger is complete, list the upstream files the fork modifies (fork-only files excluded):
 
@@ -500,24 +502,24 @@ git cherry-pick <commits>                          # or redo the change cleanly
 
 ## 10. Using the fork build
 
-Install or update the latest release (4.5) into `~/.opencodenil/bin`, which the script adds to `PATH`:
+Install or update the latest release (4.5) into `~/.opencyber/bin`, which the script adds to `PATH`:
 
 ```powershell
-irm https://raw.githubusercontent.com/nilparra-dev/opencodenil/custom/script/fork-install.ps1 | iex   # Windows x64
+irm https://raw.githubusercontent.com/nilparra-dev/opencyber/custom/script/fork-install.ps1 | iex   # Windows x64
 ```
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/nilparra-dev/opencodenil/custom/script/fork-install.sh | bash   # Linux x64
+curl -fsSL https://raw.githubusercontent.com/nilparra-dev/opencyber/custom/script/fork-install.sh | bash   # Linux x64
 ```
 
-After that it updates itself when it starts, and `opencodenil upgrade` updates it on demand (4.5). Set `OPENCODENIL_VERSION=2.0.16-nil.1` to install a specific release. The binary is named `opencodenil`, so it lives next to the official `opencode`; its help text still says `opencode` because the name comes from upstream's build script.
+After that it updates itself when it starts, and `opencyber upgrade` updates it on demand (4.5). Set `OPENCYBER_VERSION=2.0.18-cyber.1` to install a specific release. The binary is named `opencyber`, so it lives next to the official `opencode`; its help text still says `opencode` because the name comes from upstream's build script.
 
 From source:
 
 ```bash
 bun install
 bun run dev                                            # development, from the root (runs packages/cli)
-cd packages/cli && OPENCODE_CHANNEL=nil bun run build --single   # current platform only → packages/cli/dist/<platform>/bin/
+cd packages/cli && OPENCODE_CHANNEL=cyber bun run build --single   # current platform only → packages/cli/dist/<platform>/bin/
 ```
 
 ---
@@ -537,6 +539,6 @@ cd packages/cli && OPENCODE_CHANNEL=nil bun run build --single   # current platf
 | The `pre-push` hook fails on the Bun version                                         | Local Bun differs from `packageManager`                                   | Install the version in `package.json` → `packageManager`                                                                                                                                            |
 | A green sync PR does not auto-merge                                                  | `custom` advanced and the PR is out of date                               | The next hourly `fork-sync` merges `custom` into it; or run it by hand                                                                                                                              |
 | Claude Pro/Max requests fail with 401/429 after moving from V1                       | The V1 login was imported without refresh                                 | Log in again and pick "Claude Pro/Max" (section 1)                                                                                                                                                  |
-| GitHub says "N commits ahead/behind anomalyco/opencode:dev" and offers **Sync fork** | GitHub compares with upstream's default branch, which is still `dev` (V1) | Ignore the counter and **never press Sync fork**: it would merge V1 into `custom`. Compare with the release instead: `https://github.com/nilparra-dev/opencodenil/compare/<latest v2 tag>...custom` |
-| `fork-release` did not publish after a push                                          | That upstream release already has a fork release                          | Expected; run `fork-release` by hand to publish the next `-nil.N`                                                                                                                                   |
-| `opencodenil` does not see the sessions or logins of `opencode`                      | A build older than F-004, or `OPENCODE_DB` / `OPENCODE_TUI_CHANNEL` set   | Update (`opencodenil upgrade`) or unset those variables                                                                                                                                             |
+| GitHub says "N commits ahead/behind anomalyco/opencode:dev" and offers **Sync fork** | GitHub compares with upstream's default branch, which is still `dev` (V1) | Ignore the counter and **never press Sync fork**: it would merge V1 into `custom`. Compare with the release instead: `https://github.com/nilparra-dev/opencyber/compare/<latest v2 tag>...custom`   |
+| `fork-release` did not publish after a push                                          | That upstream release already has a fork release                          | Expected; run `fork-release` by hand to publish the next `-cyber.N`                                                                                                                                 |
+| `opencyber` does not see the sessions or logins of `opencode`                        | A build older than F-004, or `OPENCODE_DB` / `OPENCODE_TUI_CHANNEL` set   | Update (`opencyber upgrade`) or unset those variables                                                                                                                                               |

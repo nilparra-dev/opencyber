@@ -1,12 +1,12 @@
 name: fork-release
 
-# Publishes opencodenil builds to this repository's GitHub Releases.
+# Publishes opencyber builds to this repository's GitHub Releases.
 # - A push to custom that brings in an upstream release with no fork release yet
-#   publishes <upstream>-nil.1 (fork-sync's merge is such a push).
+#   publishes <upstream>-cyber.1 (fork-sync's merge is such a push).
 # - A push to custom that changes what goes into the binary (packages/, patches/,
 #   the lockfile or the root package.json) since the last fork release publishes
-#   the next <upstream>-nil.N, so installed builds pick up fork changes too.
-# - A manual run publishes the next <upstream>-nil.N from the current custom.
+#   the next <upstream>-cyber.N, so installed builds pick up fork changes too.
+# - A manual run publishes the next <upstream>-cyber.N from the current custom.
 # Other pushes to custom (docs, workflows, install scripts) do nothing.
 
 on:
@@ -26,7 +26,7 @@ env:
   UPSTREAM_TAG_PATTERN: '^v2\.[0-9]+\.[0-9]+$'
   # Its own channel gives the fork build its own background server and database,
   # so it never replaces or migrates the official opencode's.
-  FORK_CHANNEL: nil
+  FORK_CHANNEL: cyber
 
 jobs:
   plan:
@@ -53,15 +53,15 @@ jobs:
           base=$(git tag -l 'v2.*' --merged HEAD | grep -E "$UPSTREAM_TAG_PATTERN" | sort -V | tail -1)
           if [ -z "$base" ]; then echo "custom contains no upstream release tag" >&2; exit 1; fi
           releases=$(gh release list --limit 200 --json tagName,createdAt --jq 'sort_by(.createdAt) | reverse | .[].tagName')
-          last=$(grep -E "^${base//./\\.}-nil\.[0-9]+$" <<< "$releases" | sed 's/.*-nil\.//' | sort -n | tail -1 || true)
-          previous=$(grep -E -- '-nil\.[0-9]+$' <<< "$releases" | head -1 || true)
+          last=$(grep -E "^${base//./\\.}-cyber\.[0-9]+$" <<< "$releases" | sed 's/.*-cyber\.//' | sort -n | tail -1 || true)
+          previous=$(grep -E -- '-cyber\.[0-9]+$' <<< "$releases" | head -1 || true)
           if [ "$GITHUB_EVENT_NAME" = push ] && [ -n "$last" ] &&
-            [ -z "$(git diff --name-only "$base-nil.$last" HEAD -- packages patches bun.lock package.json)" ]; then
+            [ -z "$(git diff --name-only "$base-cyber.$last" HEAD -- packages patches bun.lock package.json)" ]; then
             echo "publish=false" >> "$GITHUB_OUTPUT"
-            echo "nothing in the binary changed since fork release $base-nil.$last"
+            echo "nothing in the binary changed since fork release $base-cyber.$last"
             exit 0
           fi
-          version="${base#v}-nil.$(( ${last:-0} + 1 ))"
+          version="${base#v}-cyber.$(( ${last:-0} + 1 ))"
           {
             echo "publish=true"
             echo "base=$base"
@@ -96,16 +96,16 @@ jobs:
       - name: Package
         run: |
           mkdir -p release stage/linux stage/windows
-          cp packages/cli/dist-fork/linux-x64/cli-linux-x64/bin/opencode stage/linux/opencodenil
-          cp packages/cli/dist-fork/windows-x64/cli-windows-x64/bin/opencode.exe stage/windows/opencodenil.exe
-          tar -czf release/opencodenil-linux-x64.tar.gz -C stage/linux opencodenil
-          (cd stage/windows && zip -q ../../release/opencodenil-windows-x64.zip opencodenil.exe)
+          cp packages/cli/dist-fork/linux-x64/cli-linux-x64/bin/opencode stage/linux/opencyber
+          cp packages/cli/dist-fork/windows-x64/cli-windows-x64/bin/opencode.exe stage/windows/opencyber.exe
+          tar -czf release/opencyber-linux-x64.tar.gz -C stage/linux opencyber
+          (cd stage/windows && zip -q ../../release/opencyber-windows-x64.zip opencyber.exe)
           (cd release && sha256sum * > SHA256SUMS)
           ls -l release
 
       - name: Smoke test
         run: |
-          out=$(./stage/linux/opencodenil --version)
+          out=$(./stage/linux/opencyber --version)
           echo "$out"
           grep -qF "${{ needs.plan.outputs.version }}" <<< "$out"
 
@@ -171,7 +171,7 @@ jobs:
             echo "curl -fsSL $raw/fork-install.sh | bash"
             echo '```'
             echo
-            echo "The binary is \`opencodenil\`. It runs its own background server and database (channel \`$FORK_CHANNEL\`), so it can be used next to the official \`opencode\`; configuration in \`~/.config/opencode\` is shared. Binaries are not code-signed, so Windows SmartScreen may warn on first run."
+            echo "The binary is \`opencyber\`. It runs its own background server and database (channel \`$FORK_CHANNEL\`), so it can be used next to the official \`opencode\`; configuration in \`~/.config/opencode\` is shared. Binaries are not code-signed, so Windows SmartScreen may warn on first run."
           } > notes.md
           cat notes.md
 
@@ -182,5 +182,5 @@ jobs:
         run: |
           gh release create "v$VERSION" release/* \
             --target "$GITHUB_SHA" \
-            --title "opencodenil $VERSION" \
+            --title "opencyber $VERSION" \
             --notes-file notes.md

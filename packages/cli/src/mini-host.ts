@@ -4,7 +4,7 @@ import fs from "node:fs"
 import { readFile } from "node:fs/promises"
 import path from "node:path"
 import { ReadStream } from "node:tty"
-import { OPENCODE_VERSION } from "./version"
+import { OPENCODE_DISPLAY_VERSION } from "./fork-version" // fork: display version (F-005)
 
 export const INTERACTIVE_INPUT_ERROR = "opencode mini requires a controlling terminal for input"
 
@@ -138,7 +138,7 @@ export function createMiniHost(input: {
     argv: process.argv.slice(2),
   }
   return {
-    version: OPENCODE_VERSION,
+    version: OPENCODE_DISPLAY_VERSION, // fork: display version (F-005)
     terminal: { stdin: input.terminal.stdin },
     platform: process.platform,
     stdout: {
