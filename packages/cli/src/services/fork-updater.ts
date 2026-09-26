@@ -7,10 +7,10 @@ import { OPENCODE_LOCAL, OPENCODE_VERSION } from "../version"
 import { Updater } from "./updater"
 import { action, parseReleaseVersion } from "./updater-action"
 
-// opencodenil builds are published to this fork's GitHub Releases and installed by
+// opencyber builds are published to this fork's GitHub Releases and installed by
 // script/fork-install.*, which the upstream updater does not recognize. This layer replaces it
 // (FORK.md ledger F-003) and reports the fork install as the "curl" method.
-const repository = "nilparra-dev/opencodenil"
+const repository = "nilparra-dev/opencyber"
 const installer = process.platform === "win32" ? "fork-install.ps1" : "fork-install.sh"
 
 const make = Effect.gen(function* () {
@@ -20,9 +20,9 @@ const make = Effect.gen(function* () {
   const installedVersion = yield* Ref.make(OPENCODE_VERSION)
   const binary = path.resolve(
     global.home,
-    ".opencodenil",
+    ".opencyber",
     "bin",
-    process.platform === "win32" ? "opencodenil.exe" : "opencodenil",
+    process.platform === "win32" ? "opencyber.exe" : "opencyber",
   )
 
   const method = () =>
@@ -51,7 +51,7 @@ const make = Effect.gen(function* () {
           {
             title: `Could not download ${what}`,
             detail: cause instanceof Error ? cause.message : String(cause),
-            retry: "Check your network, then run opencodenil upgrade again.",
+            retry: "Check your network, then run opencyber upgrade again.",
           },
           { cause },
         ),
@@ -61,16 +61,16 @@ const make = Effect.gen(function* () {
     const response = yield* request(`https://api.github.com/repos/${repository}/releases/latest`, "release information")
     const release: { tag_name?: string } = yield* Effect.tryPromise(() => response.json())
     if (!release.tag_name || !parseReleaseVersion(release.tag_name))
-      return yield* Effect.fail(new Error(`Invalid opencodenil release tag: ${release.tag_name}`))
+      return yield* Effect.fail(new Error(`Invalid opencyber release tag: ${release.tag_name}`))
     return release.tag_name.replace(/^v/, "")
   })
 
   const upgrade = Effect.fnUntraced(function* (method: Updater.Method, input: string) {
-    if (method !== "curl") return yield* Effect.fail(new Error(`opencodenil cannot be upgraded with ${method}.`))
+    if (method !== "curl") return yield* Effect.fail(new Error(`opencyber cannot be upgraded with ${method}.`))
     if (!parseReleaseVersion(input)) return yield* Effect.fail(new Error(`Invalid version: ${input}`))
     const script = yield* request(
       `https://raw.githubusercontent.com/${repository}/custom/script/${installer}`,
-      "the opencodenil installer",
+      "the opencyber installer",
     ).pipe(Effect.flatMap((response) => Effect.tryPromise(() => response.text())))
     yield* Effect.scoped(
       Effect.gen(function* () {
@@ -87,7 +87,7 @@ const make = Effect.gen(function* () {
             : ["bash", file]
         const result = yield* appProcess.run(
           ChildProcess.make(command[0], command.slice(1), {
-            env: { OPENCODENIL_VERSION: input.trim().replace(/^v/, "") },
+            env: { OPENCYBER_VERSION: input.trim().replace(/^v/, "") },
             extendEnv: true,
             stdin: "ignore",
           }),
@@ -96,10 +96,10 @@ const make = Effect.gen(function* () {
         if (result.exitCode === 0) return
         return yield* Effect.fail(
           new Updater.UpgradeError({
-            title: "The opencodenil installer failed",
+            title: "The opencyber installer failed",
             detail: (result.stderr.toString("utf8") || result.stdout.toString("utf8")).trim().slice(-2_000),
             command: command.join(" "),
-            retry: "Fix the issue above, then run opencodenil upgrade again.",
+            retry: "Fix the issue above, then run opencyber upgrade again.",
           }),
         )
       }),
@@ -109,13 +109,13 @@ const make = Effect.gen(function* () {
   const install = Effect.fnUntraced(function* (version: string) {
     const detected = yield* method()
     if (!detected) {
-      yield* Effect.logWarning("update skipped: not an opencodenil install", { executable: process.execPath })
+      yield* Effect.logWarning("update skipped: not an opencyber install", { executable: process.execPath })
       return false
     }
     const current = yield* Ref.get(installedVersion)
     yield* upgrade(detected, version)
     yield* Ref.set(installedVersion, version)
-    yield* Effect.logInfo("updated opencodenil", { from: current, to: version })
+    yield* Effect.logInfo("updated opencyber", { from: current, to: version })
     return true
   })
 
@@ -127,7 +127,7 @@ const make = Effect.gen(function* () {
     if (OPENCODE_LOCAL)
       return {
         type: "unavailable" as const,
-        message: "This build runs from a source checkout. Use an installed opencodenil release to check for updates.",
+        message: "This build runs from a source checkout. Use an installed opencyber release to check for updates.",
       }
     const version = yield* latest()
     const current = yield* Ref.get(installedVersion)

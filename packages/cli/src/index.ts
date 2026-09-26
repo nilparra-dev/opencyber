@@ -6,9 +6,10 @@ import { getErrorReported } from "effect/Runtime"
 import { Commands } from "./commands/commands"
 import { Runtime } from "./framework/runtime"
 import { Observability } from "@opencode/util/observability"
-import { ForkUpdater } from "./services/fork-updater" // fork: opencodenil updater (F-003)
+import { ForkUpdater } from "./services/fork-updater" // fork: opencyber updater (F-003)
 import "./fork-shared-state" // fork: share the official install's database and TUI state (F-004)
 import { OPENCODE_ARTIFACT, OPENCODE_CHANNEL, OPENCODE_LOCAL, OPENCODE_VERSION } from "./version"
+import { OPENCODE_DISPLAY_VERSION } from "./fork-version" // fork: display version (F-005)
 import { LayerNode } from "@opencode/util/effect/layer-node"
 import { Global } from "@opencode/util/global"
 import { AppProcess } from "@opencode/util/process"
@@ -100,7 +101,7 @@ Effect.gen(function* () {
     local: OPENCODE_LOCAL,
     args: process.argv.slice(2),
   })
-  return yield* Runtime.run(Commands, Handlers, { version: OPENCODE_VERSION })
+  return yield* Runtime.run(Commands, Handlers, { version: OPENCODE_DISPLAY_VERSION }) // fork: display version (F-005)
 }).pipe(
   Effect.catchCause((cause) =>
     Effect.logError("cli process failed", {
@@ -110,7 +111,7 @@ Effect.gen(function* () {
   ),
   Effect.annotateLogs({ role: "cli" }),
   Effect.provide(Config.layer),
-  Effect.provide(ForkUpdater.layer), // fork: opencodenil updater (F-003)
+  Effect.provide(ForkUpdater.layer), // fork: opencyber updater (F-003)
   Effect.provide(
     LayerNode.compile(LayerNode.group([Global.node, AppProcess.node, Npm.node]), {
       replacements: [
