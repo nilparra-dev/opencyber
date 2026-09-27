@@ -107,6 +107,31 @@ jobs:
             "$(filters "$(grep -vx @opencode/core <<< "$names" || true)")" \
             "$(flag "$(grep -x @opencode/core <<< "$names" || true)")"
 
+  # Section 7 of FORK.md is what the release notes and the conflict resolver read, so a ledger
+  # that no longer matches the tree lies to both. The script reports a changed upstream file with
+  # no entry, a fork-modified code file with no // fork: marker, and a marker whose id section 7
+  # does not define.
+  ledger:
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      UPSTREAM_REPO: anomalyco/opencode
+    steps:
+      # The three-dot diff is measured from the merge base with the upstream tag, which a
+      # shallow checkout cannot produce.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Fetch upstream release tags
+        run: git fetch --no-tags "https://github.com/$UPSTREAM_REPO.git" '+refs/tags/v2.*:refs/tags/v2.*'
+      - uses: ./.github/actions/fork-setup-bun
+        with:
+          install: "false"
+      - name: Check the section 7 ledger
+        run: bun script/fork-ledger-check.ts
+
   typecheck-group:
     name: typecheck (${{ matrix.group }})
     needs: changes
