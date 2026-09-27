@@ -31,6 +31,8 @@ export type ResolvedThemeTokens = {
   readonly text: {
     readonly base: RGBA
     readonly muted: RGBA
+    // fork: brand color, e.g. the opencyber wordmark (F-011)
+    readonly brand: { readonly base: RGBA }
     readonly action: Readonly<Record<ActionVariant, StatefulColor>>
     readonly formfield: FormfieldColor
     readonly feedback: Readonly<Record<FeedbackKind, { readonly base: RGBA; readonly muted: RGBA }>>
