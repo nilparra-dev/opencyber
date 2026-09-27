@@ -33,6 +33,9 @@ target
 opencode-dev
 UPCOMING_CHANGELOG.md
 RELEASE_REVIEW.md
+# fork: local research never leaves the machine (F-012)
+reports/
+research_notes/
 logs/
 *.bun-build
 tsconfig.tsbuildinfo
