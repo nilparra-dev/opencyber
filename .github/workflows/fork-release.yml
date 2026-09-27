@@ -105,9 +105,14 @@ jobs:
 
       - name: Smoke test
         run: |
+          version="${{ needs.plan.outputs.version }}"
           out=$(./stage/linux/opencyber --version)
           echo "$out"
-          grep -qF "${{ needs.plan.outputs.version }}" <<< "$out"
+          # The human-facing line drops the -cyber.N prerelease (F-005), so the release tag is
+          # not in it: assert the display form, then that the build version service discovery
+          # and the updater compare against is still baked into the packaged binary.
+          grep -qF "${version%%-*} (Cyber)" <<< "$out"
+          grep -aFq "$version" ./stage/linux/opencyber
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
