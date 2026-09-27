@@ -86,9 +86,15 @@ const BackgroundFeedbackDefinition = Schema.Struct({
   base: Schema.optional(ColorValue),
 })
 
+// fork: brand color, defaulted in expand.ts from the theme's feedback error color (F-011)
+const TextBrandDefinition = Schema.Struct({
+  base: Schema.optional(ColorValue),
+})
+
 const TextDefinition = Schema.Struct({
   base: Schema.optional(ColorValue),
   muted: Schema.optional(ColorValue),
+  brand: Schema.optional(TextBrandDefinition),
   action: Schema.optional(ActionColorDefinition),
   formfield: Schema.optional(StatefulColorDefinition),
   feedback: Schema.optional(
@@ -222,6 +228,8 @@ const CompleteThemeTokensDefinition = Schema.Struct({
   text: Schema.Struct({
     base: ColorValue,
     muted: ColorValue,
+    // fork: optional because expand.ts fills it in, so existing theme documents keep parsing (F-011)
+    brand: Schema.optional(TextBrandDefinition),
     action: CompleteActionColorDefinition,
     formfield: CompleteStatefulColorDefinition,
     feedback: Schema.Struct({

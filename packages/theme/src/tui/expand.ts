@@ -41,6 +41,8 @@ function expandText(definition: TextDefinition | undefined): TextDefinition | un
   return {
     ...definition,
     muted: definition.muted ?? (definition.base ? "$text.base" : undefined),
+    // fork: brand color defaults to the theme's own error color, so it stays the theme's red (F-011)
+    brand: definition.brand?.base ? definition.brand : { base: "$text.feedback.error.base" },
     action: expandActions(definition.action, "text.action"),
     formfield: expandFormfield(definition.formfield, "text.formfield"),
     feedback: definition.feedback
