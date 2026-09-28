@@ -15,6 +15,8 @@ import { ForkCyberEngagement } from "../fork-cyber/engagement.js"
 import { ForkCyberNotes } from "../fork-cyber/notes.js"
 import { ForkCyberScope } from "../fork-cyber/scope.js"
 import { ForkCyberStore } from "../fork-cyber/store.js"
+import { ForkCyberHttp } from "../fork-cyber/http.js"
+import { Permission } from "../permission.js"
 
 const OPERATOR = [
   "# OpenCyber",
@@ -23,6 +25,7 @@ const OPERATOR = [
   "Honor the operator's existing instructions without asking for repeated confirmation. Ask only for missing scope or rules needed for the next action.",
   "Distinguish confirmed findings, rejected hypotheses, missing information and execution failures. Never invent evidence.",
   "Notes are durable; only a recent view enters context. Use evidence to retrieve execution and artifact records, and findings to track hypotheses with evidence references. Tool capture records returned data, not unobserved network traffic or full files behind truncated tool output.",
+  "Use http_request for scoped HTTP evidence, http_replay to reproduce a captured request with explicit changes, and http_compare to compare outputs. Only these HTTP tools enforce the recorded destinations and shared rate. Confirm access-control findings using known identities, ownership and negative controls.",
 ].join("\n")
 
 const decodeManifest = Schema.decodeUnknownOption(ForkCyberScope.Manifest)
@@ -33,6 +36,7 @@ export const Plugin = define({
   id: "opencyber.engagement",
   effect: Effect.fn("ForkCyberPlugin")(function* (ctx) {
     const global = yield* Global.Service
+    const permission = yield* Permission.Service
     const store = yield* ForkCyberStore.open(path.join(global.data, "opencyber", "evidence.sqlite")).pipe(Effect.orDie)
     const manifestFile = path.join(ctx.location.directory, ".opencode", "cyber", "scope.jsonc")
     const adaptersFile = path.join(ctx.location.directory, ".opencode", "cyber", "adapters.jsonc")
@@ -180,7 +184,15 @@ export const Plugin = define({
       }),
     )
 
-    const administrative = new Set(["engagement", "notes", "evidence", "findings"])
+    const administrative = new Set([
+      "engagement",
+      "notes",
+      "evidence",
+      "findings",
+      "http_request",
+      "http_replay",
+      "http_compare",
+    ])
     const executionID = (event: { sessionID: string; messageID: string; id: string }) =>
       ForkCyberStore.digest(Buffer.from(JSON.stringify([event.sessionID, event.messageID, event.id])))
     yield* ctx.tool.hook("execute.before", (event) =>
@@ -219,7 +231,107 @@ export const Plugin = define({
       }).pipe(Effect.orDie),
     )
 
+    const httpAssessment = (context: Tool.Context, action = "http_request") =>
+      Effect.gen(function* () {
+        if (context.agent === "cyber-report")
+          return yield* Effect.fail(
+            new Error("The reporting agent can compare recorded HTTP evidence but cannot send requests"),
+          )
+        const manifest = yield* engagement(context.sessionID)
+        if (manifest.status !== "ready")
+          return yield* Effect.fail(new Error("HTTP requires a valid, explicitly recorded engagement"))
+        return {
+          owner: yield* topLevel(context.sessionID),
+          session: context.sessionID,
+          agent: context.agent,
+          manifest: manifest.value,
+          call: { message: context.messageID, id: context.id },
+          permission: (target: string) =>
+            Effect.forEach(action === "http_replay" ? ["http_request", action] : [action], (name) =>
+              permission.assert({
+                action: name,
+                resources: [target],
+                save: [new URL(target).origin + "/*"],
+                sessionID: context.sessionID,
+                agent: context.agent,
+                source: { type: "tool", messageID: context.messageID, id: context.id },
+              }),
+            ).pipe(
+              Effect.asVoid,
+              Effect.mapError((error) => new Error(String(error))),
+            ),
+        }
+      }).pipe(Effect.mapError((error) => new Error(String(error))))
+    const httpSummary = (hops: readonly { output: string; capture: ForkCyberHttp.Capture }[]) => ({
+      content: JSON.stringify(
+        hops.map((hop) => ({
+          evidence: hop.output,
+          execution: hop.capture.execution,
+          status: hop.capture.status,
+          bytes: hop.capture.bytes,
+          sha256: hop.capture.sha256,
+          address: hop.capture.address,
+        })),
+      ),
+    })
     yield* ctx.tool.transform((editor) => {
+      editor.add({
+        name: "http_request",
+        options: { codemode: false },
+        input: ForkCyberHttp.Request,
+        description:
+          "Send an HTTP(S) request within the recorded engagement scope. Every redirect is checked; requests share max_rps. Captures exact response entity bytes and duplicate headers, with artifact IDs. TLS verification is required. No browser cookie jar, proxy or arbitrary Host override. Defaults: 30s per hop, 1 MiB response, 5 redirects. Headers/body may contain assessment credentials and are stored privately.",
+        execute: (input, context) =>
+          ForkCyberHttp.run(store, () => httpAssessment(context), input).pipe(
+            Effect.map(httpSummary),
+            Effect.mapError((error) => new Tool.Error({ message: String(error) })),
+          ),
+      })
+      editor.add({
+        name: "http_replay",
+        options: { codemode: false },
+        description:
+          "Replay an HTTP output artifact under current scope and rate limits. changes.headers replaces all original custom headers, allowing another account or an anonymous control. URL changes stay on the same origin. This sends a new request, potentially repeating side effects.",
+        input: Schema.Struct({
+          source: Schema.String,
+          changes: Schema.optional(
+            Schema.Struct({ ...ForkCyberHttp.Request.fields, url: Schema.optional(ForkCyberHttp.Request.fields.url) }),
+          ),
+        }),
+        execute: (input, context) =>
+          ForkCyberHttp.replay(
+            store,
+            () => httpAssessment(context, "http_replay"),
+            input.source,
+            input.changes ?? {},
+          ).pipe(
+            Effect.map(httpSummary),
+            Effect.mapError((error) => new Tool.Error({ message: String(error) })),
+          ),
+      })
+      editor.add({
+        name: "http_compare",
+        options: { codemode: false },
+        description:
+          "Compare two captured HTTP output artifacts from this engagement, without network activity. Returns status, body hashes/lengths and header equality. Similarity alone does not prove an access-control failure.",
+        input: Schema.Struct({ left: Schema.String, right: Schema.String }),
+        execute: (input, context) =>
+          Effect.gen(function* () {
+            yield* permission.assert({
+              action: "http_compare",
+              resources: [input.left, input.right],
+              save: ["*"],
+              sessionID: context.sessionID,
+              agent: context.agent,
+              source: { type: "tool", messageID: context.messageID, id: context.id },
+            })
+            return {
+              content: JSON.stringify(
+                yield* ForkCyberHttp.compare(store, yield* topLevel(context.sessionID), input.left, input.right),
+              ),
+            }
+          }).pipe(Effect.mapError((error) => new Tool.Error({ message: String(error) }))),
+      })
       editor.add({
         name: "evidence",
         options: { codemode: false },

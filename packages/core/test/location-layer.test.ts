@@ -483,7 +483,17 @@ describe("LocationServiceMap", () => {
           expect(blockedState.providers.some((provider) => provider.id === allowedID)).toBe(false)
           const blockedTools = blockedState.tools.map((tool) => tool.name)
           // fork: cyber native tools have their own integration suite; preserve this upstream provider-isolation assertion (F-014).
-          const upstreamTool = (name: string) => !["execute", "engagement", "notes", "evidence", "findings"].includes(name)
+          const upstreamTool = (name: string) =>
+            ![
+              "execute",
+              "engagement",
+              "notes",
+              "evidence",
+              "findings",
+              "http_request",
+              "http_replay",
+              "http_compare",
+            ].includes(name)
           expect(blockedTools.filter(upstreamTool).sort()).toEqual([
             "edit",
             "glob",

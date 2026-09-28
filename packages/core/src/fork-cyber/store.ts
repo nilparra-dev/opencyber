@@ -25,7 +25,7 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
   )
   yield* sql`PRAGMA foreign_keys = ON`
   const version = yield* sql<{ user_version: number }>`PRAGMA user_version`
-  if (version[0]?.user_version !== 0 && version[0]?.user_version !== 1)
+  if (![0, 1, 2].includes(version[0]?.user_version ?? -1))
     return yield* Effect.fail(new Error("Unsupported OpenCyber evidence database version"))
   if (version[0]?.user_version === 0)
     yield* sql
@@ -72,6 +72,36 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
         }),
       )
 
+  if ((version[0]?.user_version ?? 0) < 2)
+    yield* sql
+      .withTransaction(
+        Effect.gen(function* () {
+          yield* sql`CREATE TABLE IF NOT EXISTS http_budget (owner TEXT PRIMARY KEY, next_at REAL NOT NULL)`
+          yield* sql`PRAGMA user_version = 2`
+        }),
+      )
+      .pipe(
+        Effect.retry({
+          while: (error) => error.reason._tag === "LockTimeoutError",
+          times: 3,
+          schedule: Schedule.spaced(25),
+        }),
+      )
+
+  // Admit one start, atomically across Locations/processes; waiting callers retry.
+  const claimHttp = Effect.fn(function* (owner: string, interval: number) {
+    // Evaluate time in the write statement, after SQLite acquires its lock.
+    const changed = yield* sql<{
+      at: number
+    }>`INSERT INTO http_budget VALUES (${owner}, CAST(unixepoch('subsec') * 1000 AS INTEGER) + ${interval})
+      ON CONFLICT(owner) DO UPDATE SET next_at = excluded.next_at
+      WHERE next_at <= CAST(unixepoch('subsec') * 1000 AS INTEGER)
+      RETURNING next_at - ${interval} AS at`
+    if (changed[0]) return { status: "admitted" as const, at: changed[0].at }
+    const rows = yield* sql<{ next_at: number }>`SELECT next_at FROM http_budget WHERE owner = ${owner}`
+    return { status: "waiting" as const, delay: Math.max(1, (rows[0]?.next_at ?? Date.now() + interval) - Date.now()) }
+  })
+
   const manifest = (owner: string) =>
     sql<{ revision: number; manifest: string }>`SELECT revision, manifest FROM engagement WHERE owner = ${owner}`
   const legacyAllowed = (owner: string) =>
@@ -94,7 +124,9 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
     }>`SELECT seq, content, created_at FROM note WHERE owner = ${owner} AND seq < ${before} ORDER BY seq DESC LIMIT ${limit}`
   const artifact = (owner: string, execution: string, kind: string, bytes: Uint8Array, mediaType: string) => {
     const id = crypto.randomUUID()
-    return sql`INSERT INTO artifact VALUES (${id}, ${owner}, ${execution}, ${kind}, ${mediaType}, ${digest(bytes)}, ${bytes.byteLength}, ${Buffer.from(bytes).toString("base64")}) RETURNING id`
+    return sql<{
+      id: string
+    }>`INSERT INTO artifact VALUES (${id}, ${owner}, ${execution}, ${kind}, ${mediaType}, ${digest(bytes)}, ${bytes.byteLength}, ${Buffer.from(bytes).toString("base64")}) RETURNING id`
   }
   const start = (input: {
     id: string
@@ -108,7 +140,7 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
     sql.withTransaction(
       Effect.gen(function* () {
         yield* sql`INSERT INTO execution VALUES (${input.id}, ${input.owner}, ${input.session}, ${input.tool}, ${input.agent}, ${Date.now()}, NULL, ${JSON.stringify(input.provenance ?? null)}, 'running')`
-        yield* artifact(
+        return yield* artifact(
           input.owner,
           input.id,
           "input",
@@ -123,7 +155,7 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
         const changed =
           yield* sql`UPDATE execution SET status = ${status}, finished_at = ${Date.now()} WHERE owner = ${owner} AND id = ${id} AND status = 'running' RETURNING id`
         if (changed.length !== 1) return yield* Effect.fail(new Error("Execution is missing or already finished"))
-        yield* artifact(
+        return yield* artifact(
           owner,
           id,
           status === "completed" ? "output" : "error",
@@ -142,12 +174,13 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
       sha256: string
       bytes: number
       media_type: string
-    }>`SELECT data, sha256, bytes, media_type FROM artifact WHERE owner = ${owner} AND id = ${id}`
+      kind: string
+    }>`SELECT data, sha256, bytes, media_type, kind FROM artifact WHERE owner = ${owner} AND id = ${id}`
     if (!rows[0]) return yield* Effect.fail(new Error("Artifact not found in this engagement"))
     const bytes = Buffer.from(rows[0].data, "base64")
     if (bytes.byteLength !== rows[0].bytes || digest(bytes) !== rows[0].sha256)
       return yield* Effect.fail(new Error("Artifact integrity check failed"))
-    return { bytes, media_type: rows[0].media_type, sha256: rows[0].sha256 }
+    return { bytes, media_type: rows[0].media_type, sha256: rows[0].sha256, kind: rows[0].kind }
   })
   const finding = (
     owner: string,
@@ -220,6 +253,7 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
         yield* sql`DELETE FROM execution WHERE owner = ${owner}`
         yield* sql`DELETE FROM note WHERE owner = ${owner}`
         yield* sql`DELETE FROM engagement WHERE owner = ${owner}`
+        yield* sql`DELETE FROM http_budget WHERE owner = ${owner}`
       }),
     )
   return {
@@ -238,6 +272,7 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
     exportArchive,
     purge,
     legacyAllowed,
+    claimHttp,
   }
 })
 
@@ -248,6 +283,10 @@ export function digest(bytes: Uint8Array) {
 // Convenience preview only. Raw archives can contain secrets and are never inserted in prompts.
 export function preview(text: string, position = 0) {
   return text
+    .replace(
+      /("(?:authorization|cookie|set-cookie|password|token|api[_-]?key)"\s*,\s*")(?:\\.|[^"\\])*"/gi,
+      '$1[REDACTED]"',
+    )
     .replace(/(authorization|cookie|set-cookie|password|token|api[_-]?key)(["\s:=]+)[^\r\n,}]+/gi, "$1$2[REDACTED]")
     .slice(position, position + 8000)
 }

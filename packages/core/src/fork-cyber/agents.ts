@@ -89,6 +89,7 @@ const READ_ONLY = [
   { action: "engagement", resource: "*", effect: "allow" },
   { action: "evidence", resource: "*", effect: "allow" },
   { action: "findings", resource: "*", effect: "allow" },
+  { action: "http_compare", resource: "*", effect: "allow" },
   { action: "webfetch", resource: "*", effect: "allow" },
   { action: "websearch", resource: "*", effect: "allow" },
   { action: "subagent", resource: "*", effect: "deny" },

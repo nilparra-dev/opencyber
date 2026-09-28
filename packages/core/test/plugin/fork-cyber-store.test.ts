@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test"
+import { Database } from "bun:sqlite"
 import { Effect, Exit } from "effect"
 import path from "node:path"
 import { ForkCyberStore } from "@opencode/core/fork-cyber/store"
@@ -191,6 +192,34 @@ test("preview masks common credentials and bounds model-visible text", () => {
   ).not.toContain("secret")
   expect(ForkCyberStore.preview("x".repeat(10000))).toHaveLength(8000)
   expect(ForkCyberStore.preview("x".repeat(10000), 8000)).toHaveLength(2000)
+  expect(ForkCyberStore.preview('["Set-Cookie","session=secret","Authorization","Bearer secret"]')).not.toContain(
+    "secret",
+  )
+})
+
+test("version 1 migration preserves archived notes and installs the shared HTTP budget", async () => {
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const tmp = yield* tmpdirScoped()
+        const file = path.join(tmp.path, "evidence.sqlite")
+        yield* Effect.scoped(
+          Effect.gen(function* () {
+            const store = yield* ForkCyberStore.open(file)
+            yield* store.append("owner", "existing phase 2 evidence")
+          }),
+        )
+        // Phase 2's schema is identical except for http_budget and user_version.
+        using database = new Database(file)
+        database.run("DROP TABLE http_budget")
+        database.run("PRAGMA user_version = 1")
+        const migrated = yield* ForkCyberStore.open(file)
+        expect((yield* migrated.notes("owner"))[0]?.content).toBe("existing phase 2 evidence")
+        expect((yield* migrated.claimHttp("owner", 60000)).status).toBe("admitted")
+        expect((yield* migrated.claimHttp("owner", 60000)).status).toBe("waiting")
+      }),
+    ),
+  )
 })
 
 test("operator export refuses overwrite and purge requires the matching owner", async () => {

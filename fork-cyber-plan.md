@@ -42,7 +42,7 @@ Code review also identified project-local activation, inconsistent child engagem
 | 0     | Architecture, audit backlog, baseline, migration instructions                        | Every identified gap has a phase and a verification method                                                                | Implemented in this document           |
 | 1     | Built-in activation, structured scope, shared resolution, no corrective refusal loop | Offline unit and real-Location integration tests pass; malformed inputs do not mutate state                               | Implemented; validation recorded below |
 | 2     | Engagement storage, executions, artifacts, findings and retrievable memory           | Restart and compaction preserve evidence; concurrent writes do not lose records; findings link to executions              | Implemented; see storage guide         |
-| 3     | HTTP request, replay, compare and evidence retrieval                                 | Controlled two-account lab confirms access-control failures and rejects healthy controls; redirects and errors are tested | Planned                                |
+| 3     | HTTP request, replay, compare and evidence retrieval                                 | Controlled two-account lab confirms access-control failures and rejects healthy controls; redirects and errors are tested | Implemented; see HTTP guide            |
 | 4     | Versioned Kali image and execution jobs                                              | Environment per engagement; start, output, cancellation and cleanup work; artifacts survive container removal             | Planned                                |
 | 5     | Browser sessions and traffic capture                                                 | Captured requests correlate to browser actions and findings; unsupported capture paths are reported                       | Planned                                |
 | 6     | Coverage, hypotheses, task ownership and phase permissions                           | Agents coordinate without duplicate jobs; role restrictions apply at execution, not only in prompts                       | Planned                                |
@@ -113,6 +113,8 @@ In phase 1, `notes` held at most 50 bounded, normalized entries. Phase 2 replace
 The old live `fork-cyber-eval.ts` runner and its refusal suite are removed. They launched autonomous tasks against external targets and could classify empty/error results as successful. No live replacement runs until a controlled lab and outcome graders exist.
 
 ## Execution and evidence contracts for subsequent phases
+
+Phase 3 HTTP behavior, examples, limits and schema migration are documented in [fork-cyber-http.md](fork-cyber-http.md). HTTP scope and pacing are enforced only by the specialized request/replay tools; raw-process and browser enforcement remain in subsequent phases.
 
 Keep the first storage design small: engagement records, execution records, artifact metadata and findings with evidence references. Distinguish candidate, confirmed and discarded findings. Record tool/version, environment/image version, parameters, timestamps, exit status and output references. Retain raw bytes where fidelity matters and provide redacted model-visible views.
 

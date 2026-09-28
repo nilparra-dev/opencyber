@@ -271,6 +271,8 @@ The cybersecurity roadmap, phase acceptance tests, current limits and engagement
 
 Phase 2 storage and lifecycle instructions are in [fork-cyber-storage.md](fork-cyber-storage.md). Fork-only additions include `packages/core/src/fork-cyber/store.ts`, the operator maintenance script `packages/core/script/fork-cyber-archive.ts`, and the optional profile launcher `script/fork-cyber-profile.ts` backed by `packages/cli/src/fork-cyber-profile.ts`. The launcher isolates on-disk data and credentials without changing F-004's installed defaults. Tests cover the archive, concurrent process writers and profile path resolution.
 
+Phase 3 adds `packages/core/src/fork-cyber/http.ts` and its offline HTTP lab in `packages/core/test/plugin/fork-cyber-http.test.ts`. [fork-cyber-http.md](fork-cyber-http.md) documents request/replay/compare, scope and rate enforcement, evidence capture and limits. HTTP fixture clients and public self-signed TLS fixture credentials live under `packages/core/test/fixture/fork-cyber-*`. The existing F-014 tool-list adjustment includes these native tools.
+
 ### 4.1 `fork-sync.yml`
 
 Described in section 3. Security notes that must stay true when editing it:
