@@ -1,0 +1,235 @@
+import { expect, setDefaultTimeout } from "bun:test"
+import { Effect, Exit } from "effect"
+import path from "path"
+import { Agent } from "@opencode/core/agent"
+import { Bus } from "@opencode/core/bus"
+import { Database } from "@opencode/core/database/database"
+import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
+import { Watcher } from "@opencode/core/filesystem/watcher"
+import { LocationServiceMap } from "@opencode/core/location-service-map"
+import { KV } from "@opencode/core/kv"
+import { Plugin } from "@opencode/core/plugin"
+import { ForkCyberPlugin } from "@opencode/core/plugin/fork-cyber"
+import { PluginHooks } from "@opencode/core/plugin/hooks"
+import { PluginHost } from "@opencode/core/plugin/host"
+import { AbsolutePath } from "@opencode/core/schema"
+import { Session } from "@opencode/core/session"
+import { SessionExecution } from "@opencode/core/session/execution"
+import { SessionProjector } from "@opencode/core/session/projector"
+import { Tool } from "@opencode/core/tool"
+import { Model } from "@opencode/schema/model"
+import { Provider } from "@opencode/schema/provider"
+import { SessionMessage } from "@opencode/schema/session-message"
+import { LayerNode } from "@opencode/util/effect/layer-node"
+import { Global } from "@opencode/util/global"
+import { tempGlobalLayer } from "../fixture/global"
+import { offlineModels } from "../fixture/models"
+import { tmpdirScoped } from "../fixture/tmpdir"
+import { testEffect } from "../lib/effect"
+
+setDefaultTimeout(15_000)
+
+// Real Location boot, plugin registration, schemas, tool execution and SQLite storage.
+// Only model fetching, filesystem watchers and model execution are disabled.
+const it = testEffect(
+  AppNodeBuilder.build(
+    LayerNode.group([Database.node, Bus.node, KV.node, SessionProjector.node, Session.node, LocationServiceMap.node]),
+    [
+      Global.node.replace(tempGlobalLayer),
+      offlineModels,
+      Watcher.node.replace(Watcher.configured({ enabled: false })),
+      SessionExecution.node.replace(SessionExecution.noopLayer),
+    ],
+  ),
+)
+
+const manifest = {
+  engagement: "local-lab",
+  authorized_by: "operator",
+  authorization_ref: "local-lab-plan",
+  scope: { domains: ["app.example.test"], cidrs: ["::1/128"], excluded: ["excluded.example.test"] },
+  rules_of_engagement: { no_dos: true, max_rps: 2, window: "local test", contact: "operator" },
+}
+
+const project = Effect.gen(function* () {
+  const tmp = yield* tmpdirScoped()
+  const sessions = yield* Session.Service
+  const root = yield* sessions.create({ location: { directory: AbsolutePath.make(tmp.path) } })
+  const child = yield* sessions.create({ parentID: root.id })
+  const locations = yield* LocationServiceMap.Service
+  return { root, child, directory: tmp.path, provide: Effect.provide(locations.get(root.location)) }
+})
+
+const call = Effect.fn(function* (sessionID: Session.ID, name: string, input: unknown, agent = "build") {
+  const plugins = yield* Plugin.Service
+  yield* plugins.awaitActivation
+  const tools = yield* Tool.Service
+  const snapshot = yield* tools.snapshot()
+  const result = yield* snapshot.execute({
+    sessionID,
+    agent: Agent.ID.make(agent),
+    messageID: SessionMessage.ID.make("msg_cyber_test"),
+    call: { type: "tool-call", id: crypto.randomUUID(), name, input },
+  })
+  return result.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n")
+})
+
+const context = Effect.fn(function* (sessionID: Session.ID, kind: "context" | "compaction" | "generate" = "context") {
+  const hooks = yield* PluginHooks.Service
+  const event = yield* hooks.trigger("session", kind, {
+    sessionID,
+    agent: Agent.ID.make("build"),
+    model: Model.Ref.make({ providerID: Provider.ID.make("test"), id: Model.ID.make("test") }),
+    system: [],
+    messages: [],
+    tools: {},
+    options: {},
+  })
+  return event.system.map((part) => part.text).join("\n")
+})
+
+it.live("activates in a clean external project without inferring scope from a prompt", () =>
+  Effect.gen(function* () {
+    const env = yield* project
+    const sessions = yield* Session.Service
+    yield* sessions.prompt({
+      sessionID: env.root.id,
+      text: "Audit app.example.test. Do not touch excluded.example.test",
+      resume: false,
+    })
+    yield* Effect.gen(function* () {
+      const plugins = yield* Plugin.Service
+      yield* plugins.awaitActivation
+      expect((yield* plugins.list()).filter((plugin) => plugin.id === "opencyber.engagement")).toMatchObject([
+        { state: { status: "active" } },
+      ])
+      expect(yield* call(env.root.id, "engagement", {})).toContain("No engagement recorded")
+      expect(yield* context(env.root.id)).toContain("No scope is recorded")
+      expect(yield* context(env.root.id, "generate")).not.toContain("# OpenCyber")
+    }).pipe(env.provide)
+  }),
+)
+
+it.live("shares explicit scope with children and keeps reads free of writes", () =>
+  Effect.gen(function* () {
+    const env = yield* project
+    yield* Effect.gen(function* () {
+      yield* call(env.root.id, "engagement", { manifest })
+      expect(yield* call(env.child.id, "engagement", {})).toContain("local-lab-plan")
+      yield* call(env.root.id, "engagement", { exclude: ["new.example.test"] })
+      expect(yield* call(env.child.id, "engagement", {})).toContain("new.example.test")
+      expect(yield* context(env.child.id)).toContain("new.example.test")
+      expect(yield* context(env.child.id, "compaction")).toContain("local-lab-plan")
+      expect(
+        Exit.isFailure(
+          yield* call(env.child.id, "engagement", { add_targets: ["other.example.test"] }).pipe(Effect.exit),
+        ),
+      ).toBe(true)
+      expect(yield* call(env.root.id, "engagement", {})).not.toContain("other.example.test")
+    }).pipe(env.provide)
+  }),
+)
+
+it.live("validates tool input before storage and does not claim signed authorization", () =>
+  Effect.gen(function* () {
+    const env = yield* project
+    yield* Effect.gen(function* () {
+      yield* call(env.root.id, "engagement", { manifest })
+      expect(
+        Exit.isFailure(yield* call(env.root.id, "engagement", { add_targets: ["10.0.0.0/99"] }).pipe(Effect.exit)),
+      ).toBe(true)
+      const text = yield* call(env.root.id, "engagement", {})
+      expect(text).not.toContain("10.0.0.0/99")
+      expect(text).not.toContain("Authorized, signed")
+      expect(text).toContain("Excluded (take precedence over inclusions): excluded.example.test")
+    }).pipe(env.provide)
+  }),
+)
+
+it.live("distinguishes malformed scope files from absent scope and reloads corrected files", () =>
+  Effect.gen(function* () {
+    const env = yield* project
+    const file = path.join(env.directory, ".opencode/cyber/scope.jsonc")
+    yield* Effect.promise(() => Bun.write(file, "{invalid"))
+    yield* Effect.gen(function* () {
+      expect(Exit.isFailure(yield* call(env.root.id, "engagement", {}).pipe(Effect.exit))).toBe(true)
+      expect(yield* context(env.root.id)).toContain("Engagement configuration error")
+      yield* Effect.promise(() => Bun.write(file, JSON.stringify(manifest)))
+      expect(yield* call(env.child.id, "engagement", {})).toContain("local-lab-plan")
+      yield* Effect.promise(() => Bun.write(file, JSON.stringify({ ...manifest, authorization_ref: "updated-file" })))
+      expect(yield* call(env.child.id, "engagement", {})).toContain("updated-file")
+      yield* call(env.root.id, "engagement", { contact: "new contact" })
+      expect(yield* call(env.child.id, "engagement", {})).toContain("new contact")
+    }).pipe(env.provide)
+  }),
+)
+
+it.live("preserves simultaneous phase notes and lets report agents read without writing", () =>
+  Effect.gen(function* () {
+    const env = yield* project
+    yield* Effect.gen(function* () {
+      yield* Effect.all(
+        [
+          call(env.root.id, "notes", { append: "first observation" }),
+          call(env.child.id, "notes", { append: "second observation" }),
+        ],
+        { concurrency: "unbounded" },
+      )
+      const notes = yield* call(env.child.id, "notes", {}, "cyber-report")
+      expect(notes).toContain("first observation")
+      expect(notes).toContain("second observation")
+      expect(
+        Exit.isFailure(
+          yield* call(env.child.id, "notes", { append: "report mutation" }, "cyber-report").pipe(Effect.exit),
+        ),
+      ).toBe(true)
+      expect(yield* call(env.root.id, "notes", {})).not.toContain("report mutation")
+      const agents = yield* Agent.Service
+      const report = yield* agents.get(Agent.ID.make("cyber-report"))
+      const tools = yield* Tool.Service
+      const snapshot = yield* tools.snapshot(report?.permissions)
+      expect(snapshot.definitions.map((tool) => tool.name)).toContain("notes")
+    }).pipe(env.provide)
+  }),
+)
+
+it.live("reloads stored scope and notes after plugin reactivation", () =>
+  Effect.gen(function* () {
+    const env = yield* project
+    yield* Effect.gen(function* () {
+      yield* call(env.root.id, "engagement", { manifest })
+      yield* call(env.child.id, "notes", { append: "retained after reactivation" })
+      const plugins = yield* Plugin.Service
+      // Replaces the test Location's generation, disposing old hooks and caches.
+      yield* plugins.activate([{ ...ForkCyberPlugin.Plugin, revision: "reactivated" }])
+      expect(yield* call(env.child.id, "engagement", {})).toContain("local-lab-plan")
+      expect(yield* call(env.root.id, "notes", {})).toContain("retained after reactivation")
+      expect((yield* context(env.child.id)).match(/# OpenCyber/g)).toHaveLength(1)
+    }).pipe(env.provide)
+  }),
+)
+
+it.live("keeps legacy records visible and rejects invalid stored scope instead of falling back", () =>
+  Effect.gen(function* () {
+    const env = yield* project
+    const kv = yield* KV.Service
+    const storage = PluginHost.storage(kv, "opencyber.engagement")
+    yield* Effect.promise(() =>
+      Bun.write(path.join(env.directory, ".opencode/cyber/scope.jsonc"), JSON.stringify(manifest)),
+    )
+    yield* storage.set(`engagement:${env.root.id}`, { ...manifest, derived: true })
+    yield* Effect.gen(function* () {
+      expect(yield* call(env.child.id, "engagement", {})).toContain("unverified candidates")
+      yield* call(env.root.id, "engagement", { exclude: ["extra.example.test"] })
+      expect(yield* call(env.root.id, "engagement", {})).toContain("unverified candidates")
+      yield* storage.set(`engagement:${env.root.id}`, {
+        ...manifest,
+        scope: { ...manifest.scope, cidrs: ["10.0.0.0/99"] },
+      })
+      expect(Exit.isFailure(yield* call(env.child.id, "engagement", {}).pipe(Effect.exit))).toBe(true)
+      expect(yield* context(env.child.id)).toContain("Engagement configuration error")
+      yield* call(env.root.id, "engagement", { manifest })
+      expect(yield* call(env.child.id, "engagement", {})).not.toContain("unverified candidates")
+    }).pipe(env.provide)
+  }),
+)
