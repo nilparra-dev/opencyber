@@ -55,6 +55,7 @@ export type Assessment = {
   agent: string
   manifest: ForkCyberScope.Manifest
   call?: { message: string; id: string }
+  browser?: { action: string; identity: string }
   permission?: (url: string) => Effect.Effect<void, Error>
 }
 
@@ -102,6 +103,7 @@ export const run = (store: Store, resolve: () => Effect.Effect<Assessment, Error
           replay_of: source ?? null,
           redirect_from: hops.at(-1)?.output ?? null,
           call: assessment.call ?? null,
+          browser: assessment.browser ?? null,
         },
       })
       const result = yield* Effect.gen(function* () {
