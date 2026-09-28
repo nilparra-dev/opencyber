@@ -2,6 +2,7 @@ export * as ForkCyberAgents from "./agents.js"
 
 import type { AgentEditor } from "@opencode/plugin/effect/agent"
 import { Agent } from "@opencode/schema/agent"
+import { ForkCyberRoles } from "./roles.js"
 
 // Phase subagents registered for every location. They exist so the primary agent
 // can delegate reconnaissance, validation and reporting without flooding its own
@@ -78,22 +79,8 @@ const REPORT = [
   "You are read-only: you document what exists, you do not test new hypotheses.",
 ].join("\n")
 
-// Same guardrails as the built-in explore agent: deny everything, then open the
-// exact actions the phase needs. `subagent` stays denied so phases cannot recurse.
-const READ_ONLY = [
-  { action: "*", resource: "*", effect: "deny" },
-  { action: "read", resource: "*", effect: "allow" },
-  { action: "grep", resource: "*", effect: "allow" },
-  { action: "glob", resource: "*", effect: "allow" },
-  { action: "notes", resource: "*", effect: "allow" },
-  { action: "engagement", resource: "*", effect: "allow" },
-  { action: "evidence", resource: "*", effect: "allow" },
-  { action: "findings", resource: "*", effect: "allow" },
-  { action: "http_compare", resource: "*", effect: "allow" },
-  { action: "webfetch", resource: "*", effect: "allow" },
-  { action: "websearch", resource: "*", effect: "allow" },
-  { action: "subagent", resource: "*", effect: "deny" },
-] as const
+const COORDINATION =
+  "\nRead the assigned cyber_tasks key and claim its current revision before executing work. Use findings for durable candidates and confirmed/discarded findings; notes are supporting observations. Complete your task with output artifact IDs from your own executions, a rationale and hypothesis outcome. Block failed or interrupted work explicitly. Read cyber_coverage before claiming coverage."
 
 export function register(editor: AgentEditor) {
   editor.update(Agent.ID.make("cyber-recon"), (agent) => {
@@ -101,55 +88,63 @@ export function register(editor: AgentEditor) {
     agent.description =
       "Reconnaissance phase of the engagement. Maps the attack surface of in-scope assets: subdomains, ports, services, versions, technologies, endpoints and parameters. Use for any work that only observes, never exploits."
     agent.mode = "subagent"
-    agent.system = RECON
-    agent.permissions.push({ action: "subagent", resource: "*", effect: "deny" })
+    agent.system =
+      RECON +
+      COORDINATION +
+      "\nExecution permits local read/glob/grep and bodyless HTTP GET/HEAD/OPTIONS. Shell, Kali, replay and browser actions are unavailable. HTTP method restrictions do not prove a request has no side effects."
+    agent.permissions.push(...ForkCyberRoles.permissions("cyber-recon"))
   })
   editor.update(Agent.ID.make("cyber-enum"), (agent) => {
     agent.name = Agent.Name.make("Cyber Enum")
     agent.description =
       "Enumeration phase of the engagement. Deepens reconnaissance findings into usable exploitation candidates: services, versions, parameters, directories, endpoints and auth surfaces."
     agent.mode = "subagent"
-    agent.system = ENUM
-    agent.permissions.push({ action: "subagent", resource: "*", effect: "deny" })
+    agent.system =
+      ENUM +
+      COORDINATION +
+      "\nExecution permits local read/glob/grep and bodyless HTTP GET/HEAD/OPTIONS. Shell, Kali, replay and browser actions are unavailable."
+    agent.permissions.push(...ForkCyberRoles.permissions("cyber-enum"))
   })
   editor.update(Agent.ID.make("cyber-exploit-web"), (agent) => {
     agent.name = Agent.Name.make("Cyber Exploit Web")
     agent.description =
       "Web exploitation phase of the engagement. Validates vulnerability classes on live in-scope web endpoints with raw request/response evidence, stopping at proof."
     agent.mode = "subagent"
-    agent.system = EXPLOIT_WEB
-    agent.permissions.push({ action: "subagent", resource: "*", effect: "deny" })
+    agent.system = EXPLOIT_WEB + COORDINATION
+    agent.permissions.push(...ForkCyberRoles.permissions("cyber-exploit-web"))
   })
   editor.update(Agent.ID.make("cyber-exploit-net"), (agent) => {
     agent.name = Agent.Name.make("Cyber Exploit Net")
     agent.description =
       "Network exploitation phase of the engagement. Validates service-side vectors within scope with raw evidence, respecting rate limits and never causing denial of service."
     agent.mode = "subagent"
-    agent.system = EXPLOIT_NET
-    agent.permissions.push({ action: "subagent", resource: "*", effect: "deny" })
+    agent.system = EXPLOIT_NET + COORDINATION
+    agent.permissions.push(...ForkCyberRoles.permissions("cyber-exploit-net"))
   })
   editor.update(Agent.ID.make("cyber-postex"), (agent) => {
     agent.name = Agent.Name.make("Cyber PostEx")
     agent.description =
       "Post-exploitation phase of the engagement. Demonstrates real impact from an existing foothold: privilege escalation, reachable assets and exposed data inside scope, stopping at proof."
     agent.mode = "subagent"
-    agent.system = POSTEX
-    agent.permissions.push({ action: "subagent", resource: "*", effect: "deny" })
+    agent.system = POSTEX + COORDINATION
+    agent.permissions.push(...ForkCyberRoles.permissions("cyber-postex"))
   })
   editor.update(Agent.ID.make("cyber-validate"), (agent) => {
     agent.name = Agent.Name.make("Cyber Validate")
     agent.description =
       "Validation phase of the engagement. Reproduces a reported finding from scratch and confirms or rejects it with raw evidence. Use before a finding is considered reportable."
     agent.mode = "subagent"
-    agent.system = VALIDATE
-    agent.permissions.push({ action: "subagent", resource: "*", effect: "deny" })
+    agent.system = VALIDATE + COORDINATION
+    agent.permissions.push(...ForkCyberRoles.permissions("cyber-validate"))
   })
   editor.update(Agent.ID.make("cyber-report"), (agent) => {
     agent.name = Agent.Name.make("Cyber Report")
     agent.description =
       "Reporting phase of the engagement. Turns validated findings into the fixed report structure with severity and remediation. Read-only: it never tests new hypotheses."
     agent.mode = "subagent"
-    agent.system = REPORT
-    agent.permissions.push(...READ_ONLY)
+    agent.system =
+      REPORT +
+      "\nRead cyber_tasks and cyber_coverage to report pending, blocked and inconclusive work alongside findings. You cannot send network requests, operate environments, or mutate the archive."
+    agent.permissions.push(...ForkCyberRoles.permissions("cyber-report"))
   })
 }

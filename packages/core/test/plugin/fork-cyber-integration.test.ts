@@ -83,11 +83,15 @@ const call = Effect.fn(function* (sessionID: Session.ID, name: string, input: un
   return result.content.flatMap((part) => (part.type === "text" ? [part.text] : [])).join("\n")
 })
 
-const context = Effect.fn(function* (sessionID: Session.ID, kind: "context" | "compaction" | "generate" = "context") {
+const context = Effect.fn(function* (
+  sessionID: Session.ID,
+  kind: "context" | "compaction" | "generate" = "context",
+  agent = "build",
+) {
   const hooks = yield* PluginHooks.Service
   const event = yield* hooks.trigger("session", kind, {
     sessionID,
-    agent: Agent.ID.make("build"),
+    agent: Agent.ID.make(agent),
     model: Model.Ref.make({ providerID: Provider.ID.make("test"), id: Model.ID.make("test") }),
     system: [],
     messages: [],
@@ -115,6 +119,236 @@ it.live("activates in a clean external project without inferring scope from a pr
       expect(yield* call(env.root.id, "engagement", {})).toContain("No engagement recorded")
       expect(yield* context(env.root.id)).toContain("No scope is recorded")
       expect(yield* context(env.root.id, "generate")).not.toContain("# OpenCyber")
+    }).pipe(env.provide)
+  }),
+)
+
+it.live("phase tasks require claims, correlate real evidence and survive compaction and reactivation", () =>
+  Effect.gen(function* () {
+    const env = yield* project
+    const file = path.join(env.directory, "proof.txt")
+    yield* Effect.promise(() => Bun.write(file, "coordination proof"))
+    const records = Schema.decodeUnknownSync(
+      Schema.fromJsonString(Schema.Array(Schema.Struct({ id: Schema.String, kind: Schema.String }))),
+    )
+    const task = Schema.decodeUnknownSync(
+      Schema.fromJsonString(
+        Schema.Struct({
+          status: Schema.String,
+          revision: Schema.Number,
+          executions: Schema.Array(Schema.Struct({ id: Schema.String })),
+        }),
+      ),
+    )
+    yield* Effect.gen(function* () {
+      expect(String(yield* call(env.child.id, "read", { path: file }, "cyber-recon").pipe(Effect.flip))).toContain(
+        "Claim a cyber_tasks task",
+      )
+      expect(yield* call(env.root.id, "evidence", {})).toBe("[]")
+      yield* call(env.root.id, "cyber_tasks", {
+        action: "create",
+        key: "local-proof",
+        asset: "proof.txt",
+        procedure: "Read the marker",
+        phase: "cyber-recon",
+        hypothesis: "The fixture contains a marker",
+      })
+      expect(yield* call(env.child.id, "cyber_coverage", {}, "cyber-report")).toContain('"completed_executions":0')
+      expect(
+        Exit.isFailure(
+          yield* call(
+            env.child.id,
+            "cyber_tasks",
+            { action: "claim", key: "local-proof", revision: 1 },
+            "cyber-report",
+          ).pipe(Effect.exit),
+        ),
+      ).toBe(true)
+      yield* call(env.child.id, "cyber_tasks", { action: "claim", key: "local-proof", revision: 1 }, "cyber-recon")
+      expect(yield* context(env.child.id, "compaction", "cyber-recon")).toContain("Active task: local-proof")
+      expect(yield* call(env.child.id, "read", { path: file }, "cyber-recon")).toContain("coordination proof")
+      const current = task(yield* call(env.root.id, "cyber_tasks", { action: "get", key: "local-proof" }))
+      expect(current.executions).toHaveLength(1)
+      const artifacts = records(yield* call(env.root.id, "evidence", { execution: current.executions[0]!.id }))
+      const output = artifacts.find((artifact) => artifact.kind === "output")!
+      expect(
+        Exit.isFailure(
+          yield* call(
+            env.child.id,
+            "cyber_tasks",
+            {
+              action: "complete",
+              key: "local-proof",
+              revision: 2,
+              outcome: "supported",
+              rationale: "marker",
+              evidence: [],
+            },
+            "cyber-recon",
+          ).pipe(Effect.exit),
+        ),
+      ).toBe(true)
+      yield* call(
+        env.child.id,
+        "cyber_tasks",
+        {
+          action: "complete",
+          key: "local-proof",
+          revision: 2,
+          outcome: "supported",
+          rationale: "The read returned the fixture marker",
+          evidence: [output.id],
+        },
+        "cyber-recon",
+      )
+      const before = yield* call(env.root.id, "cyber_coverage", {})
+      expect(before).toContain('"status":"completed"')
+      expect(before).toContain('"evidence_count":1')
+      const plugins = yield* Plugin.Service
+      const global = yield* Global.Service
+      const permission = yield* Permission.Service
+      yield* plugins.activate([
+        {
+          id: ForkCyberPlugin.Plugin.id,
+          revision: "coordination-reload",
+          effect: (ctx) =>
+            ForkCyberPlugin.Plugin.effect(ctx).pipe(
+              Effect.provideService(Global.Service, global),
+              Effect.provideService(Permission.Service, permission),
+            ),
+        },
+      ])
+      expect(yield* call(env.child.id, "cyber_coverage", {}, "cyber-report")).toBe(before)
+      expect(
+        task(yield* call(env.child.id, "cyber_tasks", { action: "get", key: "local-proof" }, "cyber-report")),
+      ).toMatchObject({ status: "completed", revision: 3 })
+    }).pipe(env.provide)
+  }),
+)
+
+it.live("phase restrictions reject direct tool calls even with permissive agent configuration", () =>
+  Effect.gen(function* () {
+    const env = yield* project
+    yield* Effect.gen(function* () {
+      const plugins = yield* Plugin.Service
+      yield* plugins.awaitActivation
+      const agents = yield* Agent.Service
+      for (const role of ["cyber-recon", "cyber-enum", "cyber-report"]) {
+        yield* agents.transform((editor) =>
+          editor.update(Agent.ID.make(role), (agent) => {
+            agent.permissions.push({ action: "*", resource: "*", effect: "allow" })
+          }),
+        )
+        for (const tool of ["shell", "kali_run", "cyber_browser", "http_replay", "webfetch", "subagent", "execute"]) {
+          expect(String(yield* call(env.child.id, tool, {}, role).pipe(Effect.flip))).toContain(
+            `Role ${role} cannot execute ${tool}`,
+          )
+        }
+        expect(Exit.isFailure(yield* call(env.root.id, "engagement", { manifest }, role).pipe(Effect.exit))).toBe(true)
+      }
+      expect(yield* call(env.root.id, "evidence", {})).toBe("[]")
+      expect(yield* call(env.root.id, "engagement", {})).toContain("No engagement recorded")
+      yield* agents.transform((editor) =>
+        editor.update(Agent.ID.make("build"), (agent) => {
+          agent.permissions.push({ action: "cyber_tasks", resource: "*", effect: "deny" })
+        }),
+      )
+      expect(
+        Exit.isFailure(
+          yield* call(env.root.id, "cyber_tasks", {
+            action: "create",
+            key: "denied",
+            asset: "x",
+            procedure: "x",
+            phase: "cyber-recon",
+          }).pipe(Effect.exit),
+        ),
+      ).toBe(true)
+      expect(yield* call(env.child.id, "cyber_tasks", { action: "list" }, "cyber-report")).toBe("[]")
+    }).pipe(env.provide)
+  }),
+)
+
+it.live("recon HTTP permits observations but denies mutation methods and report network access before traffic", () =>
+  Effect.gen(function* () {
+    const env = yield* project
+    const requests: string[] = []
+    const server = yield* Effect.acquireRelease(
+      Effect.sync(() =>
+        Bun.serve({
+          hostname: "127.0.0.1",
+          port: 0,
+          fetch(request) {
+            requests.push(request.method)
+            return new Response("observed")
+          },
+        }),
+      ),
+      (server) => Effect.promise(() => server.stop(true)),
+    )
+    yield* Effect.gen(function* () {
+      yield* call(env.root.id, "engagement", {
+        manifest: {
+          ...manifest,
+          scope: { domains: ["127.0.0.1"], cidrs: [], excluded: [] },
+          rules_of_engagement: { ...manifest.rules_of_engagement, max_rps: 100 },
+        },
+      })
+      yield* call(env.root.id, "cyber_tasks", {
+        action: "create",
+        key: "http-observation",
+        asset: server.url.href,
+        procedure: "Observe the local endpoint",
+        phase: "cyber-recon",
+      })
+      expect(
+        Exit.isFailure(
+          yield* call(env.child.id, "http_request", { url: server.url.href }, "cyber-recon").pipe(Effect.exit),
+        ),
+      ).toBe(true)
+      yield* call(env.child.id, "cyber_tasks", { action: "claim", key: "http-observation", revision: 1 }, "cyber-recon")
+      for (const method of ["POST", "PUT", "PATCH", "DELETE"]) {
+        expect(
+          Exit.isFailure(
+            yield* call(env.child.id, "http_request", { url: server.url.href, method }, "cyber-recon").pipe(
+              Effect.exit,
+            ),
+          ),
+        ).toBe(true)
+      }
+      expect(
+        Exit.isFailure(
+          yield* call(
+            env.child.id,
+            "http_request",
+            { url: server.url.href, method: "OPTIONS", body: "mutation" },
+            "cyber-recon",
+          ).pipe(Effect.exit),
+        ),
+      ).toBe(true)
+      expect(
+        Exit.isFailure(
+          yield* call(env.child.id, "http_request", { url: server.url.href }, "cyber-report").pipe(Effect.exit),
+        ),
+      ).toBe(true)
+      expect(requests).toEqual([])
+      for (const method of ["GET", "HEAD", "OPTIONS"]) {
+        expect(yield* call(env.child.id, "http_request", { url: server.url.href, method }, "cyber-recon")).toContain(
+          '"status":200',
+        )
+      }
+      expect(requests).toEqual(["GET", "HEAD", "OPTIONS"])
+      expect(yield* call(env.root.id, "cyber_coverage", {})).toContain('"completed_executions":3')
+      expect(
+        Exit.isFailure(
+          yield* call(
+            env.child.id,
+            "findings",
+            { write: { revision: 0, title: "unsupported", status: "confirmed", rationale: "guess", evidence: [] } },
+            "cyber-recon",
+          ).pipe(Effect.exit),
+        ),
+      ).toBe(true)
     }).pipe(env.provide)
   }),
 )

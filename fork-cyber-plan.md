@@ -45,7 +45,7 @@ Code review also identified project-local activation, inconsistent child engagem
 | 3     | HTTP request, replay, compare and evidence retrieval                                 | Controlled two-account lab confirms access-control failures and rejects healthy controls; redirects and errors are tested | Implemented; see HTTP guide            |
 | 4     | Versioned Kali image and execution jobs                                              | Environment per engagement; start, output, cancellation and cleanup work; artifacts survive container removal             | Implemented; see Kali guide            |
 | 5     | Browser sessions and traffic capture                                                 | Captured requests correlate to browser actions and findings; unsupported capture paths are reported                       | Implemented; see browser guide         |
-| 6     | Coverage, hypotheses, task ownership and phase permissions                           | Agents coordinate without duplicate jobs; role restrictions apply at execution, not only in prompts                       | Planned                                |
+| 6     | Coverage, hypotheses, task ownership and phase permissions                           | Agents coordinate without duplicate jobs; role restrictions apply at execution, not only in prompts                       | Implemented; see coordination guide    |
 | 7     | Additional surface modules                                                           | Each module ships procedures, parsers, tools, known-positive and known-negative labs                                      | Planned                                |
 | 8     | Model capability profiles and tuning                                                 | Repeated matched-budget comparisons show improvement on held-out tasks without regressing correctness                     | Planned                                |
 
@@ -54,6 +54,8 @@ Evaluations grow from phase 1 onward. Phase 8 uses those evaluations for optimiz
 Phase 4 usage and limits are documented in [fork-cyber-kali.md](fork-cyber-kali.md). Jobs use fresh workspaces and explicit artifact transfers instead of persistent mutable environments. Raw network access is either disabled or attached to an operator-managed network; manifest-derived raw-process destination, rate and impact enforcement remains pending under CY-10.
 
 Phase 5 usage and capture limits are documented in [fork-cyber-browser.md](fork-cyber-browser.md). Isolated Chromium identities route intercepted HTTP through phase 3 evidence capture. Worker/OOPIF traffic, WebRTC, streaming and other unsupported paths do not constitute verified coverage. Phase 4's raw-process network controls remain a separate open item.
+
+Phase 6 coordination and role contracts are documented in [fork-cyber-coordination.md](fork-cyber-coordination.md). Stable task keys have exclusive durable claims; execution-linked evidence supports hypothesis outcomes and planned coverage. Runtime role checks restrict tools and HTTP methods, not the semantic intent of arbitrary commands or requests. Interrupted tasks retain ownership and are never automatically replayed.
 
 ## Audit backlog and verification
 
