@@ -269,6 +269,8 @@ The only changes to upstream files are the ones in the ledger (section 7).
 
 The cybersecurity roadmap, phase acceptance tests, current limits and engagement migration instructions live in [fork-cyber-plan.md](fork-cyber-plan.md). The fork-owned implementation is in `packages/core/src/fork-cyber/` and `packages/core/src/plugin/fork-cyber.ts`, with unit and real-Location integration tests in `packages/core/test/plugin/fork-cyber*.test.ts`.
 
+Phase 2 storage and lifecycle instructions are in [fork-cyber-storage.md](fork-cyber-storage.md). Fork-only additions include `packages/core/src/fork-cyber/store.ts`, the operator maintenance script `packages/core/script/fork-cyber-archive.ts`, and the optional profile launcher `script/fork-cyber-profile.ts` backed by `packages/cli/src/fork-cyber-profile.ts`. The launcher isolates on-disk data and credentials without changing F-004's installed defaults. Tests cover the archive, concurrent process writers and profile path resolution.
+
 ### 4.1 `fork-sync.yml`
 
 Described in section 3. Security notes that must stay true when editing it:

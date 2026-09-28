@@ -1,5 +1,5 @@
 import { expect, setDefaultTimeout } from "bun:test"
-import { Effect, Exit } from "effect"
+import { Effect, Exit, Schema } from "effect"
 import path from "path"
 import { Agent } from "@opencode/core/agent"
 import { Bus } from "@opencode/core/bus"
@@ -33,7 +33,15 @@ setDefaultTimeout(15_000)
 // Only model fetching, filesystem watchers and model execution are disabled.
 const it = testEffect(
   AppNodeBuilder.build(
-    LayerNode.group([Database.node, Bus.node, KV.node, SessionProjector.node, Session.node, LocationServiceMap.node]),
+    LayerNode.group([
+      Global.node,
+      Database.node,
+      Bus.node,
+      KV.node,
+      SessionProjector.node,
+      Session.node,
+      LocationServiceMap.node,
+    ]),
     [
       Global.node.replace(tempGlobalLayer),
       offlineModels,
@@ -201,7 +209,14 @@ it.live("reloads stored scope and notes after plugin reactivation", () =>
       yield* call(env.child.id, "notes", { append: "retained after reactivation" })
       const plugins = yield* Plugin.Service
       // Replaces the test Location's generation, disposing old hooks and caches.
-      yield* plugins.activate([{ ...ForkCyberPlugin.Plugin, revision: "reactivated" }])
+      const global = yield* Global.Service
+      yield* plugins.activate([
+        {
+          id: ForkCyberPlugin.Plugin.id,
+          revision: "reactivated",
+          effect: (ctx) => ForkCyberPlugin.Plugin.effect(ctx).pipe(Effect.provideService(Global.Service, global)),
+        },
+      ])
       expect(yield* call(env.child.id, "engagement", {})).toContain("local-lab-plan")
       expect(yield* call(env.root.id, "notes", {})).toContain("retained after reactivation")
       expect((yield* context(env.child.id)).match(/# OpenCyber/g)).toHaveLength(1)
@@ -209,7 +224,7 @@ it.live("reloads stored scope and notes after plugin reactivation", () =>
   }),
 )
 
-it.live("keeps legacy records visible and rejects invalid stored scope instead of falling back", () =>
+it.live("keeps legacy records visible until a durable scope supersedes them", () =>
   Effect.gen(function* () {
     const env = yield* project
     const kv = yield* KV.Service
@@ -226,10 +241,57 @@ it.live("keeps legacy records visible and rejects invalid stored scope instead o
         ...manifest,
         scope: { ...manifest.scope, cidrs: ["10.0.0.0/99"] },
       })
-      expect(Exit.isFailure(yield* call(env.child.id, "engagement", {}).pipe(Effect.exit))).toBe(true)
-      expect(yield* context(env.child.id)).toContain("Engagement configuration error")
+      // A successful durable write supersedes legacy KV; later legacy edits cannot overwrite it.
+      expect(yield* call(env.child.id, "engagement", {})).toContain("extra.example.test")
       yield* call(env.root.id, "engagement", { manifest })
       expect(yield* call(env.child.id, "engagement", {})).not.toContain("unverified candidates")
+    }).pipe(env.provide)
+  }),
+)
+
+it.live("captures real tool results, links findings and preserves evidence through compaction", () =>
+  Effect.gen(function* () {
+    const env = yield* project
+    yield* Effect.promise(() =>
+      Bun.write(path.join(env.directory, "proof.txt"), "local proof\nAuthorization: Bearer secret-value"),
+    )
+    const records = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Array(Schema.Struct({ id: Schema.String }))))
+    const artifactRecords = Schema.decodeUnknownSync(
+      Schema.fromJsonString(Schema.Array(Schema.Struct({ id: Schema.String, kind: Schema.String }))),
+    )
+    yield* Effect.gen(function* () {
+      yield* call(env.root.id, "engagement", { manifest })
+      expect(yield* call(env.child.id, "read", { path: path.join(env.directory, "proof.txt") })).toContain(
+        "local proof",
+      )
+      const executions = records(yield* call(env.root.id, "evidence", {}))
+      expect(executions).toHaveLength(1)
+      const artifacts = artifactRecords(yield* call(env.root.id, "evidence", { execution: executions[0]!.id }))
+      expect(artifacts).toHaveLength(2)
+      const output = artifacts.find((artifact) => artifact.kind === "output")!
+      const preview = yield* call(env.child.id, "evidence", { artifact: output.id })
+      expect(preview).toContain("local proof")
+      expect(preview).not.toContain("secret-value")
+      const write = {
+        revision: 0,
+        title: "fixture finding",
+        status: "confirmed",
+        rationale: "fixture only",
+        evidence: [output.id],
+      }
+      yield* call(env.child.id, "findings", { write })
+      expect(Exit.isFailure(yield* call(env.child.id, "findings", { write }, "cyber-report").pipe(Effect.exit))).toBe(
+        true,
+      )
+      expect(yield* call(env.child.id, "findings", {}, "cyber-report")).toContain(output.id)
+      yield* context(env.child.id, "compaction")
+      expect(yield* call(env.root.id, "evidence", { artifact: output.id })).toBe(preview)
+      const other = yield* project
+      expect(Exit.isFailure(yield* call(other.root.id, "evidence", { artifact: output.id }).pipe(Effect.exit))).toBe(
+        true,
+      )
+      yield* call(env.root.id, "read", { path: path.join(env.directory, "missing.txt") }).pipe(Effect.exit)
+      expect(yield* call(env.root.id, "evidence", {})).toContain('"status":"error"')
     }).pipe(env.provide)
   }),
 )
