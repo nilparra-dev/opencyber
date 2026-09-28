@@ -16,6 +16,7 @@ import { ForkCyberNotes } from "../fork-cyber/notes.js"
 import { ForkCyberScope } from "../fork-cyber/scope.js"
 import { ForkCyberStore } from "../fork-cyber/store.js"
 import { ForkCyberHttp } from "../fork-cyber/http.js"
+import { ForkCyberKali } from "../fork-cyber/kali.js"
 import { Permission } from "../permission.js"
 
 const OPERATOR = [
@@ -26,6 +27,7 @@ const OPERATOR = [
   "Distinguish confirmed findings, rejected hypotheses, missing information and execution failures. Never invent evidence.",
   "Notes are durable; only a recent view enters context. Use evidence to retrieve execution and artifact records, and findings to track hypotheses with evidence references. Tool capture records returned data, not unobserved network traffic or full files behind truncated tool output.",
   "Use http_request for scoped HTTP evidence, http_replay to reproduce a captured request with explicit changes, and http_compare to compare outputs. Only these HTTP tools enforce the recorded destinations and shared rate. Confirm access-control findings using known identities, ownership and negative controls.",
+  "Kali is optional. Use kali_run for bounded commands and explicit artifact transfers in the operator-configured Docker environment. kali_environment reports or stops it. Network policy is separate from HTTP scope enforcement; never assume raw commands inherit HTTP limits. Each job has a fresh workspace; preserve files through output artifacts.",
 ].join("\n")
 
 const decodeManifest = Schema.decodeUnknownOption(ForkCyberScope.Manifest)
@@ -192,6 +194,8 @@ export const Plugin = define({
       "http_request",
       "http_replay",
       "http_compare",
+      "kali_run",
+      "kali_environment",
     ])
     const executionID = (event: { sessionID: string; messageID: string; id: string }) =>
       ForkCyberStore.digest(Buffer.from(JSON.stringify([event.sessionID, event.messageID, event.id])))
@@ -274,7 +278,65 @@ export const Plugin = define({
         })),
       ),
     })
+    const kali = Effect.fn(function* (context: Tool.Context, action: string) {
+      if (context.agent === "cyber-report")
+        return yield* Effect.fail(new Error("The reporting agent cannot operate Kali environments"))
+      const configuration = yield* readJsonc(
+        path.join(global.config, "opencyber-kali.jsonc"),
+        Schema.decodeUnknownOption(ForkCyberKali.Config),
+      )
+      if (configuration.status !== "ready")
+        return yield* Effect.fail(
+          new Error("Kali is disabled or invalid. Configure opencyber-kali.jsonc in the operator config directory."),
+        )
+      const manifest = yield* engagement(context.sessionID)
+      if (manifest.status !== "ready" || manifest.value.derived)
+        return yield* Effect.fail(new Error("Kali requires a valid, explicit engagement"))
+      const owner = yield* topLevel(context.sessionID)
+      yield* permission.assert({
+        action,
+        resources: [owner],
+        save: [owner],
+        sessionID: context.sessionID,
+        agent: context.agent,
+        source: { type: "tool", messageID: context.messageID, id: context.id },
+      })
+      return {
+        manager: ForkCyberKali.manager(store, global.data, configuration.value),
+        assessment: { owner, session: context.sessionID, agent: context.agent, manifest: manifest.value },
+      }
+    })
     yield* ctx.tool.transform((editor) => {
+      editor.add({
+        name: "kali_run",
+        options: { codemode: false },
+        input: ForkCyberKali.Run,
+        description:
+          "Run argv in an optional Kali Docker job. Fresh /work, non-root, bounded CPU/memory/files/output/time. Inputs reference this engagement's artifacts; outputs name regular files directly inside /work. Returns stdout/stderr/file artifact IDs and exit code. Default network is none; operator-managed networks do not inherit HTTP scope/rate enforcement. Cancellation destroys the container. No host mounts or inherited provider credentials.",
+        execute: (input, context) =>
+          Effect.gen(function* () {
+            const runtime = yield* kali(context, "kali_run")
+            return { content: JSON.stringify(yield* runtime.manager.run(runtime.assessment, input)) }
+          }).pipe(Effect.mapError((error) => new Tool.Error({ message: String(error) }))),
+      })
+      editor.add({
+        name: "kali_environment",
+        options: { codemode: false },
+        input: Schema.Struct({ action: Schema.Literals(["status", "stop"]) }),
+        description:
+          "Inspect this engagement's Kali containers, or stop them and clear stale admission locks after interruption/restart. Stop cancels active work and deletes its temporary files. Previously archived evidence remains available. Only affects containers labelled for this engagement and data profile.",
+        execute: (input, context) =>
+          Effect.gen(function* () {
+            const runtime = yield* kali(context, "kali_environment")
+            return {
+              content: JSON.stringify(
+                yield* input.action === "status"
+                  ? runtime.manager.status(runtime.assessment.owner)
+                  : runtime.manager.cleanup(runtime.assessment.owner),
+              ),
+            }
+          }).pipe(Effect.mapError((error) => new Tool.Error({ message: String(error) }))),
+      })
       editor.add({
         name: "http_request",
         options: { codemode: false },

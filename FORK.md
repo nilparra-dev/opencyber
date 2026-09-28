@@ -273,6 +273,8 @@ Phase 2 storage and lifecycle instructions are in [fork-cyber-storage.md](fork-c
 
 Phase 3 adds `packages/core/src/fork-cyber/http.ts` and its offline HTTP lab in `packages/core/test/plugin/fork-cyber-http.test.ts`. [fork-cyber-http.md](fork-cyber-http.md) documents request/replay/compare, scope and rate enforcement, evidence capture and limits. HTTP fixture clients and public self-signed TLS fixture credentials live under `packages/core/test/fixture/fork-cyber-*`. The existing F-014 tool-list adjustment includes these native tools.
 
+Phase 4 adds the fork-owned Kali manager in `packages/core/src/fork-cyber/kali.ts`, the versioned image recipe under `fork-kali/`, real Docker tests in `packages/core/test/plugin/fork-cyber-kali.test.ts`, and `.github/workflows/fork-kali.yml`. [fork-cyber-kali.md](fork-cyber-kali.md) covers configuration, artifact transfers, resource limits, cancellation and the network-policy boundary. F-014 also excludes the two new native tools from the upstream-only registry assertion.
+
 ### 4.1 `fork-sync.yml`
 
 Described in section 3. Security notes that must stay true when editing it:

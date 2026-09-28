@@ -119,6 +119,40 @@ it.live("activates in a clean external project without inferring scope from a pr
   }),
 )
 
+it.live("Kali tools are native, optional and reject invalid scope, reporting agents and permission denials", () =>
+  Effect.gen(function* () {
+    const env = yield* project
+    const global = yield* Global.Service
+    yield* Effect.gen(function* () {
+      expect(String(yield* call(env.root.id, "kali_run", { argv: ["true"] }).pipe(Effect.flip))).toContain("disabled")
+      yield* Effect.promise(() =>
+        Bun.write(
+          path.join(global.config, "opencyber-kali.jsonc"),
+          JSON.stringify({
+            image: `sha256:${"a".repeat(64)}`,
+            network: { kind: "none" },
+          }),
+        ),
+      )
+      expect(String(yield* call(env.root.id, "kali_run", { argv: ["true"] }).pipe(Effect.flip))).toContain(
+        "explicit engagement",
+      )
+      yield* call(env.root.id, "engagement", { manifest })
+      expect(
+        Exit.isFailure(yield* call(env.child.id, "kali_run", { argv: ["true"] }, "cyber-report").pipe(Effect.exit)),
+      ).toBe(true)
+      const agents = yield* Agent.Service
+      yield* agents.transform((editor) =>
+        editor.update(Agent.ID.make("build"), (agent) => {
+          agent.permissions.push({ action: "kali_run", resource: "*", effect: "deny" })
+        }),
+      )
+      expect(Exit.isFailure(yield* call(env.child.id, "kali_run", { argv: ["true"] }).pipe(Effect.exit))).toBe(true)
+      expect(yield* call(env.root.id, "evidence", {})).toBe("[]")
+    }).pipe(env.provide)
+  }),
+)
+
 it.live("shares explicit scope with children and keeps reads free of writes", () =>
   Effect.gen(function* () {
     const env = yield* project
