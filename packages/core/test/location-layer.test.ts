@@ -496,6 +496,8 @@ describe("LocationServiceMap", () => {
               "kali_run",
               "kali_environment",
               "cyber_browser",
+              "cyber_tasks",
+              "cyber_coverage",
             ].includes(name)
           expect(blockedTools.filter(upstreamTool).sort()).toEqual([
             "edit",

@@ -7,6 +7,7 @@ import { createHash } from "node:crypto"
 import { mkdir } from "node:fs/promises"
 import path from "node:path"
 import { ForkCyberScope } from "./scope.js"
+import { ForkCyberCoordination } from "./coordination.js"
 
 // Fork-owned database: no upstream migrations or session-table ownership.
 export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string) {
@@ -25,7 +26,7 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
   )
   yield* sql`PRAGMA foreign_keys = ON`
   const version = yield* sql<{ user_version: number }>`PRAGMA user_version`
-  if (![0, 1, 2].includes(version[0]?.user_version ?? -1))
+  if (![0, 1, 2, 3].includes(version[0]?.user_version ?? -1))
     return yield* Effect.fail(new Error("Unsupported OpenCyber evidence database version"))
   if (version[0]?.user_version === 0)
     yield* sql
@@ -88,6 +89,16 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
         }),
       )
 
+  const coordination = ForkCyberCoordination.make(sql)
+  if ((version[0]?.user_version ?? 0) < 3)
+    yield* coordination.initialize.pipe(
+      Effect.retry({
+        while: (error) => error.reason._tag === "LockTimeoutError",
+        times: 3,
+        schedule: Schedule.spaced(25),
+      }),
+    )
+
   // Admit one start, atomically across Locations/processes; waiting callers retry.
   const claimHttp = Effect.fn(function* (owner: string, interval: number) {
     // Evaluate time in the write statement, after SQLite acquires its lock.
@@ -140,6 +151,7 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
     sql.withTransaction(
       Effect.gen(function* () {
         yield* sql`INSERT INTO execution VALUES (${input.id}, ${input.owner}, ${input.session}, ${input.tool}, ${input.agent}, ${Date.now()}, NULL, ${JSON.stringify(input.provenance ?? null)}, 'running')`
+        yield* coordination.attach(input, input.id)
         return yield* artifact(
           input.owner,
           input.id,
@@ -231,7 +243,7 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
             return yield* Effect.fail(new Error(`Artifact integrity check failed: ${artifact.id}`))
         }
         return {
-          format: "opencyber-archive-v1",
+          format: "opencyber-archive-v2",
           owner,
           exported_at: Date.now(),
           engagement: yield* manifest(owner),
@@ -240,6 +252,10 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
           artifacts,
           findings: yield* sql`SELECT * FROM finding WHERE owner = ${owner} ORDER BY id`,
           evidence: yield* sql`SELECT * FROM finding_evidence WHERE owner = ${owner} ORDER BY finding, artifact`,
+          tasks: yield* sql`SELECT * FROM cyber_task WHERE owner = ${owner} ORDER BY key`,
+          task_executions:
+            yield* sql`SELECT * FROM cyber_task_execution WHERE owner = ${owner} ORDER BY task, execution`,
+          task_evidence: yield* sql`SELECT * FROM cyber_task_evidence WHERE owner = ${owner} ORDER BY task, artifact`,
         }
       }),
     )
@@ -249,6 +265,9 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
         yield* sql`INSERT INTO legacy_tombstone VALUES (${owner}) ON CONFLICT DO NOTHING`
         yield* sql`DELETE FROM finding_evidence WHERE owner = ${owner}`
         yield* sql`DELETE FROM finding WHERE owner = ${owner}`
+        yield* sql`DELETE FROM cyber_task_evidence WHERE owner = ${owner}`
+        yield* sql`DELETE FROM cyber_task_execution WHERE owner = ${owner}`
+        yield* sql`DELETE FROM cyber_task WHERE owner = ${owner}`
         yield* sql`DELETE FROM artifact WHERE owner = ${owner}`
         yield* sql`DELETE FROM execution WHERE owner = ${owner}`
         yield* sql`DELETE FROM note WHERE owner = ${owner}`
@@ -273,6 +292,7 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
     purge,
     legacyAllowed,
     claimHttp,
+    coordination,
   }
 })
 
