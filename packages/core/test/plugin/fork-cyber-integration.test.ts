@@ -173,6 +173,49 @@ it.live("shares explicit scope with children and keeps reads free of writes", ()
   }),
 )
 
+it.live("browser activation is optional and checks scope, roles and permissions before launching Chromium", () =>
+  Effect.gen(function* () {
+    const env = yield* project
+    const global = yield* Global.Service
+    yield* Effect.gen(function* () {
+      expect(
+        String(yield* call(env.root.id, "cyber_browser", { action: "open", identity: "alice" }).pipe(Effect.flip)),
+      ).toContain("disabled")
+      yield* Effect.promise(() =>
+        Bun.write(
+          path.join(global.config, "opencyber-browser.jsonc"),
+          JSON.stringify({ executable: path.join(env.directory, "missing-browser") }),
+        ),
+      )
+      expect(
+        Exit.isFailure(
+          yield* call(env.root.id, "cyber_browser", { action: "open", identity: "alice" }).pipe(Effect.exit),
+        ),
+      ).toBe(true)
+      yield* call(env.root.id, "engagement", { manifest })
+      expect(
+        Exit.isFailure(
+          yield* call(env.child.id, "cyber_browser", { action: "open", identity: "alice" }, "cyber-report").pipe(
+            Effect.exit,
+          ),
+        ),
+      ).toBe(true)
+      const agents = yield* Agent.Service
+      yield* agents.transform((editor) =>
+        editor.update(Agent.ID.make("build"), (agent) => {
+          agent.permissions.push({ action: "cyber_browser", resource: "*", effect: "deny" })
+        }),
+      )
+      expect(
+        Exit.isFailure(
+          yield* call(env.child.id, "cyber_browser", { action: "open", identity: "alice" }).pipe(Effect.exit),
+        ),
+      ).toBe(true)
+      expect(yield* call(env.root.id, "evidence", {})).toBe("[]")
+    }).pipe(env.provide)
+  }),
+)
+
 it.live("validates tool input before storage and does not claim signed authorization", () =>
   Effect.gen(function* () {
     const env = yield* project

@@ -125,7 +125,8 @@ export default { path: file, version: ${JSON.stringify(opencodePty.version)}, sh
     entrypoints: ["./src/index.ts"],
     tsconfig: "./tsconfig.json",
     plugins: [appAssetsPlugin, solidPlugin, parcelWatcherPlugin, opencodePtyPlugin, simulationGraphPlugin],
-    external: ["node-gyp"],
+    // fork: Chromium uses CDP; keep Playwright's unused optional BiDi modules out of the binary (F-016).
+    external: ["node-gyp", "chromium-bidi/*"],
     format: "esm",
     minify: true,
     bytecode: true,
