@@ -45,7 +45,7 @@ export function render(manifest: Manifest) {
     `Rules of engagement: max ${manifest.rules_of_engagement.max_rps} requests/second${
       manifest.rules_of_engagement.no_dos ? ", no denial-of-service" : ""
     }, window ${manifest.rules_of_engagement.window}. Security contact: ${manifest.rules_of_engagement.contact}.`,
-    "These are declared limits; the current engagement plugin does not enforce network destinations or request rates.",
+    "The http_request and http_replay tools enforce these destinations and a shared request rate. Other tools and external processes are not constrained by this HTTP policy. The free-text window and no_dos declaration are not machine-enforced technique controls.",
     ...(manifest.derived
       ? [
           "Legacy automatically extracted scope: these are unverified candidates. Record the operator's explicit scope before using them as targets.",

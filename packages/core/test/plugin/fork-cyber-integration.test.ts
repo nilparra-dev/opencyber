@@ -12,6 +12,7 @@ import { Plugin } from "@opencode/core/plugin"
 import { ForkCyberPlugin } from "@opencode/core/plugin/fork-cyber"
 import { PluginHooks } from "@opencode/core/plugin/hooks"
 import { PluginHost } from "@opencode/core/plugin/host"
+import { Permission } from "@opencode/core/permission"
 import { AbsolutePath } from "@opencode/core/schema"
 import { Session } from "@opencode/core/session"
 import { SessionExecution } from "@opencode/core/session/execution"
@@ -210,11 +211,16 @@ it.live("reloads stored scope and notes after plugin reactivation", () =>
       const plugins = yield* Plugin.Service
       // Replaces the test Location's generation, disposing old hooks and caches.
       const global = yield* Global.Service
+      const permission = yield* Permission.Service
       yield* plugins.activate([
         {
           id: ForkCyberPlugin.Plugin.id,
           revision: "reactivated",
-          effect: (ctx) => ForkCyberPlugin.Plugin.effect(ctx).pipe(Effect.provideService(Global.Service, global)),
+          effect: (ctx) =>
+            ForkCyberPlugin.Plugin.effect(ctx).pipe(
+              Effect.provideService(Global.Service, global),
+              Effect.provideService(Permission.Service, permission),
+            ),
         },
       ])
       expect(yield* call(env.child.id, "engagement", {})).toContain("local-lab-plan")
@@ -292,6 +298,82 @@ it.live("captures real tool results, links findings and preserves evidence throu
       )
       yield* call(env.root.id, "read", { path: path.join(env.directory, "missing.txt") }).pipe(Effect.exit)
       expect(yield* call(env.root.id, "evidence", {})).toContain('"status":"error"')
+    }).pipe(env.provide)
+  }),
+)
+
+it.live("registers HTTP tools with inherited scope, replay, comparison and read-only report access", () =>
+  Effect.gen(function* () {
+    const env = yield* project
+    const requests: string[] = []
+    const server = yield* Effect.acquireRelease(
+      Effect.sync(() =>
+        Bun.serve({
+          hostname: "127.0.0.1",
+          port: 0,
+          fetch(request) {
+            requests.push(request.headers.get("authorization") ?? "anonymous")
+            return new Response("local HTTP proof")
+          },
+        }),
+      ),
+      (server) => Effect.promise(() => server.stop(true)),
+    )
+    const records = Schema.decodeUnknownSync(
+      Schema.fromJsonString(Schema.Array(Schema.Struct({ evidence: Schema.String, status: Schema.Number }))),
+    )
+    yield* Effect.gen(function* () {
+      expect(Exit.isFailure(yield* call(env.root.id, "http_request", { url: server.url.href }).pipe(Effect.exit))).toBe(
+        true,
+      )
+      yield* call(env.root.id, "engagement", {
+        manifest: {
+          ...manifest,
+          scope: { domains: ["127.0.0.1"], cidrs: [], excluded: [] },
+          rules_of_engagement: { ...manifest.rules_of_engagement, max_rps: 100 },
+        },
+      })
+      const first = records(
+        yield* call(env.child.id, "http_request", { url: server.url.href, headers: { Authorization: "Bearer alice" } }),
+      )[0]!
+      const second = records(
+        yield* call(env.child.id, "http_replay", {
+          source: first.evidence,
+          changes: { headers: { Authorization: "Bearer bob" } },
+        }),
+      )[0]!
+      expect(first.status).toBe(200)
+      expect(requests).toEqual(["Bearer alice", "Bearer bob"])
+      expect(
+        Exit.isFailure(
+          yield* call(env.root.id, "http_request", { url: server.url.href }, "cyber-report").pipe(Effect.exit),
+        ),
+      ).toBe(true)
+      expect(
+        yield* call(env.child.id, "http_compare", { left: first.evidence, right: second.evidence }, "cyber-report"),
+      ).toContain('"same_body":true')
+      yield* context(env.child.id, "compaction")
+      expect(yield* call(env.child.id, "evidence", { artifact: second.evidence })).toContain("opencyber-http-v1")
+      const agents = yield* Agent.Service
+      yield* agents.transform((editor) =>
+        editor.update(Agent.ID.make("build"), (agent) => {
+          agent.permissions.push({ action: "http_request", resource: server.url.href + "*", effect: "deny" })
+        }),
+      )
+      expect(
+        Exit.isFailure(yield* call(env.child.id, "http_replay", { source: first.evidence }).pipe(Effect.exit)),
+      ).toBe(true)
+      expect(requests).toHaveLength(2)
+      yield* agents.transform((editor) =>
+        editor.update(Agent.ID.make("build"), (agent) => {
+          agent.permissions = agent.permissions.filter((rule) => rule.action !== "http_request")
+        }),
+      )
+      yield* call(env.root.id, "engagement", { exclude: ["127.0.0.1"] })
+      expect(
+        Exit.isFailure(yield* call(env.child.id, "http_replay", { source: first.evidence }).pipe(Effect.exit)),
+      ).toBe(true)
+      expect(requests).toHaveLength(2)
     }).pipe(env.provide)
   }),
 )
