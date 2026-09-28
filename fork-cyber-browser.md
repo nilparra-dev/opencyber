@@ -96,6 +96,8 @@ bun build --compile --format=esm --minify --bytecode --external 'chromium-bidi/*
 
 Use an appropriate temporary executable path on Windows. The real-browser tests are skipped when the environment variable is absent. `.github/workflows/fork-browser.yml` installs matching Chromium on Linux and runs both the browser lab and compiled smoke. Its `chromium` check is separate from existing branch-protection requirements.
 
+On Ubuntu runners, the workflow installs an AppArmor profile permitting user namespaces for that exact downloaded Chromium executable. This follows Chromium's [AppArmor setup guidance](https://chromium.googlesource.com/chromium/src/+/main/docs/security/apparmor-userns-restrictions.md) and keeps browser sandboxing enabled. The profile exists only on the disposable CI runner.
+
 The lab covers separate authenticated accounts, a broken access-control path, a healthy control, anonymous replay, duplicate cookies/localStorage checkpoints, screenshots, redirected/subresource capture, excluded redirects, unsupported WebSockets, request/decompression budgets and interruption. The Location suite covers optional activation and executor permission/role checks.
 
 Local validation used Bun 1.4.2 and Chromium 147 on Windows. All 120 tests passed across 12 Core files, with five existing Windows skips, including the real Chromium and Kali Docker suites. Root `bun run check` passed lint and all 35 typecheck tasks. The standalone compiled browser capture fixture also passed. This is not a full installed-CLI end-to-end test, and no external assessment targets were contacted.
