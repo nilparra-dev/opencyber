@@ -90,7 +90,7 @@ From `packages/core`, set `OPENCYBER_TEST_BROWSER` to the installed Chromium exe
 
 ```sh
 bun test test/plugin/fork-cyber-browser.test.ts
-bun build --compile --external 'chromium-bidi/*' test/fixture/fork-cyber-browser-smoke.ts --outfile /tmp/opencyber-browser-smoke
+bun build --compile --format=esm --minify --bytecode --external 'chromium-bidi/*' test/fixture/fork-cyber-browser-smoke.ts --outfile /tmp/opencyber-browser-smoke
 /tmp/opencyber-browser-smoke
 ```
 
