@@ -1,0 +1,36 @@
+name: fork-kali
+
+on:
+  pull_request:
+    branches: [custom]
+    paths:
+      - fork-kali/**
+      - packages/core/src/fork-cyber/**
+      - packages/core/src/plugin/fork-cyber.ts
+      - packages/core/test/plugin/fork-cyber-kali.test.ts
+      - .github/workflows/fork-kali.yml
+      - bun.lock
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fork-kali-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  docker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/fork-setup-bun
+      - run: docker build --tag opencyber-kali:1 fork-kali
+      - name: Exercise the real Docker lifecycle
+        working-directory: packages/core
+        run: |
+          export OPENCYBER_TEST_KALI_IMAGE="$(docker image inspect opencyber-kali:1 --format '{{.Id}}')"
+          bun test test/plugin/fork-cyber-kali.test.ts

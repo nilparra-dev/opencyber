@@ -493,6 +493,8 @@ describe("LocationServiceMap", () => {
               "http_request",
               "http_replay",
               "http_compare",
+              "kali_run",
+              "kali_environment",
             ].includes(name)
           expect(blockedTools.filter(upstreamTool).sort()).toEqual([
             "edit",
