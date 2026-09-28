@@ -146,18 +146,6 @@ describe("fork-cyber engagement patches", () => {
 })
 
 describe("fork-cyber notes", () => {
-  it("appends normalized entries and caps the list", () => {
-    const notes = Array.from({ length: 50 }, (_, index) => `entry ${index}`)
-    const updated = ForkCyberNotes.append(notes, "  New   finding\nwith spaces  ")
-    expect(updated).toHaveLength(50)
-    expect(updated.at(-1)).toBe("New finding with spaces")
-    expect(updated.at(0)).toBe("entry 1")
-  })
-
-  it("ignores empty entries", () => {
-    expect(ForkCyberNotes.append(["a"], "   ")).toEqual(["a"])
-  })
-
   it("renders newest notes within the budget", () => {
     const old1 = "a".repeat(800)
     const old2 = "b".repeat(800)
@@ -172,8 +160,9 @@ describe("fork-cyber notes", () => {
     expect(ForkCyberNotes.render([])).toBeUndefined()
   })
 
-  it("keeps at least one note even when it exceeds the budget", () => {
+  it("bounds even a single oversized note in the context view", () => {
     const rendered = ForkCyberNotes.render(["y".repeat(2000)])
-    expect(rendered).toContain("y".repeat(2000))
+    expect(rendered).toContain("y".repeat(1000))
+    expect(rendered!.length).toBeLessThanOrEqual(1500)
   })
 })

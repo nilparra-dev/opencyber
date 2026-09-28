@@ -41,7 +41,7 @@ Code review also identified project-local activation, inconsistent child engagem
 | ----- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
 | 0     | Architecture, audit backlog, baseline, migration instructions                        | Every identified gap has a phase and a verification method                                                                | Implemented in this document           |
 | 1     | Built-in activation, structured scope, shared resolution, no corrective refusal loop | Offline unit and real-Location integration tests pass; malformed inputs do not mutate state                               | Implemented; validation recorded below |
-| 2     | Engagement storage, executions, artifacts, findings and retrievable memory           | Restart and compaction preserve evidence; concurrent writes do not lose records; findings link to executions              | Planned                                |
+| 2     | Engagement storage, executions, artifacts, findings and retrievable memory           | Restart and compaction preserve evidence; concurrent writes do not lose records; findings link to executions              | Implemented; see storage guide         |
 | 3     | HTTP request, replay, compare and evidence retrieval                                 | Controlled two-account lab confirms access-control failures and rejects healthy controls; redirects and errors are tested | Planned                                |
 | 4     | Versioned Kali image and execution jobs                                              | Environment per engagement; start, output, cancellation and cleanup work; artifacts survive container removal             | Planned                                |
 | 5     | Browser sessions and traffic capture                                                 | Captured requests correlate to browser actions and findings; unsupported capture paths are reported                       | Planned                                |
@@ -108,7 +108,7 @@ Legacy `derived: true` manifests remain explicitly unverified until replaced wit
 
 Custom `.opencode/cyber/adapters.jsonc` suffixes remain opt-in and operator-controlled. Provider defaults that asserted blanket authorization are removed. Title and generic generation requests do not receive cyber instructions.
 
-`notes` still holds at most 50 bounded, normalized entries in phase 1. It is working memory, not raw evidence storage. Store evidence files separately until phase 2. Same-Location writes are serialized, including concurrent agents. This is not a cross-process transaction guarantee. Reporting agents can read notes and engagement but cannot mutate either.
+In phase 1, `notes` held at most 50 bounded, normalized entries. Phase 2 replaces that storage with durable, paginated rows and captures tool evidence separately. See [fork-cyber-storage.md](fork-cyber-storage.md) for storage contracts, migration, retrieval, export/purge and the optional independent profile. Reporting agents can read the archive but cannot mutate scope, notes or findings.
 
 The old live `fork-cyber-eval.ts` runner and its refusal suite are removed. They launched autonomous tasks against external targets and could classify empty/error results as successful. No live replacement runs until a controlled lab and outcome graders exist.
 
