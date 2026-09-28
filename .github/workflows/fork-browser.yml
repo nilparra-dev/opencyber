@@ -34,6 +34,19 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/fork-setup-bun
       - run: bun node_modules/playwright-core/cli.js install --with-deps chromium
+      # Ubuntu restricts unprivileged user namespaces for downloaded Chromium builds.
+      # Allow only this installed executable to create its sandbox, as Chromium recommends.
+      - name: Allow Chromium sandbox namespaces
+        run: |
+          browser="$(bun -e 'import { chromium } from "playwright-core"; console.log(chromium.executablePath())')"
+          cat <<EOF | sudo tee /etc/apparmor.d/opencyber-chromium
+          abi <abi/4.0>,
+          include <tunables/global>
+          profile opencyber-chromium "$browser" flags=(unconfined) {
+            userns,
+          }
+          EOF
+          sudo apparmor_parser --replace /etc/apparmor.d/opencyber-chromium
       - name: Test real Chromium and a compiled capture client
         run: |
           export OPENCYBER_TEST_BROWSER="$(bun -e 'import { chromium } from "playwright-core"; console.log(chromium.executablePath())')"
