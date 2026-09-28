@@ -1,11 +1,7 @@
 import { ForkCyberAdapters } from "@opencode/core/fork-cyber/adapters"
 import { ForkCyberEngagement } from "@opencode/core/fork-cyber/engagement"
-import { ForkCyberEvalSuite } from "@opencode/core/fork-cyber/eval-suite"
-import { ForkCyberIntake } from "@opencode/core/fork-cyber/intake"
 import { ForkCyberNotes } from "@opencode/core/fork-cyber/notes"
-import { ForkCyberRefusal } from "@opencode/core/fork-cyber/refusal"
 import { ForkCyberScope } from "@opencode/core/fork-cyber/scope"
-import { ForkCyberWire } from "@opencode/core/fork-cyber/wire"
 import { describe, expect, it } from "bun:test"
 import { Option, Schema } from "effect"
 
@@ -50,147 +46,68 @@ describe("fork-cyber scope", () => {
 
   it("renders empty scope lists as none declared", () => {
     const decoded = Option.getOrThrow(decodeManifest({ ...manifest, scope: { domains: [], cidrs: [], excluded: [] } }))
-    expect(ForkCyberScope.render(decoded)).toContain("Scope domains: none declared")
+    expect(ForkCyberScope.render(decoded)).toContain("Scope hosts: none declared")
   })
 
   it("notes an automatically derived scope", () => {
     const decoded = Option.getOrThrow(decodeManifest({ ...manifest, derived: true }))
-    expect(ForkCyberScope.render(decoded)).toContain("derived automatically")
+    expect(ForkCyberScope.render(decoded)).toContain("unverified candidates")
   })
 })
 
-describe("fork-cyber intake", () => {
-  it("extracts URLs and CIDRs from an engagement prompt", () => {
-    expect(ForkCyberIntake.extractTargets("vamos a atacar https://app.acme.com/login y 10.40.0.0/24")).toEqual({
-      domains: ["app.acme.com"],
-      cidrs: ["10.40.0.0/24"],
-    })
+describe("fork-cyber target validation", () => {
+  it.each(["localhost", "app.example.test", "127.0.0.1", "::1", "2001:db8::1"])("accepts host %s", (host) => {
+    expect(Schema.is(ForkCyberScope.Host)(host)).toBe(true)
   })
 
-  it("drops file names that look like hostnames", () => {
-    expect(ForkCyberIntake.extractTargets("mira main.ts, el README.md y app.acme.com").domains).toEqual([
-      "app.acme.com",
-    ])
+  it.each([
+    "[",
+    "[::1]",
+    "999.1.1.1",
+    "https://app.example.test/private",
+    "app.example.test:443",
+    "*.example.test",
+    "",
+    "bad host",
+  ])("rejects ambiguous host %s", (host) => {
+    expect(Schema.is(ForkCyberScope.Host)(host)).toBe(false)
   })
 
-  it("keeps localhost and single IPs as targets", () => {
-    expect(ForkCyberIntake.extractTargets("prueba http://localhost:3000 y 192.168.1.10")).toEqual({
-      domains: ["localhost", "192.168.1.10"],
-      cidrs: [],
-    })
+  it.each(["10.0.0.0/0", "10.0.0.1/32", "2001:db8::/32", "::1/128"])("accepts network %s", (cidr) => {
+    expect(Schema.is(ForkCyberScope.Cidr)(cidr)).toBe(true)
   })
 
-  it("deduplicates repeated targets", () => {
-    expect(ForkCyberIntake.extractTargets("app.acme.com y APP.acme.com").domains).toEqual(["app.acme.com"])
-  })
+  it.each(["10.0.0.0/99", "::/129", "999.0.0.0/24", "10.0.0.0/-1", "10.0.0.0/24/1", "example.test/24"])(
+    "rejects network %s",
+    (cidr) => {
+      expect(Schema.is(ForkCyberScope.Cidr)(cidr)).toBe(false)
+    },
+  )
 
-  it("drafts a manifest with defaults and a derived flag", () => {
-    const draft = ForkCyberIntake.draft("vamos a auditar api.acme.com")
-    expect(draft).toBeDefined()
-    expect(draft?.scope.domains).toEqual(["api.acme.com"])
-    expect(draft?.derived).toBe(true)
-    expect(draft?.rules_of_engagement.no_dos).toBe(true)
-    expect(draft?.authorization_ref).toStartWith("AUTO-")
-  })
-
-  it("drafts nothing without a concrete target", () => {
-    expect(ForkCyberIntake.draft("vamos a hacer un pentest")).toBeUndefined()
-  })
-})
-
-describe("fork-cyber refusal", () => {
-  it("classifies a refusal at the start of short text", () => {
-    expect(ForkCyberRefusal.isRefusal("I can't help with that. This would require authorization.")).toBe(true)
-    expect(ForkCyberRefusal.isRefusal("Lo siento, en lugar de eso puedo ofrecerte una alternativa más segura.")).toBe(
-      true,
-    )
-  })
-
-  it("ignores long reports that quote refusal-like text", () => {
-    const report = "## Finding: prompt-injection\n" + "The target replied: I can't help with that. ".repeat(40)
-    expect(ForkCyberRefusal.isRefusal(report)).toBe(false)
-  })
-
-  it("ignores refusal patterns that appear late in the text", () => {
-    expect(ForkCyberRefusal.isRefusal("Scan finished. Results attached." + "x".repeat(401) + " I cannot assist")).toBe(
-      false,
-    )
-  })
-
-  it("ignores ordinary technical text", () => {
-    expect(ForkCyberRefusal.isRefusal("Nmap reports 10.40.0.1 with ports 22, 80 and 443 open.")).toBe(false)
-  })
-})
-
-describe("fork-cyber wire", () => {
-  const body = {
-    system: [{ type: "text", text: "base system" }],
-    messages: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
-  }
-
-  it("detects the compliance block in the system field", () => {
+  it.each([-10, 0, Infinity, NaN])("rejects invalid request rate %s", (max_rps) => {
     expect(
-      ForkCyberWire.hasCompliance({
-        ...body,
-        system: [{ type: "text", text: "x\n\n# Operator\nstay in scope" }],
-      }),
+      Option.isNone(decodeManifest({ ...manifest, rules_of_engagement: { ...manifest.rules_of_engagement, max_rps } })),
     ).toBe(true)
   })
 
-  it("detects the compliance block after the Claude Code rewrite", () => {
-    expect(
-      ForkCyberWire.hasCompliance({
-        system: [{ type: "text", text: "You are Claude Code, Anthropic's official CLI for Claude." }],
-        messages: [
-          {
-            role: "user",
-            content: [
-              { type: "text", text: "# Operator\nstay in scope" },
-              { type: "text", text: "hi" },
-            ],
-          },
-        ],
-      }),
-    ).toBe(true)
+  it("validates patches at the same target boundary", () => {
+    const decode = Schema.decodeUnknownOption(ForkCyberEngagement.Patch)
+    expect(Option.isNone(decode({ add_targets: ["10.0.0.0/99"] }))).toBe(true)
+    expect(Option.isNone(decode({ exclude: ["https://example.test/path"] }))).toBe(true)
+    expect(Option.isNone(decode({ contact: " " }))).toBe(true)
+    expect(Option.isSome(decode({ add_targets: ["::1"], exclude: ["2001:db8::/32"] }))).toBe(true)
+  })
+})
+
+describe("fork-cyber adapters", () => {
+  it("does not assert authorization based on provider", () => {
+    expect(ForkCyberAdapters.resolve({ providerID: "anthropic", id: "test" })).toBeUndefined()
   })
 
-  it("repairs by prepending to the first user turn under the Claude Code shape", () => {
-    const repaired = ForkCyberWire.repairCompliance(
-      {
-        system: [{ type: "text", text: "You are Claude Code, Anthropic's official CLI for Claude." }],
-        messages: [{ role: "user", content: [{ type: "text", text: "instructions" }] }],
-      },
-      "# Operator\nblock",
-      "You are Claude Code, Anthropic's official CLI for Claude.",
-    )
-    expect(repaired?.system).toEqual([
-      { type: "text", text: "You are Claude Code, Anthropic's official CLI for Claude." },
-    ])
-    expect(repaired?.messages[0]).toEqual({
-      role: "user",
-      content: [
-        { type: "text", text: "# Operator\nblock" },
-        { type: "text", text: "instructions" },
-      ],
-    })
-  })
-
-  it("repairs a plain request by appending to the system field", () => {
-    const repaired = ForkCyberWire.repairCompliance(body, "# Operator\nblock", "other identity")
-    expect(repaired?.system).toEqual([
-      { type: "text", text: "base system" },
-      { type: "text", text: "# Operator\nblock" },
-    ])
-  })
-
-  it("refuses to repair when the Claude Code shape has no user instructions", () => {
-    expect(
-      ForkCyberWire.repairCompliance(
-        { system: [{ type: "text", text: "You are Claude Code, Anthropic's official CLI for Claude." }], messages: [] },
-        "# Operator\nblock",
-        "You are Claude Code, Anthropic's official CLI for Claude.",
-      ),
-    ).toBeUndefined()
+  it("uses explicit provider overrides before model matches", () => {
+    const overrides = { test: { suffix: "provider" }, local: { suffix: "model", match: ["qwen"] } }
+    expect(ForkCyberAdapters.resolve({ providerID: "test", id: "QWEN" }, overrides)).toBe("provider")
+    expect(ForkCyberAdapters.resolve({ providerID: "other", id: "QWEN" }, overrides)).toBe("model")
   })
 })
 
@@ -258,43 +175,5 @@ describe("fork-cyber notes", () => {
   it("keeps at least one note even when it exceeds the budget", () => {
     const rendered = ForkCyberNotes.render(["y".repeat(2000)])
     expect(rendered).toContain("y".repeat(2000))
-  })
-})
-
-describe("fork-cyber eval suite", () => {
-  it("derives the declared targets from every task prompt", () => {
-    for (const task of ForkCyberEvalSuite.tasks) {
-      const extracted = ForkCyberIntake.extractTargets(task.prompt)
-      expect({ id: task.id, domains: [...extracted.domains], cidrs: [...extracted.cidrs] }).toEqual({
-        id: task.id,
-        domains: [...task.targets],
-        cidrs: [...(task.cidrs ?? [])],
-      })
-    }
-  })
-
-  it("drafts an engagement for every task", () => {
-    for (const task of ForkCyberEvalSuite.tasks) expect(ForkCyberIntake.draft(task.prompt)).toBeDefined()
-  })
-})
-
-describe("fork-cyber adapters", () => {
-  it("resolves an exact provider match", () => {
-    expect(ForkCyberAdapters.resolve({ providerID: "anthropic", id: "claude-sonnet-5" })).toContain(
-      "authorized security assessment",
-    )
-  })
-
-  it("resolves a local model by id match when the provider is unknown", () => {
-    expect(ForkCyberAdapters.resolve({ providerID: "lmstudio", id: "qwen3-coder-30b" })).toContain("Never refuse")
-  })
-
-  it("returns nothing for an unknown provider and model", () => {
-    expect(ForkCyberAdapters.resolve({ providerID: "acme", id: "mystery-1" })).toBeUndefined()
-  })
-
-  it("lets an override replace a default", () => {
-    const overrides = { openai: { suffix: "custom suffix" } }
-    expect(ForkCyberAdapters.resolve({ providerID: "openai", id: "gpt-6" }, overrides)).toBe("custom suffix")
   })
 })

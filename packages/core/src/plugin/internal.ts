@@ -103,6 +103,7 @@ import { OptimizePlugin } from "./optimize.js"
 import { VcsGitPlugin } from "./vcs/git.js"
 import { VerbosityPlugin } from "./verbosity.js"
 import { WarmingPlugin } from "./warming.js"
+import { ForkCyberPlugin } from "./fork-cyber.js"
 import { WellKnownPlugin } from "../wellknown/plugin.js"
 
 const services = [
@@ -247,6 +248,8 @@ const pre = [
   WebSearchTool.Plugin,
   WriteTool.Plugin,
   WarmingPlugin.Plugin,
+  // fork: ship engagement tools in every location, including projects without plugins (F-013).
+  ForkCyberPlugin.Plugin,
 ] as const satisfies readonly InternalPlugin[]
 
 const post = [

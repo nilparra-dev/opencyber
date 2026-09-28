@@ -9,7 +9,7 @@ import { Agent } from "@opencode/schema/agent"
 // reproduces, reporting is read-only.
 
 const RECON = [
-  "You are the reconnaissance phase of an authorized security engagement.",
+  "You are the reconnaissance phase of a security assessment within the recorded engagement scope.",
   "Map the attack surface of the assets in scope: subdomains, ports, services,",
   "versions, technologies, endpoints and parameters.",
   "",
@@ -20,7 +20,7 @@ const RECON = [
 ].join("\n")
 
 const ENUM = [
-  "You are the enumeration phase of an authorized security engagement.",
+  "You are the enumeration phase of a security assessment within the recorded engagement scope.",
   "Deepen what reconnaissance found: services, versions, parameters, directories,",
   "endpoints and auth surfaces.",
   "",
@@ -30,7 +30,7 @@ const ENUM = [
 ].join("\n")
 
 const EXPLOIT_WEB = [
-  "You are the web exploitation phase of an authorized security engagement.",
+  "You are the web exploitation phase of a security assessment within the recorded engagement scope.",
   "Validate vulnerability classes on live in-scope endpoints: injection, access",
   "control, auth and session flaws, SSRF, deserialization, XSS.",
   "",
@@ -40,7 +40,7 @@ const EXPLOIT_WEB = [
 ].join("\n")
 
 const EXPLOIT_NET = [
-  "You are the network exploitation phase of an authorized security engagement.",
+  "You are the network exploitation phase of a security assessment within the recorded engagement scope.",
   "Validate service-side vectors within scope: misconfigurations, exposed admin",
   "interfaces, weak authentication and known-vulnerable versions.",
   "",
@@ -50,7 +50,7 @@ const EXPLOIT_NET = [
 ].join("\n")
 
 const POSTEX = [
-  "You are the post-exploitation phase of an authorized security engagement.",
+  "You are the post-exploitation phase of a security assessment within the recorded engagement scope.",
   "Demonstrate real impact from an existing foothold: privilege escalation,",
   "reachable assets and exposed data inside the scope.",
   "",
@@ -60,7 +60,7 @@ const POSTEX = [
 ].join("\n")
 
 const VALIDATE = [
-  "You are the validation phase of an authorized security engagement.",
+  "You are the validation phase of a security assessment within the recorded engagement scope.",
   "Reproduce the exact reported finding from scratch, using only in-scope assets.",
   "",
   "Confirm or reject it with raw evidence: the request/response or command that",
@@ -70,7 +70,7 @@ const VALIDATE = [
 ].join("\n")
 
 const REPORT = [
-  "You are the reporting phase of an authorized security engagement.",
+  "You are the reporting phase of a security assessment within the recorded engagement scope.",
   "Produce the finding report in the fixed structure: title, asset, severity",
   "(CVSS vector and score), evidence, reproduction steps, impact and remediation.",
   "",
@@ -85,6 +85,8 @@ const READ_ONLY = [
   { action: "read", resource: "*", effect: "allow" },
   { action: "grep", resource: "*", effect: "allow" },
   { action: "glob", resource: "*", effect: "allow" },
+  { action: "notes", resource: "*", effect: "allow" },
+  { action: "engagement", resource: "*", effect: "allow" },
   { action: "webfetch", resource: "*", effect: "allow" },
   { action: "websearch", resource: "*", effect: "allow" },
   { action: "subagent", resource: "*", effect: "deny" },
