@@ -8,11 +8,18 @@ import { useExit } from "./exit"
 import { useDialog } from "../ui/dialog"
 import { DialogUpdate } from "../component/dialog-update"
 
-type ClientNotice = { readonly type: "available" | "installed"; readonly version: string }
+// fork: `display` is the human-facing version (`2.0.19 (Cyber)`); `version` stays the release the
+// CLI installs, which is what the dismissal history and apply receive (F-017)
+type ClientNotice = {
+  readonly type: "available" | "installed"
+  readonly version: string
+  readonly display?: string
+}
 type Notice = ClientNotice & ({ readonly source: "client" } | { readonly source: "server"; readonly remote: boolean })
 export type UpdateState =
   | ClientNotice
-  | { readonly type: "installing"; readonly version: string }
+  // fork: the installing line renders `display ?? version`, so the pair travels here too (F-017)
+  | { readonly type: "installing"; readonly version: string; readonly display?: string }
   | { readonly type: "failed"; readonly message: string }
 
 export type UpdateSource = {
@@ -65,7 +72,7 @@ export const { use: useUpdateNotification, provider: UpdateNotificationProvider 
       const updater = props.updater
       const current = state()
       if (!updater || !current || current.type !== "available") return
-      setState({ type: "installing", version: current.version })
+      setState({ type: "installing", version: current.version, display: current.display })
       await updater.apply(current.version).then(
         () => setState({ type: "installed", version: current.version }),
         (error) => setState({ type: "failed", message: errorMessage(error) }),
@@ -77,6 +84,7 @@ export const { use: useUpdateNotification, provider: UpdateNotificationProvider 
       if (!updater || state()?.type === "installing") return
       const result = await updater
         .check(signal, (version) => {
+          // fork: the CLI reports the display form here, so `version` alone renders correctly (F-017)
           if (!signal.aborted) setState({ type: "installing", version })
         })
         .finally(() => {
@@ -101,7 +109,7 @@ export const { use: useUpdateNotification, provider: UpdateNotificationProvider 
       const active = state()
       // The notification can predate an installation through /update.
       if (known && active?.type !== "installing" && !(active?.type === "installed" && active.version === known.version))
-        setState({ type: known.type, version: known.version })
+        setState({ type: known.type, version: known.version, display: known.display })
       const status = state()?.type
       dialog.replace(() => (
         <DialogUpdate

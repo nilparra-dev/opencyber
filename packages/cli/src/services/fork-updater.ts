@@ -28,7 +28,8 @@ const make = Effect.gen(function* () {
   const method = () =>
     Effect.succeed<Updater.Method | undefined>(path.resolve(process.execPath) === binary ? "curl" : undefined)
 
-  // The fork follows every upstream release, so it installs updates unless the shared config says otherwise.
+  // The TUI offers the new release through its `/update` notice, so the default matches upstream's
+  // `notify`; the shared config can still ask for `auto` (install on start) or `disable`.
   const readPolicy = Effect.fnUntraced(function* () {
     const values = yield* Effect.forEach(["config.json", "opencode.json", "opencode.jsonc"], (name) =>
       fs.readFileString(path.join(global.config, name)).pipe(
@@ -36,7 +37,7 @@ const make = Effect.gen(function* () {
         Effect.orElseSucceed(() => undefined),
       ),
     )
-    return values.findLast((value) => value !== undefined) ?? "auto"
+    return values.findLast((value) => value !== undefined) ?? "notify"
   })
 
   const request = (url: string, what: string) =>
@@ -147,7 +148,11 @@ const make = Effect.gen(function* () {
       const policy = yield* readPolicy()
       if (policy === "disable") return undefined
       const version = yield* latest()
-      if (action(yield* Ref.get(installedVersion), version, policy) === "none") return undefined
+      const current = yield* Ref.get(installedVersion)
+      const next = action(current, version, policy)
+      // One line per start, like upstream's check, so a missing TUI notice can be diagnosed.
+      yield* Effect.logInfo("opencyber update check", { current, latest: version, action: next })
+      if (next === "none") return undefined
       if (policy === "notify") return { type: "available" as const, version }
       onInstall(version)
       if (!(yield* install(version))) return yield* Effect.fail(new Error("Installation method not found"))

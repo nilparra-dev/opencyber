@@ -3,6 +3,7 @@ import { Effect, FileSystem } from "effect"
 import { Global } from "@opencode/util/global"
 import type { TuiInput } from "../../src/app"
 import type { Config } from "../../src/config"
+import type { UpdateSource } from "../../src/context/update-notification"
 import { createEventStream, createFetch, type FetchHandler } from "./tui-client"
 import { tmpdir } from "./fixture"
 
@@ -14,6 +15,8 @@ export async function createAppFixture(
     config?: Config.Info
     args?: TuiInput["args"]
     fetch?: FetchHandler
+    // fork: drives the update notice with a fake updater (F-017)
+    updater?: UpdateSource
   } = {},
 ) {
   // fork: app fixtures must not reuse persisted tabs or model choices (F-018)
@@ -38,6 +41,7 @@ export async function createAppFixture(
       packages: { prepare: async () => ({ directory: "" }) },
       terminalHandoff: async () => ({ renderer: setup.renderer, mode: "dark", complete: ready.resolve }),
       args: input.args ?? {},
+      updater: input.updater, // fork: drives the update notice with a fake updater (F-017)
       log: () => {},
     }).pipe(
       Effect.provide(Global.layerWith({ state: input.state ?? state?.path })),

@@ -137,6 +137,8 @@ function UpdateNotification(props: { width: number }) {
     <Show when={update.notification()} keyed>
       {(state) => {
         const remote = state.source === "server" && state.remote
+        // fork: releases read as `2.0.19 (Cyber)` instead of their `-cyber.N` tag (F-017)
+        const version = state.display ?? state.version
         return (
           <Show when={!remote || state.type === "available"}>
             <box
@@ -164,8 +166,8 @@ function UpdateNotification(props: { width: number }) {
                 {remote
                   ? "remote server update available"
                   : state.type === "installed"
-                    ? ` restart to use v${state.version}`
-                    : ` to install v${state.version}`}
+                    ? ` restart to use v${version}`
+                    : ` to install v${version}`}
               </FadeInText>
             </box>
           </Show>

@@ -10,7 +10,7 @@ import { Updater } from "../../services/updater"
 import { UpdatePreflight } from "../../services/update-preflight"
 import { Npm } from "@opencode/util/npm"
 import { OPENCODE_ARTIFACT, OPENCODE_CHANNEL } from "../../version"
-import { OPENCODE_DISPLAY_VERSION } from "../../fork-version" // fork: display version (F-005)
+import { OPENCODE_DISPLAY_VERSION, displayVersion } from "../../fork-version" // fork: display version (F-005)
 import { Env } from "../../env"
 import { Service } from "@opencode/client/effect/service"
 import { OpenCode } from "@opencode/client/promise"
@@ -66,7 +66,9 @@ export default Runtime.handler(Commands, (input) =>
     const update = yield* updater
       .run((version) => {
         installing = version
-        updateListeners.forEach((notify) => notify(version))
+        // fork: these listeners only feed the update dialog's progress line, so they get the
+        // human-facing version (F-005)
+        updateListeners.forEach((notify) => notify(displayVersion(version)))
       })
       .pipe(Effect.ensuring(Effect.sync(() => (installing = undefined))), Effect.forkScoped)
     preflight.loading()
@@ -107,19 +109,33 @@ export default Runtime.handler(Commands, (input) =>
       },
       updater: {
         remote: requestedServer !== undefined,
+        // fork: the TUI keeps `version` machine-readable for its dismissal history and for apply,
+        // and renders `display` as `2.0.19 (Cyber)` (F-005)
         subscribe: (notify, signal) =>
           runPromise(
             Fiber.join(update).pipe(
-              Effect.flatMap((result) => (result === undefined ? Effect.void : Effect.sync(() => notify(result)))),
+              Effect.flatMap((result) =>
+                result === undefined
+                  ? Effect.void
+                  : Effect.sync(() => notify({ ...result, display: displayVersion(result.version) })),
+              ),
             ),
             { signal },
           ),
         check: (signal, notify) => {
-          if (installing) notify(installing)
+          if (installing) notify(displayVersion(installing))
           updateListeners.add(notify)
-          return runPromise(Fiber.join(update).pipe(Effect.flatMap(() => updater.check())), { signal }).finally(() =>
-            updateListeners.delete(notify),
-          )
+          return runPromise(
+            Fiber.join(update).pipe(
+              Effect.flatMap(() => updater.check()),
+              Effect.map((result) =>
+                result && result.type !== "unavailable"
+                  ? { ...result, display: displayVersion(result.version) }
+                  : result,
+              ),
+            ),
+            { signal },
+          ).finally(() => updateListeners.delete(notify))
         },
         apply: (version) => runPromise(updater.apply(version)),
       },

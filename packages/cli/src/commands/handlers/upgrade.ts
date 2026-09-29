@@ -5,6 +5,7 @@ import { Runtime } from "../../framework/runtime"
 import { Updater } from "../../services/updater"
 import { handlePromptErrors } from "../../ui/prompt"
 import { OPENCODE_VERSION } from "../../version"
+import { displayVersion } from "../../fork-version" // fork: display version (F-005)
 import { stripVTControlCharacters } from "node:util"
 
 export default Runtime.handler(
@@ -23,12 +24,12 @@ export default Runtime.handler(
       const target = Option.getOrUndefined(input.target) ?? (yield* updater.latest())
       const version = target.trim().replace(/^v/, "")
       if (version === OPENCODE_VERSION) {
-        log.warn(`OpenCode upgrade skipped: ${version} is already installed`)
+        log.warn(`OpenCode upgrade skipped: ${displayVersion(version)} is already installed`)
         outro("Done")
         return
       }
 
-      log.info(`From ${OPENCODE_VERSION} → ${version}`)
+      log.info(`From ${displayVersion(OPENCODE_VERSION)} → ${displayVersion(version)}`)
       const progress = spinner()
       progress.start("Upgrading...")
       yield* updater.upgrade(method, target).pipe(
