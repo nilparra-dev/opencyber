@@ -196,6 +196,8 @@ test("bounded binary capture, deadlines, invalid headers and redirect budgets", 
             yield* ForkCyberHttp.run(store, resolve, { url: `${server.url}/slow`, timeout_ms: 300 }).pipe(Effect.exit),
           ),
         ).toBe(true)
+        // A deadline may expire before dispatch; invalid headers must add no traffic in either case.
+        const beforeInvalid = visited.slice()
         expect(
           Exit.isFailure(
             yield* ForkCyberHttp.run(store, resolve, { url: server.url, headers: { Host: "outside.test" } }).pipe(
@@ -203,7 +205,7 @@ test("bounded binary capture, deadlines, invalid headers and redirect budgets", 
             ),
           ),
         ).toBe(true)
-        expect(visited).toHaveLength(3)
+        expect(visited).toEqual(beforeInvalid)
         expect(yield* ForkCyberHttp.run(store, resolve, { url: `${server.url}/loop`, redirects: 2 })).toHaveLength(3)
       }),
     ),
