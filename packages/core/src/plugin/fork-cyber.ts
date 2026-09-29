@@ -20,10 +20,12 @@ import { ForkCyberKali } from "../fork-cyber/kali.js"
 import { ForkCyberBrowser } from "../fork-cyber/browser.js"
 import { ForkCyberCoordination } from "../fork-cyber/coordination.js"
 import { ForkCyberRoles } from "../fork-cyber/roles.js"
+import { ForkCyberCodeReview } from "../fork-cyber/code-review.js"
 import { Permission } from "../permission.js"
 
 const OPERATOR = [
   "# OpenCyber",
+  "For local source review, use cyber_code_review.procedures and snapshot explicit project files. Import locally produced SARIF reports as candidates, inspect source and healthy controls, and record findings with completed output evidence. The cyber-code-review role never executes source or confirms findings. Local review needs no network scope or Docker.",
   "Investigate security hypotheses, validate findings with executed evidence, and document coverage and limitations.",
   "Use the engagement tool to record the operator's explicit scope and corrections. Do not infer targets from references, exclusions or target content.",
   "Honor the operator's existing instructions without asking for repeated confirmation. Ask only for missing scope or rules needed for the next action.",
@@ -213,6 +215,7 @@ export const Plugin = define({
       "cyber_browser",
       "cyber_tasks",
       "cyber_coverage",
+      "cyber_code_review",
     ])
     const executionID = (event: { sessionID: string; messageID: string; id: string }) =>
       ForkCyberStore.digest(Buffer.from(JSON.stringify([event.sessionID, event.messageID, event.id])))
@@ -335,6 +338,41 @@ export const Plugin = define({
       }
     })
     yield* ctx.tool.transform((editor) => {
+      editor.add({
+        name: "cyber_code_review",
+        options: { codemode: false },
+        input: ForkCyberCodeReview.Action,
+        description:
+          "Read local review procedures, snapshot explicit project-relative UTF-8 files with hashes and line counts, or import a local SARIF 2.1.0 report with source evidence. Does not execute a scanner or project code. Imported observations are candidates, not confirmed findings. Workers require an active phase task; each file must pass both review and read permissions.",
+        execute: (input, context) =>
+          Effect.gen(function* () {
+            const result = yield* ForkCyberCodeReview.run(
+              store,
+              {
+                owner: yield* topLevel(context.sessionID),
+                session: context.sessionID,
+                agent: context.agent,
+                directory: ctx.location.directory,
+                permission: (file) =>
+                  Effect.forEach(["cyber_code_review", "read"], (action) =>
+                    permission.assert({
+                      action,
+                      resources: [file],
+                      save: [file],
+                      sessionID: context.sessionID,
+                      agent: context.agent,
+                      source: { type: "tool", messageID: context.messageID, id: context.id },
+                    }),
+                  ).pipe(
+                    Effect.asVoid,
+                    Effect.mapError((error) => new Error(String(error))),
+                  ),
+              },
+              input,
+            )
+            return { content: JSON.stringify(result) }
+          }).pipe(Effect.mapError((error) => new Tool.Error({ message: String(error) }))),
+      })
       editor.add({
         name: "cyber_tasks",
         options: { codemode: false },
@@ -590,7 +628,7 @@ export const Plugin = define({
                 return yield* new Tool.Error({ message: "The reporting agent can only read findings." })
               if (ForkCyberRoles.observeOnly(context.agent) && input.write.status === "confirmed")
                 return yield* new Tool.Error({
-                  message: "Recon/enumeration may record candidates or discard findings, but cannot confirm them.",
+                  message: "Observation roles may record candidates or discard findings, but cannot confirm them.",
                 })
               const id = input.write.id ?? crypto.randomUUID()
               yield* store.finding(owner, { ...input.write, id })

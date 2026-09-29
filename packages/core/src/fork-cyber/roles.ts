@@ -9,6 +9,7 @@ export const Phase = Schema.Literals([
   "cyber-exploit-net",
   "cyber-postex",
   "cyber-validate",
+  "cyber-code-review",
 ])
 export type Phase = typeof Phase.Type
 export const worker = Schema.is(Phase)
@@ -26,10 +27,11 @@ const read = [
   "cyber_coverage",
 ]
 const observe = [...read, "http_request"]
-const assess = [...observe, "http_replay", "cyber_browser", "kali_run", "kali_environment"]
+const assess = [...observe, "http_replay", "cyber_browser", "kali_run", "kali_environment", "cyber_code_review"]
 
 export function tools(agent: string) {
   if (agent === "cyber-report") return read
+  if (agent === "cyber-code-review") return [...read, "cyber_code_review"]
   if (agent === "cyber-recon" || agent === "cyber-enum") return observe
   if (worker(agent)) return assess
   return undefined
@@ -47,5 +49,5 @@ export function permissions(agent: string) {
 }
 
 export function observeOnly(agent: string) {
-  return agent === "cyber-recon" || agent === "cyber-enum"
+  return agent === "cyber-recon" || agent === "cyber-enum" || agent === "cyber-code-review"
 }

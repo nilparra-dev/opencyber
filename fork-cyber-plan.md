@@ -37,17 +37,17 @@ Code review also identified project-local activation, inconsistent child engagem
 
 ## Delivery phases
 
-| Phase | Deliverable                                                                          | Acceptance                                                                                                                | Status                                 |
-| ----- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- |
-| 0     | Architecture, audit backlog, baseline, migration instructions                        | Every identified gap has a phase and a verification method                                                                | Implemented in this document           |
-| 1     | Built-in activation, structured scope, shared resolution, no corrective refusal loop | Offline unit and real-Location integration tests pass; malformed inputs do not mutate state                               | Implemented; validation recorded below |
-| 2     | Engagement storage, executions, artifacts, findings and retrievable memory           | Restart and compaction preserve evidence; concurrent writes do not lose records; findings link to executions              | Implemented; see storage guide         |
-| 3     | HTTP request, replay, compare and evidence retrieval                                 | Controlled two-account lab confirms access-control failures and rejects healthy controls; redirects and errors are tested | Implemented; see HTTP guide            |
-| 4     | Versioned Kali image and execution jobs                                              | Environment per engagement; start, output, cancellation and cleanup work; artifacts survive container removal             | Implemented; see Kali guide            |
-| 5     | Browser sessions and traffic capture                                                 | Captured requests correlate to browser actions and findings; unsupported capture paths are reported                       | Implemented; see browser guide         |
-| 6     | Coverage, hypotheses, task ownership and phase permissions                           | Agents coordinate without duplicate jobs; role restrictions apply at execution, not only in prompts                       | Implemented; see coordination guide    |
-| 7     | Additional surface modules                                                           | Each module ships procedures, parsers, tools, known-positive and known-negative labs                                      | Planned                                |
-| 8     | Model capability profiles and tuning                                                 | Repeated matched-budget comparisons show improvement on held-out tasks without regressing correctness                     | Planned                                |
+| Phase | Deliverable                                                                          | Acceptance                                                                                                                | Status                                              |
+| ----- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| 0     | Architecture, audit backlog, baseline, migration instructions                        | Every identified gap has a phase and a verification method                                                                | Implemented in this document                        |
+| 1     | Built-in activation, structured scope, shared resolution, no corrective refusal loop | Offline unit and real-Location integration tests pass; malformed inputs do not mutate state                               | Implemented; validation recorded below              |
+| 2     | Engagement storage, executions, artifacts, findings and retrievable memory           | Restart and compaction preserve evidence; concurrent writes do not lose records; findings link to executions              | Implemented; see storage guide                      |
+| 3     | HTTP request, replay, compare and evidence retrieval                                 | Controlled two-account lab confirms access-control failures and rejects healthy controls; redirects and errors are tested | Implemented; see HTTP guide                         |
+| 4     | Versioned Kali image and execution jobs                                              | Environment per engagement; start, output, cancellation and cleanup work; artifacts survive container removal             | Implemented; see Kali guide                         |
+| 5     | Browser sessions and traffic capture                                                 | Captured requests correlate to browser actions and findings; unsupported capture paths are reported                       | Implemented; see browser guide                      |
+| 6     | Coverage, hypotheses, task ownership and phase permissions                           | Agents coordinate without duplicate jobs; role restrictions apply at execution, not only in prompts                       | Implemented; see coordination guide                 |
+| 7     | Additional surface modules                                                           | Each module ships procedures, parsers, tools, known-positive and known-negative labs                                      | Local code review implemented; more modules planned |
+| 8     | Model capability profiles and tuning                                                 | Repeated matched-budget comparisons show improvement on held-out tasks without regressing correctness                     | Planned                                             |
 
 Evaluations grow from phase 1 onward. Phase 8 uses those evaluations for optimization; it is not the first testing phase. Each phase may need several small PRs to `custom`. Complete and verify each change before starting the next dependency.
 
@@ -57,7 +57,9 @@ Phase 5 usage and capture limits are documented in [fork-cyber-browser.md](fork-
 
 Phase 6 coordination and role contracts are documented in [fork-cyber-coordination.md](fork-cyber-coordination.md). Stable task keys have exclusive durable claims; execution-linked evidence supports hypothesis outcomes and planned coverage. Runtime role checks restrict tools and HTTP methods, not the semantic intent of arbitrary commands or requests. Interrupted tasks retain ownership and are never automatically replayed.
 
-Before phase 7, CY-10 is implemented with the bounded contract in its guide. A real Fireworks DeepSeek V4.1 Flash run through the compiled CLI completed a delegated recon task with exactly one loopback HTTP request and one linked evidence artifact. Phase 7 remains unstarted. Linux CI for these changes and the release installer/updater are separate from the local checks.
+Before phase 7, CY-10 is implemented with the bounded contract in its guide. A real Fireworks DeepSeek V4.1 Flash run through the compiled CLI completed a delegated recon task with exactly one loopback HTTP request and one linked evidence artifact. Linux CI for these changes and the release installer/updater are separate from the local checks.
+
+Phase 7 starts with the [local code-review module](fork-cyber-code-review.md): explicit source snapshots, a bounded SARIF parser, a restricted review role, evidence-linked tasks and a reproducible SQL-injection/healthy-control lab. It does not run scanners or reviewed code. Additional surface modules remain planned according to engagements and available environments; phase 8 has not started.
 
 ## Audit backlog and verification
 

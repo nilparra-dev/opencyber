@@ -237,6 +237,123 @@ it.live("phase tasks require claims, correlate real evidence and survive compact
   }),
 )
 
+it.live("local code review is native, enforces read permissions and keeps candidates evidence-linked", () =>
+  Effect.gen(function* () {
+    const env = yield* project
+    yield* Effect.promise(() =>
+      Bun.write(path.join(env.directory, "source.ts"), "export const marker = 'review proof'\n"),
+    )
+    const review = Schema.decodeUnknownSync(
+      Schema.fromJsonString(
+        Schema.Struct({
+          output: Schema.String,
+          files: Schema.Array(Schema.Struct({ artifact: Schema.String, sha256: Schema.String })),
+        }),
+      ),
+    )
+    yield* Effect.gen(function* () {
+      expect(yield* call(env.child.id, "cyber_code_review", { action: "procedures" }, "cyber-code-review")).toContain(
+        "local-code-review-v1",
+      )
+      expect(
+        String(
+          yield* call(
+            env.child.id,
+            "cyber_code_review",
+            { action: "snapshot", files: ["source.ts"] },
+            "cyber-code-review",
+          ).pipe(Effect.flip),
+        ),
+      ).toContain("Claim a cyber_tasks task")
+      yield* call(env.root.id, "cyber_tasks", {
+        action: "create",
+        key: "source-review",
+        asset: "source.ts",
+        procedure: "Inspect local source",
+        phase: "cyber-code-review",
+        hypothesis: "The source contains a marker",
+      })
+      yield* call(
+        env.child.id,
+        "cyber_tasks",
+        { action: "claim", key: "source-review", revision: 1 },
+        "cyber-code-review",
+      )
+      const captured = review(
+        yield* call(
+          env.child.id,
+          "cyber_code_review",
+          { action: "snapshot", files: ["source.ts"] },
+          "cyber-code-review",
+        ),
+      )
+      expect(
+        yield* call(env.child.id, "evidence", { artifact: captured.files[0]!.artifact }, "cyber-report"),
+      ).toContain("review proof")
+      expect(yield* call(env.root.id, "engagement", {})).toContain("No engagement recorded")
+      const write = {
+        revision: 0,
+        title: "Local candidate",
+        status: "candidate",
+        rationale: "Needs controlled validation",
+        evidence: [captured.output],
+      }
+      yield* call(env.child.id, "findings", { write }, "cyber-code-review")
+      expect(
+        String(
+          yield* call(env.child.id, "findings", { write: { ...write, status: "confirmed" } }, "cyber-code-review").pipe(
+            Effect.flip,
+          ),
+        ),
+      ).toContain("cannot confirm")
+      yield* call(
+        env.child.id,
+        "cyber_tasks",
+        {
+          action: "complete",
+          key: "source-review",
+          revision: 2,
+          outcome: "observed",
+          rationale: "Source captured; no security conclusion",
+          evidence: [captured.output],
+        },
+        "cyber-code-review",
+      )
+      expect(yield* context(env.child.id, "compaction", "cyber-code-review")).toContain("local source review")
+      expect(yield* call(env.child.id, "findings", {}, "cyber-report")).toContain(captured.output)
+      const agents = yield* Agent.Service
+      yield* agents.transform((editor) =>
+        editor.update(Agent.ID.make("build"), (agent) => {
+          agent.permissions.push({ action: "read", resource: path.join(env.directory, "source.ts"), effect: "deny" })
+        }),
+      )
+      expect(
+        yield* call(env.root.id, "cyber_code_review", { action: "snapshot", files: ["source.ts"] }).pipe(
+          Effect.isFailure,
+        ),
+      ).toBe(true)
+      const plugins = yield* Plugin.Service
+      const global = yield* Global.Service
+      const permission = yield* Permission.Service
+      yield* plugins.activate([
+        {
+          id: ForkCyberPlugin.Plugin.id,
+          revision: "review-reload",
+          effect: (ctx) =>
+            ForkCyberPlugin.Plugin.effect(ctx).pipe(
+              Effect.provideService(Global.Service, global),
+              Effect.provideService(Permission.Service, permission),
+            ),
+        },
+      ])
+      expect(
+        yield* call(env.child.id, "evidence", { artifact: captured.files[0]!.artifact }, "cyber-report"),
+      ).toContain(captured.files[0]!.sha256)
+      expect(yield* call(env.child.id, "cyber_coverage", {}, "cyber-report")).toContain('"evidence_count":1')
+    }).pipe(env.provide)
+  }),
+)
+
 it.live("phase restrictions reject direct tool calls even with permissive agent configuration", () =>
   Effect.gen(function* () {
     const env = yield* project
@@ -244,7 +361,7 @@ it.live("phase restrictions reject direct tool calls even with permissive agent 
       const plugins = yield* Plugin.Service
       yield* plugins.awaitActivation
       const agents = yield* Agent.Service
-      for (const role of ["cyber-recon", "cyber-enum", "cyber-report"]) {
+      for (const role of ["cyber-recon", "cyber-enum", "cyber-report", "cyber-code-review"]) {
         yield* agents.transform((editor) =>
           editor.update(Agent.ID.make(role), (agent) => {
             agent.permissions.push({ action: "*", resource: "*", effect: "allow" })

@@ -1,0 +1,50 @@
+name: fork-code-review
+
+on:
+  pull_request:
+    branches: [custom]
+    paths:
+      - packages/core/src/fork-cyber/**
+      - packages/core/src/plugin/fork-cyber.ts
+      - packages/core/test/plugin/fork-cyber-code-review.test.ts
+      - packages/core/test/plugin/fork-cyber-integration.test.ts
+      - packages/core/test/fixture/fork-cyber-code-review/**
+      - packages/core/test/fixture/fork-cyber-code-review-smoke.ts
+      - .github/workflows/fork-code-review.yml
+      - bun.lock
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fork-code-review-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  source-review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: packages/core
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/fork-setup-bun
+      - name: Generate a real offline analyzer report
+        run: |
+          docker run --rm --network none \
+            --mount "type=bind,source=$PWD/test/fixture/fork-cyber-code-review,target=/src,readonly" \
+            --workdir /src --entrypoint semgrep \
+            semgrep/semgrep:1.178.0@sha256:32e459968daabe7ab86968184a29109b9564aa00392401156f9788452b42786b \
+            scan --config rules.yml --sarif --metrics off --disable-version-check \
+            --no-git-ignore --no-rewrite-rule-ids vulnerable.ts healthy.ts > /tmp/scan.sarif
+          cp /tmp/scan.sarif test/fixture/fork-cyber-code-review/scan.sarif
+      - name: Test source review, controls and compiled evidence capture
+        run: |
+          bun test test/plugin/fork-cyber-code-review.test.ts test/plugin/fork-cyber-integration.test.ts
+          bun build --compile --format=esm --minify --bytecode test/fixture/fork-cyber-code-review-smoke.ts --outfile /tmp/opencyber-code-review-smoke
+          cd /tmp
+          ./opencyber-code-review-smoke
