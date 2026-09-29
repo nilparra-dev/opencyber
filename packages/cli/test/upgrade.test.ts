@@ -26,7 +26,7 @@ describe("upgrade command", () => {
     const result = await cli(["v0.0.0-beta-target", "--method", "pnpm"])
     expect(result.exitCode).toBe(0)
     expect(result.events).toEqual([{ method: "pnpm", version: "v0.0.0-beta-target" }])
-    expect(result.stdout).toContain("0.0.0-beta-old → 0.0.0-beta-target")
+    expect(result.stdout).toContain("0.0.0 (Cyber) → 0.0.0 (Cyber)") // fork: display version (F-005)
   })
 
   test("accepts the short method flag and an explicit major upgrade", async () => {

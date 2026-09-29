@@ -4,6 +4,7 @@ import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
 import { Global } from "@opencode/util/global"
 import type { TuiInput } from "../../src/app"
 import type { Config } from "../../src/config"
+import type { UpdateSource } from "../../src/context/update-notification"
 import { createEventStream, createFetch, type FetchHandler } from "./tui-client"
 
 export async function createAppFixture(
@@ -14,6 +15,8 @@ export async function createAppFixture(
     config?: Config.Info
     args?: TuiInput["args"]
     fetch?: FetchHandler
+    // fork: drives the update notice with a fake updater (F-017)
+    updater?: UpdateSource
   } = {},
 ) {
   const { run } = await import("../../src/app")
@@ -36,6 +39,7 @@ export async function createAppFixture(
       packages: { prepare: async () => ({ directory: "" }) },
       terminalHandoff: async () => ({ renderer: setup.renderer, mode: "dark", complete: ready.resolve }),
       args: input.args ?? {},
+      updater: input.updater, // fork: drives the update notice with a fake updater (F-017)
       log: () => {},
     }).pipe(
       Effect.provide(input.state ? Global.layerWith({ state: input.state }) : AppNodeBuilder.build(Global.node)),

@@ -113,7 +113,10 @@ export function DialogUpdate(props: {
               </Match>
               <Match when={current.type === "installing"}>
                 <Spinner shimmer={theme.text.base}>
-                  {current.type === "installing" ? `Installing OpenCode ${current.version}…` : ""}
+                  {/* fork: releases read as `2.0.19 (Cyber)` instead of their `-cyber.N` tag (F-017) */}
+                  {current.type === "installing"
+                    ? `Installing OpenCode ${current.display ?? current.version}…`
+                    : ""}
                 </Spinner>
               </Match>
               <Match when={current.type === "installed"}>
