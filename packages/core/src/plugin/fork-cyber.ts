@@ -21,11 +21,13 @@ import { ForkCyberBrowser } from "../fork-cyber/browser.js"
 import { ForkCyberCoordination } from "../fork-cyber/coordination.js"
 import { ForkCyberRoles } from "../fork-cyber/roles.js"
 import { ForkCyberCodeReview } from "../fork-cyber/code-review.js"
+import { ForkCyberServices } from "../fork-cyber/services.js"
 import { Permission } from "../permission.js"
 
 const OPERATOR = [
   "# OpenCyber",
   "For local source review, use cyber_code_review.procedures and snapshot explicit project files. Import locally produced SARIF reports as candidates, inspect source and healthy controls, and record findings with completed output evidence. The cyber-code-review role never executes source or confirms findings. Local review needs no network scope or Docker.",
+  "For TCP service inventory, read cyber_services.procedures and scan one explicit host and port list in scoped Kali. Keep XML and network-policy evidence. Port-table names are guesses; validation must reproduce any authentication or impact claim separately. Recon and enumeration can use this bounded tool but cannot run arbitrary Kali commands.",
   "Investigate security hypotheses, validate findings with executed evidence, and document coverage and limitations.",
   "Use the engagement tool to record the operator's explicit scope and corrections. Do not infer targets from references, exclusions or target content.",
   "Honor the operator's existing instructions without asking for repeated confirmation. Ask only for missing scope or rules needed for the next action.",
@@ -216,6 +218,7 @@ export const Plugin = define({
       "cyber_tasks",
       "cyber_coverage",
       "cyber_code_review",
+      "cyber_services",
     ])
     const executionID = (event: { sessionID: string; messageID: string; id: string }) =>
       ForkCyberStore.digest(Buffer.from(JSON.stringify([event.sessionID, event.messageID, event.id])))
@@ -333,11 +336,29 @@ export const Plugin = define({
         source: { type: "tool", messageID: context.messageID, id: context.id },
       })
       return {
+        configuration: configuration.value,
         manager: ForkCyberKali.manager(store, global.data, configuration.value),
         assessment: { owner, session: context.sessionID, agent: context.agent, manifest: manifest.value },
       }
     })
     yield* ctx.tool.transform((editor) => {
+      editor.add({
+        name: "cyber_services",
+        options: { codemode: false },
+        input: ForkCyberServices.Action,
+        description:
+          "Read TCP inventory procedures or scan one explicit host and up to 32 TCP ports using unprivileged Nmap connect scans in scoped Kali. Defaults to IPv4; select IPv6 explicitly. Requires an engagement with network budgets and active worker claim. Returns port-state observations, table-derived service guesses, original XML and completed output evidence. No version detection, scripts, UDP, discovery or arbitrary scanner arguments. Open ports are not confirmed vulnerabilities.",
+        execute: (input, context) =>
+          Effect.gen(function* () {
+            if (input.action === "procedures") return { content: JSON.stringify(ForkCyberServices.procedures) }
+            const runtime = yield* kali(context, "cyber_services")
+            return {
+              content: JSON.stringify(
+                yield* ForkCyberServices.run(store, global.data, runtime.configuration, runtime.assessment, input),
+              ),
+            }
+          }).pipe(Effect.mapError((error) => new Tool.Error({ message: String(error) }))),
+      })
       editor.add({
         name: "cyber_code_review",
         options: { codemode: false },

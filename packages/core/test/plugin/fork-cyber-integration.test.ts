@@ -535,6 +535,49 @@ it.live("shares explicit scope with children and keeps reads free of writes", ()
   }),
 )
 
+it.live("TCP service procedures need no Docker; scan prerequisites and permissions apply before execution", () =>
+  Effect.gen(function* () {
+    const env = yield* project
+    const global = yield* Global.Service
+    yield* Effect.gen(function* () {
+      for (const role of ["cyber-recon", "cyber-enum"])
+        expect(yield* call(env.child.id, "cyber_services", { action: "procedures" }, role)).toContain("tcp-services-v1")
+      for (const role of ["cyber-report", "cyber-code-review"])
+        expect(
+          String(yield* call(env.child.id, "cyber_services", { action: "procedures" }, role).pipe(Effect.flip)),
+        ).toContain(`Role ${role} cannot execute cyber_services`)
+      const scan = { action: "scan", host: "app.example.test", ports: [80] }
+      expect(String(yield* call(env.root.id, "cyber_services", scan).pipe(Effect.flip))).toContain("disabled")
+      yield* Effect.promise(() =>
+        Bun.write(
+          path.join(global.config, "opencyber-kali.jsonc"),
+          JSON.stringify({
+            image: `sha256:${"0".repeat(64)}`,
+            network: { kind: "scoped", name: "services-test" },
+          }),
+        ),
+      )
+      expect(String(yield* call(env.root.id, "cyber_services", scan).pipe(Effect.flip))).toContain(
+        "explicit engagement",
+      )
+      yield* call(env.root.id, "engagement", { manifest })
+      expect(String(yield* call(env.child.id, "cyber_services", scan, "cyber-enum").pipe(Effect.flip))).toContain(
+        "Claim a cyber_tasks task",
+      )
+      expect(String(yield* call(env.root.id, "cyber_services", scan).pipe(Effect.flip))).toContain("network budgets")
+      const agents = yield* Agent.Service
+      yield* agents.transform((editor) =>
+        editor.update(Agent.ID.make("build"), (agent) => {
+          agent.permissions.push({ action: "cyber_services", resource: "*", effect: "deny" })
+        }),
+      )
+      expect(Exit.isFailure(yield* call(env.root.id, "cyber_services", scan).pipe(Effect.exit))).toBe(true)
+      expect(yield* call(env.root.id, "evidence", {})).toBe("[]")
+      expect(yield* context(env.child.id, "compaction", "cyber-enum")).toContain("TCP service inventory")
+    }).pipe(env.provide)
+  }),
+)
+
 it.live("browser activation is optional and checks scope, roles and permissions before launching Chromium", () =>
   Effect.gen(function* () {
     const env = yield* project

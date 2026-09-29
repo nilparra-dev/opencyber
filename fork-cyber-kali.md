@@ -9,11 +9,13 @@ The implementation uses a fresh container per job, associated with the top-level
 Use Docker with Linux containers and a Docker CLI accessible to the OpenCyber service. Build from the repository root:
 
 ```sh
-docker build --tag opencyber-kali:2 fork-kali
-docker image inspect opencyber-kali:2 --format '{{.Id}}'
+docker build --tag opencyber-kali:3 fork-kali
+docker image inspect opencyber-kali:3 --format '{{.Id}}'
 ```
 
 The Dockerfile pins the official Kali base by digest. Its package repository is rolling, so a rebuild can install newer package versions. The resulting image ID and `/opt/opencyber/packages.txt` identify what actually ran; this is not a claim of bit-for-bit reproducible builds. Keep/export the built image if exact replay matters. The initial selection includes curl, nmap, DNS utilities, sqlmap, Python, jq, ripgrep and OpenSSL. Extend the Dockerfile deliberately; the base image does not contain every Kali tool.
+
+Image version 3 removes Nmap's packaged file capabilities so it can run under the existing capability-free workload. The [TCP inventory module](fork-cyber-services.md) invokes the underlying binary with `--unprivileged`; arbitrary privileged/raw scans remain unavailable.
 
 Create `opencyber-kali.jsonc` in the service's operator configuration directory, `Global.config`. With the optional profile launcher this is that profile's configuration directory. This file is not loaded from the assessed project's `.opencode` directory. Replace the sample image value with the full local ID printed above:
 
@@ -24,7 +26,7 @@ Create `opencyber-kali.jsonc` in the service's operator configuration directory,
   "cpus": 1,
   "memory_mb": 512,
   "work_mb": 128,
-  "timeout_ms": 300000
+  "timeout_ms": 300000,
 }
 ```
 
@@ -33,7 +35,7 @@ An absent or malformed file disables Kali execution. Image tags are rejected; ex
 Record an explicit engagement with the existing `engagement` tool, then call:
 
 ```json
-{"argv":["nmap","--version"]}
+{ "argv": ["/usr/lib/nmap/nmap", "--unprivileged", "--version"] }
 ```
 
 To preserve a generated file:
@@ -86,7 +88,7 @@ The Docker suite builds no mocks. It executes the selected Kali image, transfers
 PowerShell:
 
 ```powershell
-$env:OPENCYBER_TEST_KALI_IMAGE = docker image inspect opencyber-kali:2 --format '{{.Id}}'
+$env:OPENCYBER_TEST_KALI_IMAGE = docker image inspect opencyber-kali:3 --format '{{.Id}}'
 Set-Location packages/core
 bun test test/plugin/fork-cyber-kali.test.ts test/plugin/fork-cyber-network.test.ts
 ```

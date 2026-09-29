@@ -499,6 +499,7 @@ describe("LocationServiceMap", () => {
               "cyber_tasks",
               "cyber_coverage",
               "cyber_code_review",
+              "cyber_services",
             ].includes(name)
           expect(blockedTools.filter(upstreamTool).sort()).toEqual([
             "edit",
