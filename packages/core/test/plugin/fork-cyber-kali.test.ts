@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { Effect, Exit, Fiber, Schema } from "effect"
+import { Cause, Effect, Exit, Fiber, Schema } from "effect"
 import path from "node:path"
 import { ForkCyberKali } from "@opencode/core/fork-cyber/kali"
 import { ForkCyberStore } from "@opencode/core/fork-cyber/store"
@@ -209,9 +209,18 @@ dockerTest(
               yield* Effect.sleep(100)
           }).pipe(Effect.timeout(20000))
           expect((yield* connected.cleanup("another-owner")).removed).toEqual([])
-          yield* connected.cleanup(assessment.owner)
-          expect(Exit.isFailure(yield* Fiber.await(job))).toBe(true)
+          // A second client can inspect the environment while stop and the job finalizer remove it.
+          yield* Effect.all(
+            [
+              connected.cleanup(assessment.owner),
+              ...Array.from({ length: 8 }, () => env.manager.status(assessment.owner)),
+            ],
+            { concurrency: "unbounded" },
+          )
+          const stopped = yield* Fiber.await(job)
+          expect(Exit.isFailure(stopped) && !Cause.hasDies(stopped.cause)).toBe(true)
           expect(yield* connected.status(assessment.owner)).toEqual([])
+          expect((yield* env.store.executions(assessment.owner)).every((item) => item.status !== "running")).toBe(true)
           expect((yield* env.store.readArtifact(assessment.owner, result.stdout)).bytes.length).toBeGreaterThan(0)
         }),
       ),

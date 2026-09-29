@@ -71,7 +71,7 @@ export function manager(store: Store, profile: string, config: Config) {
       Effect.map((result) => result.stdout.toString().trim().split(/\s+/).filter(Boolean)),
     )
   const status = Effect.fn(function* (owner: string) {
-    return yield* Effect.forEach(yield* list(owner), (id) =>
+    return (yield* Effect.forEach(yield* list(owner), (id) =>
       owned(owner, id).pipe(
         Effect.map((item) => ({
           id: item.Id,
@@ -80,8 +80,13 @@ export function manager(store: Store, profile: string, config: Config) {
           policy: item.Config.Labels["org.opencyber.policy"],
           execution: item.Config.Labels["org.opencyber.execution"],
         })),
+        // Stop and the job finalizer can remove a listed container before inspection.
+        Effect.catchIf(
+          (error) => error.message.trim().toLowerCase() === `docker exited 1: error: no such object: ${id}`,
+          () => Effect.undefined,
+        ),
       ),
-    )
+    )).filter((item) => item !== undefined)
   })
   const cleanup = Effect.fn(function* (owner: string, includeLock = true, execution?: string) {
     // Remove by immutable ID, never by a name that another caller can reuse.
