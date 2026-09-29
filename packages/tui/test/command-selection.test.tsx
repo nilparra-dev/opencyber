@@ -71,7 +71,13 @@ test("custom commands commit the captured agent, model and variant before execut
     await setup.mockInput.typeText("second")
     await setup.renderOnce()
     setup.mockInput.pressEnter()
-    await setup.waitForFrame((frame) => frame.includes("Select variant") && frame.includes("low"))
+    // fork: the variant filter takes focus after its first frame (F-018)
+    await setup.waitForFrame(
+      (frame) =>
+        frame.includes("Select variant") &&
+        frame.includes("low") &&
+        setup.renderer.currentFocusedRenderable instanceof InputRenderable,
+    )
     await setup.mockInput.typeText("low")
     await setup.renderOnce()
     setup.mockInput.pressEnter()

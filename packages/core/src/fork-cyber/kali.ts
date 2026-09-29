@@ -1,9 +1,11 @@
 export * as ForkCyberKali from "./kali.js"
 
 import { spawn } from "node:child_process"
+import { isIP } from "node:net"
 import { Cause, Effect, Exit, Schema } from "effect"
 import { ForkCyberStore } from "./store.js"
 import { ForkCyberScope } from "./scope.js"
+import { ForkCyberNetwork } from "./network.js"
 
 const integer = (minimum: number, maximum: number) =>
   Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum, maximum }))
@@ -13,9 +15,8 @@ export const Config = Schema.Struct({
   network: Schema.Union([
     Schema.Struct({ kind: Schema.Literal("none") }),
     Schema.Struct({
-      kind: Schema.Literal("operator-managed"),
+      kind: Schema.Literal("scoped"),
       name: Schema.String.check(Schema.isPattern(/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/)),
-      control_ref: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(1024)),
     }),
   ]),
   memory_mb: Schema.optional(integer(256, 8192)),
@@ -70,7 +71,7 @@ export function manager(store: Store, profile: string, config: Config) {
       Effect.map((result) => result.stdout.toString().trim().split(/\s+/).filter(Boolean)),
     )
   const status = Effect.fn(function* (owner: string) {
-    return yield* Effect.forEach(yield* list(owner), (id) =>
+    return (yield* Effect.forEach(yield* list(owner), (id) =>
       owned(owner, id).pipe(
         Effect.map((item) => ({
           id: item.Id,
@@ -79,15 +80,21 @@ export function manager(store: Store, profile: string, config: Config) {
           policy: item.Config.Labels["org.opencyber.policy"],
           execution: item.Config.Labels["org.opencyber.execution"],
         })),
+        // Stop and the job finalizer can remove a listed container before inspection.
+        Effect.catchIf(
+          (error) => error.message.trim().toLowerCase() === `docker exited 1: error: no such object: ${id}`,
+          () => Effect.undefined,
+        ),
       ),
-    )
+    )).filter((item) => item !== undefined)
   })
   const cleanup = Effect.fn(function* (owner: string, includeLock = true, execution?: string) {
     // Remove by immutable ID, never by a name that another caller can reuse.
     const containers = (yield* status(owner)).filter(
       (item) => (includeLock || item.kind !== "lock") && (execution === undefined || item.execution === execution),
     )
-    for (const container of containers.toSorted((a, b) => Number(a.kind === "lock") - Number(b.kind === "lock")))
+    const order = (kind: string | undefined) => (kind === "lock" ? 2 : kind === "guard" ? 1 : 0)
+    for (const container of containers.toSorted((a, b) => order(a.kind) - order(b.kind)))
       yield* command(["rm", "-f", container.id])
     return { removed: containers.map((item) => item.id), evidence_preserved: true }
   })
@@ -95,11 +102,16 @@ export function manager(store: Store, profile: string, config: Config) {
     Effect.uninterruptibleMask((restore) =>
       Effect.gen(function* () {
         if (assessment.manifest.derived) return yield* Effect.fail(new Error("Kali requires an explicit engagement"))
-        if (config.network.kind === "operator-managed" && ["host", "bridge", "none"].includes(config.network.name))
-          return yield* Effect.fail(new Error("Use a dedicated operator-managed audit network"))
+        if (config.network.kind === "scoped" && ["host", "bridge", "none"].includes(config.network.name))
+          return yield* Effect.fail(new Error("Use a dedicated scoped audit network"))
+        const budget = config.network.kind === "scoped" ? assessment.manifest.rules_of_engagement.network : undefined
+        if (config.network.kind === "scoped" && !budget)
+          return yield* Effect.fail(
+            new Error("Scoped Kali networking requires explicit network budgets in the engagement"),
+          )
         const id = crypto.randomUUID()
         const owner = assessment.owner
-        const timeout = Math.min(input.timeout_ms ?? 60000, config.timeout_ms ?? 300000)
+        const timeout = Math.min(input.timeout_ms ?? 60000, config.timeout_ms ?? 300000, budget?.duration_ms ?? 900000)
         const inputs = yield* Effect.forEach(input.inputs ?? [], (file) =>
           store
             .readArtifact(owner, file.artifact)
@@ -149,12 +161,62 @@ export function manager(store: Store, profile: string, config: Config) {
           })
           const stdout: Buffer[] = []
           const stderr: Buffer[] = []
+          const guards: string[] = []
           const execute = Effect.gen(function* () {
             const containers = yield* status(owner)
-            if (containers.some((item) => item.kind === "environment"))
+            if (containers.some((item) => item.kind !== "lock"))
               return yield* Effect.fail(new Error("A stale Kali environment exists; stop it before starting a new job"))
+            const network = yield* Effect.gen(function* () {
+              if (!budget) return undefined
+              const reserved = yield* store.reserveNetwork(owner, budget.bytes_per_job, budget.bytes_total)
+              const resolver = (yield* command(
+                createArgs(`${name(owner)}-resolver`, identity(owner), policy, config, id, 30000, { kind: "resolver" }),
+              )).stdout
+                .toString()
+                .trim()
+              yield* command(["start", resolver])
+              const hosts = [
+                ...new Set(
+                  [...assessment.manifest.scope.domains, ...assessment.manifest.scope.excluded]
+                    .map(ForkCyberScope.normalize)
+                    .filter((value) => !value.includes("/") && !isIP(value)),
+                ),
+              ]
+              const resolved = yield* command(
+                ["exec", "-i", resolver, "python3", "-I", "-c", ForkCyberNetwork.RESOLVE],
+                JSON.stringify(hosts),
+              )
+              const addresses = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(ForkCyberNetwork.Addresses))(
+                resolved.stdout.toString(),
+              )
+              yield* command(["rm", "-f", resolver])
+              const rules = yield* Effect.try(() => ForkCyberNetwork.policy(assessment.manifest, addresses))
+              const guard = (yield* command(
+                createArgs(`${name(owner)}-guard`, identity(owner), policy, config, id, timeout, {
+                  kind: "guard",
+                  addresses,
+                }),
+              )).stdout
+                .toString()
+                .trim()
+              guards.push(guard)
+              yield* command(["start", guard])
+              // Install the complete policy before creating a container that can execute model commands.
+              yield* command(["exec", "-i", guard, "nft", "-f", "-"], rules)
+              yield* store.artifact(
+                owner,
+                id,
+                "kali.network.policy",
+                Buffer.from(JSON.stringify({ rules, addresses, budget, reserved_bytes: reserved })),
+                "application/json",
+              )
+              return { guard }
+            })
             const environment = (yield* command(
-              createArgs(name(owner), identity(owner), policy, config, id, timeout),
+              createArgs(name(owner), identity(owner), policy, config, id, timeout, {
+                kind: "environment",
+                ...(network ? { network: `container:${network.guard}` } : {}),
+              }),
             )).stdout
               .toString()
               .trim()
@@ -192,6 +254,13 @@ export function manager(store: Store, profile: string, config: Config) {
             return { exit_code: result.code, files: artifacts, environment }
           })
           const result = yield* execute.pipe(Effect.exit)
+          const counters = yield* Effect.forEach(guards, (guard) =>
+            command(["exec", guard, "nft", "-j", "list", "table", "inet", "opencyber"]).pipe(
+              Effect.flatMap((result) =>
+                store.artifact(owner, id, "kali.network.counters", result.stdout, "application/json"),
+              ),
+            ),
+          ).pipe(Effect.exit)
           const output = yield* store.artifact(
             owner,
             id,
@@ -216,11 +285,17 @@ export function manager(store: Store, profile: string, config: Config) {
               ? result.value
               : { error: Cause.pretty(result.cause), output_may_be_truncated: true }),
             ...(Exit.isFailure(removed) ? { cleanup_error: Cause.pretty(removed.cause) } : {}),
+            ...(Exit.isFailure(counters) ? { network_capture_error: Cause.pretty(counters.cause) } : {}),
           }
           const finished = yield* store.finish(
             owner,
             id,
-            Exit.isSuccess(result) && result.value.exit_code === 0 && Exit.isSuccess(removed) ? "completed" : "error",
+            Exit.isSuccess(result) &&
+              result.value.exit_code === 0 &&
+              Exit.isSuccess(removed) &&
+              Exit.isSuccess(counters)
+              ? "completed"
+              : "error",
             summary,
           )
           if (Exit.isFailure(result))
@@ -230,6 +305,10 @@ export function manager(store: Store, profile: string, config: Config) {
           if (Exit.isFailure(removed))
             return yield* Effect.fail(
               new Error(`Kali cleanup failed; evidence ${finished[0]!.id}. ${Cause.pretty(removed.cause)}`),
+            )
+          if (Exit.isFailure(counters))
+            return yield* Effect.fail(
+              new Error(`Kali network audit failed; evidence ${finished[0]!.id}. ${Cause.pretty(counters.cause)}`),
             )
           return {
             execution: id,
@@ -248,7 +327,18 @@ export function manager(store: Store, profile: string, config: Config) {
   return { run, status, cleanup }
 }
 
-function createArgs(name: string, owner: string, policy: string, config: Config, execution: string, timeout: number) {
+function createArgs(
+  name: string,
+  owner: string,
+  policy: string,
+  config: Config,
+  execution: string,
+  timeout: number,
+  options:
+    | { kind: "resolver" }
+    | { kind: "guard"; addresses: ForkCyberNetwork.Addresses }
+    | { kind: "environment"; network?: string } = { kind: "environment" },
+) {
   const memory = config.memory_mb ?? 512
   return [
     "create",
@@ -259,20 +349,25 @@ function createArgs(name: string, owner: string, policy: string, config: Config,
     "--label",
     `${label}=${owner}`,
     "--label",
-    "org.opencyber.kind=environment",
+    `org.opencyber.kind=${options.kind}`,
     "--label",
     `org.opencyber.policy=${policy}`,
     "--label",
     `org.opencyber.execution=${execution}`,
     "--network",
-    config.network.kind === "none" ? "none" : config.network.name,
+    (options.kind === "environment" ? options.network : undefined) ??
+      (config.network.kind === "none" ? "none" : config.network.name),
+    ...Object.entries(options.kind === "guard" ? options.addresses : {}).flatMap(([host, addresses]) =>
+      addresses.flatMap((address) => ["--add-host", `${host}=${address}`]),
+    ),
     "--read-only",
     "--cap-drop",
     "ALL",
+    ...(options.kind === "guard" ? ["--cap-add", "NET_ADMIN"] : []),
     "--security-opt",
     "no-new-privileges:true",
     "--user",
-    "1000:1000",
+    options.kind === "guard" ? "0:0" : "1000:1000",
     "--cpus",
     String(config.cpus ?? 1),
     "--memory",

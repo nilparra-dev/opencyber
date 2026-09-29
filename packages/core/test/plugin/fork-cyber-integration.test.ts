@@ -117,6 +117,17 @@ it.live("activates in a clean external project without inferring scope from a pr
         { state: { status: "active" } },
       ])
       expect(yield* call(env.root.id, "engagement", {})).toContain("No engagement recorded")
+      const agents = yield* Agent.Service
+      for (const role of ["cyber-exploit-web", "cyber-exploit-net", "cyber-postex", "cyber-validate"]) {
+        yield* agents.transform((editor) =>
+          editor.update(Agent.ID.make(role), (agent) => {
+            agent.permissions.push({ action: "*", resource: "*", effect: "allow" })
+          }),
+        )
+        expect(String(yield* call(env.child.id, "shell", {}, role).pipe(Effect.flip))).toContain(
+          `Role ${role} cannot execute shell`,
+        )
+      }
       expect(yield* context(env.root.id)).toContain("No scope is recorded")
       expect(yield* context(env.root.id, "generate")).not.toContain("# OpenCyber")
     }).pipe(env.provide)

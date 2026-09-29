@@ -8,6 +8,7 @@ on:
       - packages/core/src/fork-cyber/**
       - packages/core/src/plugin/fork-cyber.ts
       - packages/core/test/plugin/fork-cyber-kali.test.ts
+      - packages/core/test/plugin/fork-cyber-network.test.ts
       - .github/workflows/fork-kali.yml
       - bun.lock
   workflow_dispatch:
@@ -28,9 +29,9 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/fork-setup-bun
-      - run: docker build --tag opencyber-kali:1 fork-kali
+      - run: docker build --tag opencyber-kali:2 fork-kali
       - name: Exercise the real Docker lifecycle
         working-directory: packages/core
         run: |
-          export OPENCYBER_TEST_KALI_IMAGE="$(docker image inspect opencyber-kali:1 --format '{{.Id}}')"
-          bun test test/plugin/fork-cyber-kali.test.ts
+          export OPENCYBER_TEST_KALI_IMAGE="$(docker image inspect opencyber-kali:2 --format '{{.Id}}')"
+          bun test test/plugin/fork-cyber-kali.test.ts test/plugin/fork-cyber-network.test.ts
