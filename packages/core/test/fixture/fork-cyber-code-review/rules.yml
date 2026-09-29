@@ -1,0 +1,6 @@
+rules:
+  - id: local-sql-concatenation
+    languages: [typescript]
+    severity: WARNING
+    message: SQL query uses concatenated values. Trace input provenance and compare a bound-parameter control before confirming injection.
+    pattern: $DB.query($LEFT + $RIGHT)

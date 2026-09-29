@@ -17,7 +17,7 @@ Example inputs for `cyber_tasks`:
 {"action":"claim","key":"api-items-bob-validation","revision":1}
 ```
 
-Phases are `cyber-recon`, `cyber-enum`, `cyber-exploit-web`, `cyber-exploit-net`, `cyber-postex` and `cyber-validate`. Validation tasks require a hypothesis. A phase agent can claim only its own phase. The primary agent can claim work directly when delegation is unnecessary.
+Phases are `cyber-recon`, `cyber-enum`, `cyber-exploit-web`, `cyber-exploit-net`, `cyber-postex`, `cyber-validate` and `cyber-code-review`. Validation tasks require a hypothesis. A phase agent can claim only its own phase. The primary agent can claim work directly when delegation is unnecessary.
 
 Claims are conditional SQLite writes. One task has one claimant, and one session/agent pair can hold one active task per engagement. Separate Locations and processes use the same constraints. Every transition requires the current revision; a conflict requires another read. Claims do not expire, so a slow or interrupted job cannot silently acquire a second worker.
 
@@ -69,6 +69,7 @@ The built-in role permission lists and the tool execution hook share one allowli
 | Web/network exploitation and post-exploitation | Local inspection, scoped HTTP/replay, browser and Kali; archive and task operations                                                                         | Active claim required; no host shell, subdelegation or scope changes                                                            |
 | Validation                                     | Same execution tools, with a validation-phase task carrying an explicit hypothesis                                                                                 | Runtime checks task ownership and phase, not whether an arbitrary command semantically reproduces only the stated hypothesis |
 | Reporting                                      | Local inspection, archive/task/coverage reads and recorded HTTP comparison                                                                                         | No network tools, shell, environments, archive mutations or claims                                                           |
+| Local code review                              | Local inspection, explicit source snapshots and SARIF imports, notes, candidate/discarded findings and task coordination                                            | Active claim required for capture; no network tools, shell, Kali, subdelegation, scope changes or confirmed findings             |
 
 The normal primary agent is not converted into a restricted phase agent. Report-local reads still produce automatic tool audit records, as before; "read-only" concerns requested mutations and assessment effects.
 
