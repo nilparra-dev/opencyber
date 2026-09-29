@@ -12,6 +12,10 @@ import { Npm } from "@opencode/util/npm"
 import { OPENCODE_ARTIFACT, OPENCODE_CHANNEL } from "../../version"
 import { OPENCODE_DISPLAY_VERSION } from "../../fork-version" // fork: display version (F-005)
 import { Env } from "../../env"
+import { Service } from "@opencode/client/effect/service"
+import { OpenCode } from "@opencode/client/promise"
+import { findSession } from "../../session-target"
+import { errorMessage } from "../../util/error"
 
 export default Runtime.handler(Commands, (input) =>
   Effect.gen(function* () {
@@ -47,6 +51,15 @@ export default Runtime.handler(Commands, (input) =>
         Effect.promise(() => preflight.fail("OpenCode update could not start the new background service")),
       ),
     )
+    const session = Option.getOrUndefined(input.session)
+    // A missing --session ID becomes the ID of the session the first prompt creates.
+    const sessionExists =
+      session !== undefined &&
+      (yield* Effect.tryPromise({
+        try: () =>
+          findSession(OpenCode.make({ baseUrl: server.endpoint.url, headers: Service.headers(server.endpoint) }), session),
+        catch: (cause) => new Error(errorMessage(cause)),
+      })) !== undefined
     const updater = yield* Updater.Service
     let installing: string | undefined
     const updateListeners = new Set<(version: string) => void>()
@@ -82,7 +95,8 @@ export default Runtime.handler(Commands, (input) =>
       },
       args: {
         continue: input.continue,
-        sessionID: Option.getOrUndefined(input.session),
+        sessionID: sessionExists ? session : undefined,
+        newSessionID: sessionExists ? undefined : session,
         prompt: Option.getOrUndefined(input.prompt),
         auto: input.auto || input.yolo || input.dangerouslySkipPermissions,
       },
