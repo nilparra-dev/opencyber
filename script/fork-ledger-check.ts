@@ -20,7 +20,9 @@ function releaseNumber(tag: string) {
   return major * 1_000_000 + minor * 1_000 + patch
 }
 
-const tag = git("tag", "-l", "v2.*")
+// Newest release the ref already contains: a release published after the last sync would
+// otherwise list every version bump as a fork change and block the PRs that deliver the sync.
+const tag = git("tag", "-l", "v2.*", "--merged", ref)
   .stdout.split("\n")
   .map((value) => value.trim())
   .filter((value) => /^v2\.\d+\.\d+$/.test(value))
