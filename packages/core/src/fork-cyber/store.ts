@@ -26,7 +26,7 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
   )
   yield* sql`PRAGMA foreign_keys = ON`
   const version = yield* sql<{ user_version: number }>`PRAGMA user_version`
-  if (![0, 1, 2, 3].includes(version[0]?.user_version ?? -1))
+  if (![0, 1, 2, 3, 4].includes(version[0]?.user_version ?? -1))
     return yield* Effect.fail(new Error("Unsupported OpenCyber evidence database version"))
   if (version[0]?.user_version === 0)
     yield* sql
@@ -98,6 +98,33 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
         schedule: Schedule.spaced(25),
       }),
     )
+
+  if ((version[0]?.user_version ?? 0) < 4)
+    yield* sql
+      .withTransaction(
+        Effect.gen(function* () {
+          yield* sql`CREATE TABLE IF NOT EXISTS network_budget (owner TEXT PRIMARY KEY, reserved_bytes INTEGER NOT NULL)`
+          yield* sql`PRAGMA user_version = 4`
+        }),
+      )
+      .pipe(
+        Effect.retry({
+          while: (error) => error.reason._tag === "LockTimeoutError",
+          times: 3,
+          schedule: Schedule.spaced(25),
+        }),
+      )
+
+  // Charge the whole job allowance before network access. Never refund on crashes or cancellation.
+  const reserveNetwork = Effect.fn(function* (owner: string, bytes: number, maximum: number) {
+    if (!Number.isSafeInteger(bytes) || bytes <= 0 || !Number.isSafeInteger(maximum) || bytes > maximum)
+      return yield* Effect.fail(new Error("Invalid network byte reservation"))
+    const changed = yield* sql<{ reserved_bytes: number }>`INSERT INTO network_budget VALUES (${owner}, ${bytes})
+      ON CONFLICT(owner) DO UPDATE SET reserved_bytes = reserved_bytes + excluded.reserved_bytes
+      WHERE reserved_bytes <= ${maximum - bytes} RETURNING reserved_bytes`
+    if (!changed[0]) return yield* Effect.fail(new Error("Engagement network byte budget exhausted"))
+    return changed[0].reserved_bytes
+  })
 
   // Admit one start, atomically across Locations/processes; waiting callers retry.
   const claimHttp = Effect.fn(function* (owner: string, interval: number) {
@@ -256,6 +283,7 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
           task_executions:
             yield* sql`SELECT * FROM cyber_task_execution WHERE owner = ${owner} ORDER BY task, execution`,
           task_evidence: yield* sql`SELECT * FROM cyber_task_evidence WHERE owner = ${owner} ORDER BY task, artifact`,
+          network_budget: yield* sql`SELECT * FROM network_budget WHERE owner = ${owner}`,
         }
       }),
     )
@@ -273,6 +301,7 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
         yield* sql`DELETE FROM note WHERE owner = ${owner}`
         yield* sql`DELETE FROM engagement WHERE owner = ${owner}`
         yield* sql`DELETE FROM http_budget WHERE owner = ${owner}`
+        yield* sql`DELETE FROM network_budget WHERE owner = ${owner}`
       }),
     )
   return {
@@ -292,6 +321,7 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
     purge,
     legacyAllowed,
     claimHttp,
+    reserveNetwork,
     coordination,
   }
 })

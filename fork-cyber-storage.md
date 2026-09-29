@@ -2,7 +2,7 @@
 
 The built-in cyber plugin stores its archive at `Global.data/opencyber/evidence.sqlite`, outside the checkout and upstream session tables. The existing SQLite runtime adapter supplies the database, WAL and scoped connection lifetime. No new package dependencies or upstream database migrations are needed.
 
-[Phase 6](fork-cyber-coordination.md) extends this archive to schema 3 with tasks, hypotheses and execution-linked coverage. Portable exports now use `opencyber-archive-v2` and include coordination rows; purge removes them too. Schema 1/2 data migrates in place. Earlier binaries reject schema 3.
+[Phase 6](fork-cyber-coordination.md) added tasks, hypotheses and execution-linked coverage. [CY-10](fork-cyber-network.md) extends the archive to schema 4 with durable network byte reservations. Portable `opencyber-archive-v2` exports include coordination rows and a `network_budget` array; purge removes them too. Schema 1/2/3 data migrates in place. Earlier binaries reject schema 4.
 
 An engagement archive belongs to a top-level Session ID. Descendants share it; unrelated sessions cannot retrieve or reference its artifacts through the cyber tools. This is tool-level separation within a local application, not an OS sandbox: an agent with unrestricted shell or file access can access the same user's files. The existing installation keeps its shared profile by default; use the optional launcher below for separate on-disk data and credentials.
 

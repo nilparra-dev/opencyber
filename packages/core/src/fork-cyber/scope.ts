@@ -13,6 +13,16 @@ export const Cidr = Schema.String.check(
 )
 export const Target = Schema.Union([Host, Cidr])
 const Text = Schema.String.check(Schema.makeFilter<string>((value) => value.trim().length > 0 || "Must not be blank"))
+const budget = (maximum: number) => Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 1, maximum }))
+export const NetworkBudget = Schema.Struct({
+  connections_per_second: budget(10000),
+  packets_per_second: budget(100000),
+  bytes_per_job: budget(1024 * 1024 * 1024),
+  bytes_total: budget(Number.MAX_SAFE_INTEGER),
+  duration_ms: budget(900000),
+}).check(
+  Schema.makeFilter((value) => value.bytes_per_job <= value.bytes_total || "bytes_per_job must not exceed bytes_total"),
+)
 
 export const Manifest = Schema.Struct({
   engagement: Text,
@@ -28,6 +38,7 @@ export const Manifest = Schema.Struct({
     max_rps: Schema.Finite.check(Schema.isGreaterThan(0)),
     window: Text,
     contact: Text,
+    network: Schema.optional(NetworkBudget),
   }),
   // Compatibility with existing session records. New manifests need no derived flag.
   derived: Schema.optional(Schema.Boolean),
@@ -45,7 +56,12 @@ export function render(manifest: Manifest) {
     `Rules of engagement: max ${manifest.rules_of_engagement.max_rps} requests/second${
       manifest.rules_of_engagement.no_dos ? ", no denial-of-service" : ""
     }, window ${manifest.rules_of_engagement.window}. Security contact: ${manifest.rules_of_engagement.contact}.`,
-    "The http_request and http_replay tools enforce these destinations and a shared request rate. Other tools and external processes are not constrained by this HTTP policy. The free-text window and no_dos declaration are not machine-enforced technique controls.",
+    "HTTP tools and captured browser requests enforce destinations and shared max_rps. Scoped Kali jobs enforce a pinned destination policy and require separate connection, packet, byte and duration budgets. Cyber phase agents cannot use the host shell. The primary agent and external plugins are outside this isolation. The free-text window and no_dos declaration are not machine-enforced technique controls.",
+    ...(manifest.rules_of_engagement.network
+      ? [
+          `Kali network budgets: ${JSON.stringify(manifest.rules_of_engagement.network)}. Each job reserves bytes_per_job against bytes_total before access; reservations are not refunded.`,
+        ]
+      : []),
     ...(manifest.derived
       ? [
           "Legacy automatically extracted scope: these are unverified candidates. Record the operator's explicit scope before using them as targets.",

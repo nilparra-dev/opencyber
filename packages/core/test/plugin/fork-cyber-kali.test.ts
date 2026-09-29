@@ -14,7 +14,19 @@ const assessment = {
     authorized_by: "operator",
     authorization_ref: "offline-fixture",
     scope: { domains: [], cidrs: [], excluded: [] },
-    rules_of_engagement: { no_dos: true, max_rps: 1, window: "test", contact: "operator" },
+    rules_of_engagement: {
+      no_dos: true,
+      max_rps: 1,
+      window: "test",
+      contact: "operator",
+      network: {
+        connections_per_second: 100,
+        packets_per_second: 10000,
+        bytes_per_job: 1024 * 1024,
+        bytes_total: 10 * 1024 * 1024,
+        duration_ms: 60000,
+      },
+    },
   },
 }
 const image = process.env.OPENCYBER_TEST_KALI_IMAGE
@@ -27,6 +39,9 @@ test("Kali configuration requires an immutable image and bounded resources; tran
   expect(() => decode({ ...config, image: "opencyber-kali:latest" })).toThrow()
   expect(() => decode({ ...config, memory_mb: 0 })).toThrow()
   expect(() => decode({ ...config, network: { kind: "operator-managed", name: "audit" } })).toThrow()
+  expect(() =>
+    decode({ ...config, network: { kind: "operator-managed", name: "audit", control_ref: "old policy" } }),
+  ).toThrow()
   const run = Schema.decodeUnknownSync(ForkCyberKali.Run)
   expect(() => run({ argv: [] })).toThrow()
   expect(() => run({ argv: ["true"], outputs: ["../evidence.sqlite"] })).toThrow()
@@ -132,7 +147,7 @@ const docker = (args: string[]) =>
   })
 
 dockerTest(
-  "operator-managed networking reaches an isolated fixture; stop cancels work without deleting another engagement",
+  "scoped networking reaches an isolated fixture; stop cancels work without deleting another engagement",
   async () => {
     await Effect.runPromise(
       Effect.scoped(
@@ -164,7 +179,7 @@ dockerTest(
             env.profile,
             decode({
               image,
-              network: { kind: "operator-managed", name: network, control_ref: "isolated Docker fixture" },
+              network: { kind: "scoped", name: network },
             }),
           )
           const result = yield* connected.run(

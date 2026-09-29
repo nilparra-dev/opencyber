@@ -110,7 +110,8 @@ export function register(editor: AgentEditor) {
     agent.description =
       "Web exploitation phase of the engagement. Validates vulnerability classes on live in-scope web endpoints with raw request/response evidence, stopping at proof."
     agent.mode = "subagent"
-    agent.system = EXPLOIT_WEB + COORDINATION
+    agent.system =
+      EXPLOIT_WEB + COORDINATION + "\nRun commands only through kali_run. Host shell access is unavailable."
     agent.permissions.push(...ForkCyberRoles.permissions("cyber-exploit-web"))
   })
   editor.update(Agent.ID.make("cyber-exploit-net"), (agent) => {
@@ -118,7 +119,8 @@ export function register(editor: AgentEditor) {
     agent.description =
       "Network exploitation phase of the engagement. Validates service-side vectors within scope with raw evidence, respecting rate limits and never causing denial of service."
     agent.mode = "subagent"
-    agent.system = EXPLOIT_NET + COORDINATION
+    agent.system =
+      EXPLOIT_NET + COORDINATION + "\nRun commands only through kali_run. Host shell access is unavailable."
     agent.permissions.push(...ForkCyberRoles.permissions("cyber-exploit-net"))
   })
   editor.update(Agent.ID.make("cyber-postex"), (agent) => {
@@ -126,7 +128,7 @@ export function register(editor: AgentEditor) {
     agent.description =
       "Post-exploitation phase of the engagement. Demonstrates real impact from an existing foothold: privilege escalation, reachable assets and exposed data inside scope, stopping at proof."
     agent.mode = "subagent"
-    agent.system = POSTEX + COORDINATION
+    agent.system = POSTEX + COORDINATION + "\nRun commands only through kali_run. Host shell access is unavailable."
     agent.permissions.push(...ForkCyberRoles.permissions("cyber-postex"))
   })
   editor.update(Agent.ID.make("cyber-validate"), (agent) => {
@@ -134,7 +136,7 @@ export function register(editor: AgentEditor) {
     agent.description =
       "Validation phase of the engagement. Reproduces a reported finding from scratch and confirms or rejects it with raw evidence. Use before a finding is considered reportable."
     agent.mode = "subagent"
-    agent.system = VALIDATE + COORDINATION
+    agent.system = VALIDATE + COORDINATION + "\nRun commands only through kali_run. Host shell access is unavailable."
     agent.permissions.push(...ForkCyberRoles.permissions("cyber-validate"))
   })
   editor.update(Agent.ID.make("cyber-report"), (agent) => {
