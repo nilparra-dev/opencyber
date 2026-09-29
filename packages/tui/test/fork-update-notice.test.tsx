@@ -1,3 +1,4 @@
+import { TextareaRenderable } from "@opentui/core"
 import { expect, test } from "bun:test"
 import type { UpdateSource } from "../src/context/update-notification"
 import { createAppFixture } from "./fixture/app"
@@ -21,12 +22,18 @@ test("the update notice and dialog show the human-facing release version", async
   }
   await using setup = await createAppFixture({
     state: state.path,
-    config: { animations: false },
+    config: { animations: false, keybinds: { "prompt.clear": "f5" } },
     updater,
   })
 
+  // Home drafts survive in the system plugin between app fixtures, independently of disk state.
+  await setup.waitForFrame(() => setup.renderer.currentFocusedRenderable instanceof TextareaRenderable)
+  setup.mockInput.pressKey("F5")
   const home = await setup.waitForFrame(
-    (frame) => frame.includes("/update") && frame.includes("to install v2.0.19 (Cyber)"),
+    (frame) =>
+      setup.renderer.currentFocusedEditor?.plainText === "" &&
+      frame.includes("/update") &&
+      frame.includes("to install v2.0.19 (Cyber)"),
   )
   expect(home).not.toContain("2.0.19-cyber.2")
 
@@ -57,11 +64,15 @@ test("no update notice appears when no release exists", async () => {
   }
   await using setup = await createAppFixture({
     state: state.path,
-    config: { animations: false },
+    config: { animations: false, keybinds: { "prompt.clear": "f5" } },
     updater,
   })
 
-  const frame = await setup.waitForFrame((frame) => frame.includes("commands"))
+  await setup.waitForFrame(() => setup.renderer.currentFocusedRenderable instanceof TextareaRenderable)
+  setup.mockInput.pressKey("F5")
+  const frame = await setup.waitForFrame(
+    (frame) => setup.renderer.currentFocusedEditor?.plainText === "" && frame.includes("commands"),
+  )
   expect(frame).not.toContain("/update")
   expect(frame).not.toContain("to install v")
 })
