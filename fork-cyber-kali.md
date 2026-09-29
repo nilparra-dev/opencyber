@@ -9,8 +9,8 @@ The implementation uses a fresh container per job, associated with the top-level
 Use Docker with Linux containers and a Docker CLI accessible to the OpenCyber service. Build from the repository root:
 
 ```sh
-docker build --tag opencyber-kali:1 fork-kali
-docker image inspect opencyber-kali:1 --format '{{.Id}}'
+docker build --tag opencyber-kali:2 fork-kali
+docker image inspect opencyber-kali:2 --format '{{.Id}}'
 ```
 
 The Dockerfile pins the official Kali base by digest. Its package repository is rolling, so a rebuild can install newer package versions. The resulting image ID and `/opt/opencyber/packages.txt` identify what actually ran; this is not a claim of bit-for-bit reproducible builds. Keep/export the built image if exact replay matters. The initial selection includes curl, nmap, DNS utilities, sqlmap, Python, jq, ripgrep and OpenSSL. Extend the Dockerfile deliberately; the base image does not contain every Kali tool.
@@ -50,7 +50,7 @@ To preserve a generated file:
 
 ## Limits and lifecycle
 
-Each container runs as UID/GID 1000 with a read-only root filesystem, all capabilities dropped, no-new-privileges, 128 processes, 1,024 open descriptors and no inherited service credentials. The default CPU limit is one core. Memory and swap allowance are both set to 512 MiB, leaving no additional swap allowance. Temporary mounts bound `/work` to 128 MiB, `/tmp` to 32 MiB and shared memory to 16 MiB. Docker logs are disabled; the host captures command streams. These bounds cover job working data, not Docker's image cache or accumulated evidence storage.
+Each workload container runs as UID/GID 1000 with a read-only root filesystem, all capabilities dropped, no-new-privileges, 128 processes, 1,024 open descriptors and no inherited service credentials. The default CPU limit is one core. Memory and swap allowance are both set to 512 MiB, leaving no additional swap allowance. Temporary mounts bound `/work` to 128 MiB, `/tmp` to 32 MiB and shared memory to 16 MiB. Docker logs are disabled; the host captures command streams. These bounds cover job working data, not Docker's image cache or accumulated evidence storage.
 
 The default command timeout is 60 seconds, capped by the operator's configured ceiling, which defaults to five minutes. A request can select at most 15 minutes. GNU timeout bounds the command; the host bounds each Docker CLI operation. The environment's PID 1 also expires after the command budget plus 120 seconds for preparation/export, so host death does not leave it running indefinitely. A stalled daemon can prevent timely cleanup; that is reported as an error.
 
@@ -66,19 +66,18 @@ The reporting agent cannot operate these tools. Both tools assert the existing p
 
 `none` is the default. Only loopback exists in the container. Use the phase 3 HTTP tools when their scope, redirect and request-rate controls match the task.
 
-For an audit network provisioned by the operator:
+For an audit network provisioned by the operator, use the enforced profile:
 
 ```jsonc
 "network": {
-  "kind": "operator-managed",
-  "name": "audit-lab",
-  "control_ref": "lab network policy / firewall change reference"
+  "kind": "scoped",
+  "name": "audit-lab"
 }
 ```
 
-The named network must already exist. Built-in `host`, `bridge` and `none` names are rejected in this mode. `control_ref` records the operator's control reference; it is not verification that a firewall exists. The manager does not derive firewall rules from the manifest, enforce per-packet destinations or exclusions, or apply HTTP `max_rps` to arbitrary processes. A custom bridge alone is not a scope boundary. Configure destination filtering and traffic budgets outside the container before connecting it to assessment targets.
+The named network must already exist. Built-in `host`, `bridge` and `none` names are rejected. The manager installs manifest-derived nftables rules before creating the workload. A separate manager-only root container owns `NET_ADMIN`; the workload retains UID 1000 and zero capabilities. See [CY-10 network controls](fork-cyber-network.md) for mandatory network budgets, pinned names, evidence and migration. Legacy `operator-managed` configuration is rejected; it cannot silently retain unrestricted networking.
 
-This version does not grant raw-socket capabilities, host networking, USB access or wireless devices. TCP connect scans work with appropriate network access; raw-packet and device workflows need a separately designed profile. CY-10 remains partially open for enforced raw-process destination, rate and impact controls.
+Workloads do not receive raw-socket capabilities, host networking, USB access or wireless devices. TCP connect scans work within the scoped profile. Raw-packet and device workflows need a separately designed profile. Cyber phase agents cannot use the host shell, even under permissive agent configuration. The ordinary primary agent remains outside this boundary.
 
 ## Verification
 
@@ -87,9 +86,9 @@ The Docker suite builds no mocks. It executes the selected Kali image, transfers
 PowerShell:
 
 ```powershell
-$env:OPENCYBER_TEST_KALI_IMAGE = docker image inspect opencyber-kali:1 --format '{{.Id}}'
+$env:OPENCYBER_TEST_KALI_IMAGE = docker image inspect opencyber-kali:2 --format '{{.Id}}'
 Set-Location packages/core
-bun test test/plugin/fork-cyber-kali.test.ts
+bun test test/plugin/fork-cyber-kali.test.ts test/plugin/fork-cyber-network.test.ts
 ```
 
 Without `OPENCYBER_TEST_KALI_IMAGE`, the ordinary test run skips the real-Docker cases. `.github/workflows/fork-kali.yml` builds the image and sets this variable on Linux. Its `docker` check complements the existing fork CI; it is not automatically added to GitHub branch protection. No image is published by this workflow.

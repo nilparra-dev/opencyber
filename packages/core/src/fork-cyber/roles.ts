@@ -26,7 +26,7 @@ const read = [
   "cyber_coverage",
 ]
 const observe = [...read, "http_request"]
-const assess = [...observe, "http_replay", "cyber_browser", "kali_run", "kali_environment", "shell"]
+const assess = [...observe, "http_replay", "cyber_browser", "kali_run", "kali_environment"]
 
 export function tools(agent: string) {
   if (agent === "cyber-report") return read

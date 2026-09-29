@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { Effect, Exit, Fiber, Schema } from "effect"
+import { Cause, Effect, Exit, Fiber, Schema } from "effect"
 import path from "node:path"
 import { ForkCyberKali } from "@opencode/core/fork-cyber/kali"
 import { ForkCyberStore } from "@opencode/core/fork-cyber/store"
@@ -14,7 +14,19 @@ const assessment = {
     authorized_by: "operator",
     authorization_ref: "offline-fixture",
     scope: { domains: [], cidrs: [], excluded: [] },
-    rules_of_engagement: { no_dos: true, max_rps: 1, window: "test", contact: "operator" },
+    rules_of_engagement: {
+      no_dos: true,
+      max_rps: 1,
+      window: "test",
+      contact: "operator",
+      network: {
+        connections_per_second: 100,
+        packets_per_second: 10000,
+        bytes_per_job: 1024 * 1024,
+        bytes_total: 10 * 1024 * 1024,
+        duration_ms: 60000,
+      },
+    },
   },
 }
 const image = process.env.OPENCYBER_TEST_KALI_IMAGE
@@ -27,6 +39,9 @@ test("Kali configuration requires an immutable image and bounded resources; tran
   expect(() => decode({ ...config, image: "opencyber-kali:latest" })).toThrow()
   expect(() => decode({ ...config, memory_mb: 0 })).toThrow()
   expect(() => decode({ ...config, network: { kind: "operator-managed", name: "audit" } })).toThrow()
+  expect(() =>
+    decode({ ...config, network: { kind: "operator-managed", name: "audit", control_ref: "old policy" } }),
+  ).toThrow()
   const run = Schema.decodeUnknownSync(ForkCyberKali.Run)
   expect(() => run({ argv: [] })).toThrow()
   expect(() => run({ argv: ["true"], outputs: ["../evidence.sqlite"] })).toThrow()
@@ -132,7 +147,7 @@ const docker = (args: string[]) =>
   })
 
 dockerTest(
-  "operator-managed networking reaches an isolated fixture; stop cancels work without deleting another engagement",
+  "scoped networking reaches an isolated fixture; stop cancels work without deleting another engagement",
   async () => {
     await Effect.runPromise(
       Effect.scoped(
@@ -164,7 +179,7 @@ dockerTest(
             env.profile,
             decode({
               image,
-              network: { kind: "operator-managed", name: network, control_ref: "isolated Docker fixture" },
+              network: { kind: "scoped", name: network },
             }),
           )
           const result = yield* connected.run(
@@ -194,9 +209,18 @@ dockerTest(
               yield* Effect.sleep(100)
           }).pipe(Effect.timeout(20000))
           expect((yield* connected.cleanup("another-owner")).removed).toEqual([])
-          yield* connected.cleanup(assessment.owner)
-          expect(Exit.isFailure(yield* Fiber.await(job))).toBe(true)
+          // A second client can inspect the environment while stop and the job finalizer remove it.
+          yield* Effect.all(
+            [
+              connected.cleanup(assessment.owner),
+              ...Array.from({ length: 8 }, () => env.manager.status(assessment.owner)),
+            ],
+            { concurrency: "unbounded" },
+          )
+          const stopped = yield* Fiber.await(job)
+          expect(Exit.isFailure(stopped) && !Cause.hasDies(stopped.cause)).toBe(true)
           expect(yield* connected.status(assessment.owner)).toEqual([])
+          expect((yield* env.store.executions(assessment.owner)).every((item) => item.status !== "running")).toBe(true)
           expect((yield* env.store.readArtifact(assessment.owner, result.stdout)).bytes.length).toBeGreaterThan(0)
         }),
       ),

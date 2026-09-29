@@ -51,11 +51,13 @@ Code review also identified project-local activation, inconsistent child engagem
 
 Evaluations grow from phase 1 onward. Phase 8 uses those evaluations for optimization; it is not the first testing phase. Each phase may need several small PRs to `custom`. Complete and verify each change before starting the next dependency.
 
-Phase 4 usage and limits are documented in [fork-cyber-kali.md](fork-cyber-kali.md). Jobs use fresh workspaces and explicit artifact transfers instead of persistent mutable environments. Raw network access is either disabled or attached to an operator-managed network; manifest-derived raw-process destination, rate and impact enforcement remains pending under CY-10.
+Phase 4 usage and limits are documented in [fork-cyber-kali.md](fork-cyber-kali.md). Jobs use fresh workspaces and explicit artifact transfers. The [CY-10 implementation](fork-cyber-network.md) adds enforced destinations/exclusions, connection and packet rates, byte quotas, durable aggregate reservations and command deadlines. Cyber phase agents execute commands only in Kali; the primary agent remains outside this isolation boundary.
 
-Phase 5 usage and capture limits are documented in [fork-cyber-browser.md](fork-cyber-browser.md). Isolated Chromium identities route intercepted HTTP through phase 3 evidence capture. Worker/OOPIF traffic, WebRTC, streaming and other unsupported paths do not constitute verified coverage. Phase 4's raw-process network controls remain a separate open item.
+Phase 5 usage and capture limits are documented in [fork-cyber-browser.md](fork-cyber-browser.md). Isolated Chromium identities route intercepted HTTP through phase 3 evidence capture. Worker/OOPIF traffic, WebRTC, streaming and other unsupported paths do not constitute verified coverage. Kali network controls do not extend browser capture coverage.
 
 Phase 6 coordination and role contracts are documented in [fork-cyber-coordination.md](fork-cyber-coordination.md). Stable task keys have exclusive durable claims; execution-linked evidence supports hypothesis outcomes and planned coverage. Runtime role checks restrict tools and HTTP methods, not the semantic intent of arbitrary commands or requests. Interrupted tasks retain ownership and are never automatically replayed.
+
+Before phase 7, CY-10 is implemented with the bounded contract in its guide. A real Fireworks DeepSeek V4.1 Flash run through the compiled CLI completed a delegated recon task with exactly one loopback HTTP request and one linked evidence artifact. Phase 7 remains unstarted. Linux CI for these changes and the release installer/updater are separate from the local checks.
 
 ## Audit backlog and verification
 
@@ -106,7 +108,7 @@ Example for a local lab:
 
 Use actual operator-provided values. Missing operational details should be resolved before the dependent action. The tool does not fabricate references, contacts, time windows or rate limits.
 
-Host fields accept exact hostnames and unbracketed IPv4/IPv6 addresses. Networks accept IPv4/IPv6 CIDRs. URLs, ports, paths and wildcard hosts are rejected rather than silently widened to a whole host. Path-level scope, service ports and wildcard semantics require future schema work before those engagements can be represented accurately. Exclusions take precedence in the model-visible description; runtime enforcement is pending.
+Host fields accept exact hostnames and unbracketed IPv4/IPv6 addresses. Networks accept IPv4/IPv6 CIDRs. URLs, ports, paths and wildcard hosts are rejected rather than silently widened to a whole host. Path-level scope, service ports and wildcard semantics require future schema work before those engagements can be represented accurately. Exclusions take precedence in HTTP requests and scoped Kali jobs; see their guides for the enforcement boundaries.
 
 An empty `engagement` call only reads. A top-level session can supply `manifest` to create/replace its override or use `add_targets`, `remove_targets`, `exclude`, `include`, and `contact`. If both manifest and patches are supplied, patches apply to that manifest. Session overrides are not written into the project file. Existing child overrides remain nearest-precedence records for compatibility, but new child mutations are rejected.
 

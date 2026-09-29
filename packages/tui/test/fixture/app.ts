@@ -1,11 +1,11 @@
 import { createTestRenderer } from "@opentui/core/testing"
 import { Effect, FileSystem } from "effect"
-import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
 import { Global } from "@opencode/util/global"
 import type { TuiInput } from "../../src/app"
 import type { Config } from "../../src/config"
 import type { UpdateSource } from "../../src/context/update-notification"
 import { createEventStream, createFetch, type FetchHandler } from "./tui-client"
+import { tmpdir } from "./fixture"
 
 export async function createAppFixture(
   input: {
@@ -19,6 +19,8 @@ export async function createAppFixture(
     updater?: UpdateSource
   } = {},
 ) {
+  // fork: app fixtures must not reuse persisted tabs or model choices (F-018)
+  const state = input.state ? undefined : await tmpdir()
   const { run } = await import("../../src/app")
   const setup = await createTestRenderer({
     width: input.width ?? 100,
@@ -42,7 +44,7 @@ export async function createAppFixture(
       updater: input.updater, // fork: drives the update notice with a fake updater (F-017)
       log: () => {},
     }).pipe(
-      Effect.provide(input.state ? Global.layerWith({ state: input.state }) : AppNodeBuilder.build(Global.node)),
+      Effect.provide(Global.layerWith({ state: input.state ?? state?.path })),
       Effect.provide(FileSystem.layerNoop({})),
     ),
   )
@@ -56,6 +58,7 @@ export async function createAppFixture(
         await task
       } finally {
         await server.stop()
+        await state?.[Symbol.asyncDispose]()
       }
     },
   }
