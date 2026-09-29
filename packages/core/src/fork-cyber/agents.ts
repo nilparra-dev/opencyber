@@ -106,7 +106,7 @@ export function register(editor: AgentEditor) {
     agent.system =
       RECON +
       COORDINATION +
-      "\nExecution permits local read/glob/grep and bodyless HTTP GET/HEAD/OPTIONS. Shell, Kali, replay and browser actions are unavailable. HTTP method restrictions do not prove a request has no side effects."
+      "\nExecution permits local read/glob/grep, bodyless HTTP GET/HEAD/OPTIONS and bounded TCP inventory with cyber_services. Read its procedures and scan only the assigned host and ports. Service names from port tables are guesses; open ports do not establish vulnerabilities. Host shell, arbitrary Kali commands, replay and browser actions are unavailable. HTTP method restrictions do not prove a request has no side effects."
     agent.permissions.push(...ForkCyberRoles.permissions("cyber-recon"))
   })
   editor.update(Agent.ID.make("cyber-enum"), (agent) => {
@@ -117,7 +117,7 @@ export function register(editor: AgentEditor) {
     agent.system =
       ENUM +
       COORDINATION +
-      "\nExecution permits local read/glob/grep and bodyless HTTP GET/HEAD/OPTIONS. Shell, Kali, replay and browser actions are unavailable."
+      "\nExecution permits local read/glob/grep, bodyless HTTP GET/HEAD/OPTIONS and bounded TCP inventory with cyber_services. Read its procedures and scan only the assigned host and ports. Record exposure candidates with evidence and deployment expectations; table-derived names are guesses. Host shell, arbitrary Kali commands, replay and browser actions are unavailable."
     agent.permissions.push(...ForkCyberRoles.permissions("cyber-enum"))
   })
   editor.update(Agent.ID.make("cyber-exploit-web"), (agent) => {

@@ -26,7 +26,7 @@ const read = [
   "cyber_tasks",
   "cyber_coverage",
 ]
-const observe = [...read, "http_request"]
+const observe = [...read, "http_request", "cyber_services"]
 const assess = [...observe, "http_replay", "cyber_browser", "kali_run", "kali_environment", "cyber_code_review"]
 
 export function tools(agent: string) {

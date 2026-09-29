@@ -4,7 +4,7 @@ Cyber phase agents execute commands only through Kali. The execution hook reject
 
 ## Configure scoped jobs
 
-Rebuild `opencyber-kali:2` and configure its immutable image ID as described in [Kali jobs](fork-cyber-kali.md). Set `network` to `{"kind":"scoped","name":"audit-lab"}` in the operator's `opencyber-kali.jsonc`. The existing Docker network must reach the assessment targets. The previous `operator-managed` profile is rejected. `none` remains available without network budgets or nftables.
+Rebuild `opencyber-kali:3` and configure its immutable image ID as described in [Kali jobs](fork-cyber-kali.md). Set `network` to `{"kind":"scoped","name":"audit-lab"}` in the operator's `opencyber-kali.jsonc`. The existing Docker network must reach the assessment targets. The previous `operator-managed` profile is rejected. `none` remains available without network budgets or nftables.
 
 Supply explicit process budgets in the engagement's `rules_of_engagement.network`. These example values are lab settings, not recommended production limits:
 

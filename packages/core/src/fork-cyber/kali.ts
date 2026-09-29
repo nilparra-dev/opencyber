@@ -98,7 +98,18 @@ export function manager(store: Store, profile: string, config: Config) {
       yield* command(["rm", "-f", container.id])
     return { removed: containers.map((item) => item.id), evidence_preserved: true }
   })
-  const run = (assessment: Assessment, input: Run) =>
+  const run = <Capture = never>(
+    assessment: Assessment,
+    input: Run,
+    capture?: {
+      tool: string
+      parse: (result: {
+        execution: string
+        exit_code: number
+        files: readonly { name: string; artifact: string; bytes: number }[]
+      }) => Effect.Effect<Capture, Error>
+    },
+  ) =>
     Effect.uninterruptibleMask((restore) =>
       Effect.gen(function* () {
         if (assessment.manifest.derived) return yield* Effect.fail(new Error("Kali requires an explicit engagement"))
@@ -150,7 +161,7 @@ export function manager(store: Store, profile: string, config: Config) {
           yield* store.start({
             id,
             ...assessment,
-            tool: "kali_run",
+            tool: capture?.tool ?? "kali_run",
             input,
             provenance: {
               capture: "docker-exec-v1",
@@ -251,7 +262,14 @@ export function manager(store: Store, profile: string, config: Config) {
                 return { name: file, artifact: rows[0]!.id, bytes: output.stdout.length }
               }),
             )
-            return { exit_code: result.code, files: artifacts, environment }
+            return {
+              exit_code: result.code,
+              files: artifacts,
+              environment,
+              ...(capture
+                ? { capture: yield* capture.parse({ execution: id, exit_code: result.code, files: artifacts }) }
+                : {}),
+            }
           })
           const result = yield* execute.pipe(Effect.exit)
           const counters = yield* Effect.forEach(guards, (guard) =>

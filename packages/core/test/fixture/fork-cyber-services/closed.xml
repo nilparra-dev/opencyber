@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE nmaprun>
+<?xml-stylesheet href="file:///usr/share/nmap/nmap.xsl" type="text/xsl"?>
+<!-- Nmap 7.99 scan initiated Tue Sep 29 22:48:30 2026 as: /usr/lib/nmap/nmap -&#45;unprivileged -sT -Pn -n -vv -&#45;reason -p 8000,8001 -oX - 127.0.0.1 -->
+<nmaprun scanner="nmap" args="/usr/lib/nmap/nmap -&#45;unprivileged -sT -Pn -n -vv -&#45;reason -p 8000,8001 -oX - 127.0.0.1" start="1790722110" startstr="Tue Sep 29 22:48:30 2026" version="7.99" xmloutputversion="1.05">
+<scaninfo type="connect" protocol="tcp" numservices="2" services="8000-8001"/>
+<verbose level="2"/>
+<debugging level="0"/>
+<taskbegin task="Connect Scan" time="1790722110"/>
+<taskend task="Connect Scan" time="1790722110" extrainfo="2 total ports"/>
+<host starttime="1790722110" endtime="1790722110"><status state="up" reason="user-set" reason_ttl="0"/>
+<address addr="127.0.0.1" addrtype="ipv4"/>
+<hostnames>
+</hostnames>
+<ports><port protocol="tcp" portid="8000"><state state="closed" reason="conn-refused" reason_ttl="0"/><service name="http-alt" method="table" conf="3"/></port>
+<port protocol="tcp" portid="8001"><state state="closed" reason="conn-refused" reason_ttl="0"/><service name="vcom-tunnel" method="table" conf="3"/></port>
+</ports>
+<times srtt="26" rttvar="3754" to="100000"/>
+</host>
+<runstats><finished time="1790722110" timestr="Tue Sep 29 22:48:30 2026" summary="Nmap done at Tue Sep 29 22:48:30 2026; 1 IP address (1 host up) scanned in 0.03 seconds" elapsed="0.03" exit="success"/><hosts up="1" down="0" total="1"/>
+</runstats>
+</nmaprun>
