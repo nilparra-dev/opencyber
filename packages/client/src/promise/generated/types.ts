@@ -1911,7 +1911,10 @@ export type FormField =
   | FormMultiselectField
   | FormExternalField
 
-export type FormState = { status: "pending" } | { status: "answered"; answer: FormAnswer } | { status: "cancelled" }
+export type FormState =
+  | { status: "pending" }
+  | { status: "answered"; answer: FormAnswer }
+  | { status: "cancelled"; message?: string }
 
 export type CredentialKey = {
   type: "key"
@@ -8063,6 +8066,7 @@ export type SessionFormReplyOutput = void
 export type SessionFormCancelInput = {
   readonly sessionID: { readonly sessionID: string; readonly formID: string }["sessionID"]
   readonly formID: { readonly sessionID: string; readonly formID: string }["formID"]
+  readonly message?: { readonly message?: string | undefined }["message"]
 }
 
 export type SessionFormCancelOutput = void
