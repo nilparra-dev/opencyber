@@ -3,6 +3,8 @@ export * as ToolInputRepairPlugin from "./tool-input-repair.js"
 import { define } from "@opencode/plugin/effect/plugin"
 import { Effect, JsonSchema, Option, Predicate, Schema } from "effect"
 import { definition } from "../tool/runtime.js"
+// fork: select required literal union branches before repairing their fields (F-025).
+import { ForkToolInputRepair } from "./fork-tool-input-repair.js"
 
 // Repairs apply only when the input schema unambiguously supports them:
 // - Stringified root or nested object: '{"limit":"20"}' -> { limit: 20 }
@@ -29,8 +31,9 @@ export const Plugin = define({
         const tool = (yield* ctx.tool.list()).find((tool) => tool.id === event.tool)
         if (!tool) return
         const schema = definition(tool).inputSchema
-        if (schema.type !== "object") return
-        event.input = repair(event.input, schema, schema, 0)
+        const selected = ForkToolInputRepair.select(event.input, schema)
+        if (schema.type !== "object" && !selected) return
+        event.input = repair(selected?.value ?? event.input, selected?.schema ?? schema, schema, 0)
       }),
     ),
 })
@@ -66,6 +69,8 @@ function repair(value: unknown, schema: JsonSchema.JsonSchema, root: JsonSchema.
   }
 
   if (schema.type === undefined) {
+    const selected = ForkToolInputRepair.select(value, schema)
+    if (selected) return repair(selected.value, selected.schema, root, depth + 1)
     if (Array.isArray(schema.anyOf) && Array.isArray(schema.oneOf)) return value
     const branches = Array.isArray(schema.anyOf) ? schema.anyOf : schema.oneOf
     if (!Array.isArray(branches) || value === null) return value
