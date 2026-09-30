@@ -7,6 +7,7 @@ import https from "node:https"
 import { BlockList, isIP } from "node:net"
 import { ForkCyberScope } from "./scope.js"
 import { ForkCyberStore } from "./store.js"
+import { ForkCyberDiagnostics } from "./diagnostics.js"
 
 const Method = Schema.Literals(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
 export const Request = Schema.Struct({
@@ -53,6 +54,10 @@ export const Capture = Schema.Struct({
   elapsed_ms: Schema.Number,
   admitted_at: Schema.Number,
   scope: ForkCyberScope.Manifest,
+  media_type: Schema.optional(Schema.String),
+  family: Schema.optional(Schema.Number),
+  resolved_addresses: Schema.optional(Schema.Array(Schema.Struct({ address: Schema.String, family: Schema.Number }))),
+  capture_truncated: Schema.optional(Schema.Boolean),
 })
 export type Capture = typeof Capture.Type
 export type Store = Effect.Success<ReturnType<typeof ForkCyberStore.open>>
@@ -74,13 +79,24 @@ export function url(value: string) {
 }
 
 export function authorize(target: URL, manifest: ForkCyberScope.Manifest, addresses: readonly string[] = []) {
-  if (manifest.derived) throw new Error("Record explicit scope before making HTTP requests")
+  if (manifest.derived) throw ForkCyberScope.scopeFailure("Record explicit scope before making HTTP requests")
   const host = target.hostname.replace(/^\[|\]$/g, "").toLowerCase()
   const excluded = manifest.scope.excluded.map(ForkCyberScope.normalize)
   if (excluded.some((entry) => sameHost(host, entry) || matches(host, entry)))
-    throw new Error("HTTP destination is excluded")
+    throw ForkCyberScope.scopeFailure("HTTP destination is excluded")
   if (addresses.some((address) => excluded.some((entry) => sameHost(address, entry) || matches(address, entry))))
-    throw new Error("Resolved HTTP address is excluded")
+    throw ForkCyberScope.scopeFailure("Resolved HTTP address is excluded")
+  if (
+    ![...manifest.scope.domains, ...manifest.scope.cidrs].some((entry) => ForkCyberScope.matches(host, entry)) &&
+    !manifest.scope.services?.some(
+      (entry) =>
+        ForkCyberScope.matches(host, entry.target) &&
+        entry.protocol === "tcp" &&
+        entry.ports.includes(Number(target.port || (target.protocol === "https:" ? 443 : 80))) &&
+        (!entry.scheme || `${entry.scheme}:` === target.protocol),
+    )
+  )
+    throw ForkCyberScope.scopeFailure("HTTP service or scheme is outside the recorded scope")
   ForkCyberScope.authorize(
     manifest,
     host,
@@ -97,6 +113,7 @@ export const run = (store: Store, resolve: () => Effect.Effect<Assessment, Error
     for (let hop = 0; ; hop++) {
       const assessment = yield* resolve()
       const id = crypto.randomUUID()
+      const progress = { target_started: false, response_received: false }
       const requestArtifact = yield* store.start({
         id,
         owner: assessment.owner,
@@ -106,6 +123,8 @@ export const run = (store: Store, resolve: () => Effect.Effect<Assessment, Error
         input: current,
         provenance: {
           capture: "node-http-v1",
+          operation_class: "acquisition",
+          url: current.url,
           runtime: process.versions.bun ? `bun/${process.versions.bun}` : `node/${process.versions.node}`,
           scope: assessment.manifest,
           replayable: true,
@@ -154,9 +173,11 @@ export const run = (store: Store, resolve: () => Effect.Effect<Assessment, Error
             }
           })
           const started = Date.now()
+          progress.target_started = true
           const response = yield* Effect.tryPromise((signal) =>
             exchange(target, current, prepared, addresses[0]!.address, signal),
           )
+          progress.response_received = true
           const body = yield* store.artifact(assessment.owner, id, "http.response.body", response.body, response.type)
           const capture: Capture = {
             format: "opencyber-http-v1",
@@ -170,6 +191,10 @@ export const run = (store: Store, resolve: () => Effect.Effect<Assessment, Error
             bytes: response.body.byteLength,
             sha256: ForkCyberStore.digest(response.body),
             address: addresses[0]!.address,
+            family: addresses[0]!.family,
+            resolved_addresses: addresses,
+            media_type: response.type,
+            capture_truncated: false,
             elapsed_ms: Date.now() - started,
             scope: admitted.assessment.manifest,
             admitted_at: admitted.at,
@@ -177,14 +202,49 @@ export const run = (store: Store, resolve: () => Effect.Effect<Assessment, Error
           const output = yield* store.finish(assessment.owner, id, "completed", capture)
           return { output: output[0]!.id, capture, location: response.location }
         }).pipe(Effect.timeout(current.timeout_ms ?? 30000))
-      }).pipe(Effect.result)
+      }).pipe(
+        Effect.onInterrupt(() =>
+          store
+            .finish(assessment.owner, id, "error", {
+              diagnostic: {
+                category: "transport",
+                operation: "http_request",
+                message: "HTTP execution interrupted",
+                target_started: progress.target_started,
+                effects: progress.target_started ? "unknown" : "not_started",
+                recovery: "Reconcile this execution before repeating a request.",
+                details: { execution: id },
+              },
+            })
+            .pipe(Effect.asVoid),
+        ),
+        Effect.result,
+      )
       if (result._tag === "Failure") {
+        const cause =
+          result.failure instanceof Error && result.failure.cause instanceof Error
+            ? result.failure.cause
+            : result.failure
         const message =
           result.failure instanceof Error && result.failure.cause instanceof Error
             ? result.failure.cause.message
             : String(result.failure)
-        yield* store.finish(assessment.owner, id, "error", { message })
-        return yield* Effect.fail(new Error(`HTTP execution ${id} failed: ${message}`))
+        const diagnostic =
+          cause instanceof ForkCyberDiagnostics.Failure
+            ? cause.diagnostic
+            : {
+                category: progress.response_received ? ("capture" as const) : ("transport" as const),
+                operation: "http_request",
+                message: `HTTP execution ${id} failed: ${message}`,
+                target_started: progress.target_started,
+                effects: progress.target_started ? ("unknown" as const) : ("not_started" as const),
+                recovery: progress.target_started
+                  ? "Read evidence for this execution and reconcile possible effects before retrying."
+                  : "Inspect the destination, scope, resolver and transport configuration before retrying.",
+                details: { execution: id },
+              }
+        yield* store.finish(assessment.owner, id, "error", { diagnostic })
+        return yield* Effect.fail(new ForkCyberDiagnostics.Failure(diagnostic))
       }
       hops.push({ output: result.success.output, capture: result.success.capture })
       if (

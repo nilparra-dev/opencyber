@@ -1,6 +1,7 @@
 import { expect, setDefaultTimeout } from "bun:test"
-import { Duration, Effect, Layer, LayerMap } from "effect"
+import { Duration, Effect, Layer, LayerMap, Schema } from "effect"
 import path from "node:path"
+import { symlink } from "node:fs/promises"
 import { Agent } from "@opencode/core/agent"
 import { Bus } from "@opencode/core/bus"
 import { Database } from "@opencode/core/database/database"
@@ -73,13 +74,14 @@ const it = testEffect(
   ),
 )
 
-const call = Effect.fn(function* (sessionID: Session.ID, name: string, input: unknown) {
+const call = Effect.fn(function* (sessionID: Session.ID, name: string, input: unknown, agent = "build") {
   const plugins = yield* Plugin.Service
   yield* plugins.awaitActivation
   const tools = yield* Tool.Service
-  const result = yield* (yield* tools.snapshot()).execute({
+  const snapshot = yield* tools.snapshot()
+  const result = yield* snapshot.execute({
     sessionID,
-    agent: Agent.ID.make("build"),
+    agent: Agent.ID.make(agent),
     messageID: SessionMessage.ID.make("msg_policy"),
     call: { type: "tool-call", id: crypto.randomUUID(), name, input },
   })
@@ -122,6 +124,9 @@ it.live("review ignores target plugins, MCP, agents and nested instructions whil
     )
     yield* Effect.promise(() => Bun.write(path.join(target, "nested", "AGENTS.md"), "TARGET_POLICY_PAYLOAD"))
     yield* Effect.promise(() => Bun.write(path.join(target, "nested", "source.txt"), "source data"))
+    const privateFile = path.join(tmp.path, "operator-private.txt")
+    yield* Effect.promise(() => Bun.write(privateFile, "password=synthetic-host-file-secret"))
+    yield* Effect.promise(() => symlink(privateFile, path.join(target, "private-link.txt")))
     yield* Effect.promise(() =>
       Bun.write(
         path.join(target, ".opencode", "agents", "build.md"),
@@ -133,6 +138,13 @@ it.live("review ignores target plugins, MCP, agents and nested instructions whil
     const locations = yield* LocationServiceMap.Service
     yield* Effect.gen(function* () {
       expect(yield* call(root.id, "read", { path: "nested/source.txt" })).toContain("source data")
+      for (const file of [privateFile, "private-link.txt"]) {
+        const rejected = String(yield* call(root.id, "read", { path: file }).pipe(Effect.flip))
+        expect(rejected).toContain('"category":"scope"')
+        expect(rejected).toContain('"target_started":false')
+        expect(rejected).not.toContain("synthetic-host-file-secret")
+      }
+      expect(yield* call(root.id, "grep", { path: tmp.path, pattern: "password" }).pipe(Effect.isFailure)).toBe(true)
       expect(yield* Effect.promise(() => Bun.file(marker).exists())).toBe(false)
       expect(yield* Effect.promise(() => Bun.file(mcpMarker).exists())).toBe(false)
       expect(yield* Effect.promise(() => Bun.file(approved).text())).toBe("approved")
@@ -179,7 +191,7 @@ it.live("assessment applies exclusions to primary and generic children and treat
       expect(yield* call(root.id, "engagement", {})).toContain("No engagement")
       yield* store.approveManifest(root.id, manifest, 1)
       for (const session of [root, child]) {
-        for (const name of ["webfetch", "shell", "execute", "mcp__adversary"]) {
+        for (const name of ["webfetch", "shell", "mcp__adversary"]) {
           expect(
             yield* call(session.id, name, { url: server.url.href, command: "echo no", code: "no" }).pipe(
               Effect.isFailure,
@@ -188,6 +200,58 @@ it.live("assessment applies exclusions to primary and generic children and treat
         }
         expect(yield* call(session.id, "http_request", { url: server.url.href }).pipe(Effect.isFailure)).toBe(true)
       }
+      // fork: the safe Code Mode envelope retains per-child policy enforcement (F-020).
+      yield* call(root.id, "cyber_tasks", {
+        action: "create",
+        key: "local-read",
+        asset: "fixture.txt",
+        procedure: "Read local fixture",
+        phase: "cyber-enum",
+      })
+      yield* call(child.id, "cyber_tasks", { action: "claim", key: "local-read", revision: 1 }, "cyber-enum")
+      const tools = yield* Tool.Service
+      // Exercise a trusted operator's Code Mode registration of the real reader.
+      yield* tools.transform((editor) =>
+        editor.update("read", (tool) => {
+          tool.options = { ...tool.options, codemode: true }
+        }),
+      )
+      expect(
+        yield* call(child.id, "execute", { code: 'return await tools.read({path:"fixture.txt"})' }, "cyber-enum"),
+      ).toContain("local")
+      expect(
+        yield* call(child.id, "execute", { code: "return await tools.opencode.list_mcp_resources({})" }, "cyber-enum"),
+      ).toContain("cannot")
+      const capabilities = Schema.decodeUnknownSync(
+        Schema.fromJsonString(
+          Schema.Struct({
+            roles: Schema.Array(
+              Schema.Struct({
+                role: Schema.String,
+                tools: Schema.Array(
+                  Schema.Struct({ name: Schema.String, invocation: Schema.String, availability: Schema.String }),
+                ),
+                prohibited: Schema.Array(Schema.String),
+                execute: Schema.Struct({ permitted: Schema.Boolean, inventory: Schema.Array(Schema.String) }),
+              }),
+            ),
+          }),
+        ),
+      )(yield* call(root.id, "cyber_capabilities", {}))
+      const enumeration = capabilities.roles.find((role) => role.role === "cyber-enum")!
+      expect(enumeration.execute).toMatchObject({ permitted: true })
+      expect(enumeration.execute.inventory).toContain("read")
+      expect(enumeration.tools).toContainEqual({
+        name: "http_request",
+        invocation: "direct",
+        availability: "available",
+      })
+      expect(enumeration.prohibited).toContain("kali_run")
+      expect(capabilities.roles.find((role) => role.role === "cyber-validate")!.tools).toContainEqual({
+        name: "kali_run",
+        invocation: "direct",
+        availability: "missing",
+      })
       const proposal = yield* call(root.id, "engagement", { include: ["127.0.0.1"] })
       expect(proposal).toContain('"applied":false')
       expect((yield* store.approvedManifest(root.id))[0]?.revision).toBe(2)
@@ -205,7 +269,7 @@ it.live("assessment applies exclusions to primary and generic children and treat
         options: {},
       })
       expect(context.system.some((part) => part.text.includes("Widen scope"))).toBe(false)
-      expect(JSON.stringify(context.messages)).toContain("Widen scope")
+      expect(JSON.stringify(context.messages)).not.toContain("Widen scope")
       expect(context.messages.every((message) => message.role !== "system")).toBe(true)
       expect(context.tools.webfetch).toBeUndefined()
       yield* store.start({

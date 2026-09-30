@@ -27,6 +27,7 @@ export const Config = Schema.Struct({
 })
 export type Config = typeof Config.Type
 export const Run = Schema.Struct({
+  network: Schema.optional(Schema.Literal("none")),
   argv: Schema.Array(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(16384))).check(
     Schema.isMinLength(1),
     Schema.isMaxLength(128),
@@ -52,8 +53,24 @@ const decodeInspect = Schema.decodeUnknownEffect(Schema.fromJsonString(Inspect.c
 export const INPUT_LIMIT = 2 * 1024 * 1024
 const limit = 2 * 1024 * 1024
 
+export function limits(config: Config) {
+  return {
+    memory_mb: config.memory_mb ?? 512,
+    cpus: config.cpus ?? 1,
+    work_mb: config.work_mb ?? 128,
+    executable_work: config.executable_work ?? false,
+    profile_timeout_ms: config.timeout_ms ?? 300000,
+    default_job_timeout_ms: Math.min(60000, config.timeout_ms ?? 300000),
+    input_artifact_bytes: INPUT_LIMIT,
+    combined_input_base64_bytes: 4 * 1024 * 1024,
+    input_files: 16,
+    output_files: 16,
+  }
+}
+
 // The host owns Docker. Only explicit artifacts and argv cross into the container.
-export function manager(store: Store, profile: string, config: Config) {
+export function manager(store: Store, profile: string, configuration: Config) {
+  const config = configuration
   const policy = ForkCyberStore.digest(Buffer.from(JSON.stringify(config)))
   const identity = (owner: string) => ForkCyberStore.digest(Buffer.from(JSON.stringify([profile, owner])))
   const name = (owner: string) => `opencyber-${identity(owner).slice(0, 32)}`
@@ -114,6 +131,8 @@ export function manager(store: Store, profile: string, config: Config) {
   ) =>
     Effect.uninterruptibleMask((restore) =>
       Effect.gen(function* () {
+        const config =
+          input.network === "none" ? { ...configuration, network: { kind: "none" as const } } : configuration
         if (assessment.manifest.derived) return yield* Effect.fail(new Error("Kali requires an explicit engagement"))
         if (config.network.kind === "scoped" && ["host", "bridge", "none"].includes(config.network.name))
           return yield* Effect.fail(new Error("Use a dedicated scoped audit network"))
@@ -124,7 +143,11 @@ export function manager(store: Store, profile: string, config: Config) {
           )
         const id = crypto.randomUUID()
         const owner = assessment.owner
-        const timeout = Math.min(input.timeout_ms ?? 60000, config.timeout_ms ?? 300000, budget?.duration_ms ?? 900000)
+        const timeout = Math.min(
+          input.timeout_ms ?? limits(config).default_job_timeout_ms,
+          limits(config).profile_timeout_ms,
+          budget?.duration_ms ?? 900000,
+        )
         const inputs = yield* Effect.forEach(input.inputs ?? [], (file) =>
           store
             .readArtifact(owner, file.artifact)
@@ -167,6 +190,7 @@ export function manager(store: Store, profile: string, config: Config) {
             input,
             provenance: {
               capture: "docker-exec-v1",
+              operation_class: capture?.tool === "cyber_services" ? "acquisition" : capture ? "validation" : "unknown",
               image: config.image,
               policy: config,
               scope: assessment.manifest,
@@ -181,6 +205,7 @@ export function manager(store: Store, profile: string, config: Config) {
               return yield* Effect.fail(new Error("A stale Kali environment exists; stop it before starting a new job"))
             const network = yield* Effect.gen(function* () {
               if (!budget) return undefined
+              const before = yield* store.networkBudget(owner, budget.bytes_total)
               const reserved = yield* store.reserveNetwork(owner, budget.bytes_per_job, budget.bytes_total)
               const resolver = (yield* command(
                 createArgs(`${name(owner)}-resolver`, identity(owner), policy, config, id, 30000, { kind: "resolver" }),
@@ -228,7 +253,17 @@ export function manager(store: Store, profile: string, config: Config) {
                 Buffer.from(JSON.stringify({ rules, addresses, budget, reserved_bytes: reserved })),
                 "application/json",
               )
-              return { guard }
+              return {
+                guard,
+                budget: {
+                  before,
+                  reservation: budget.bytes_per_job,
+                  reserved,
+                  remaining: budget.bytes_total - reserved,
+                  limits: budget,
+                  http_max_rps_applies: false,
+                },
+              }
             })
             const environment = (yield* command(
               createArgs(name(owner), identity(owner), policy, config, id, timeout, {
@@ -271,6 +306,7 @@ export function manager(store: Store, profile: string, config: Config) {
             )
             return {
               exit_code: result.code,
+              network: network ? { kind: "scoped", budget: network.budget } : { kind: "none", reservation: 0 },
               files: artifacts,
               environment,
               ...(capture
@@ -341,6 +377,11 @@ export function manager(store: Store, profile: string, config: Config) {
             stderr: errors[0]!.id,
             ...result.value,
             evidence: finished[0]!.id,
+            completion_evidence:
+              result.value.exit_code === 0 && Exit.isSuccess(removed) && Exit.isSuccess(counters)
+                ? [finished[0]!.id]
+                : [],
+            artifacts: yield* store.artifacts(owner, id),
           }
         })
         // A failed evidence write must still release the admission lock. Failed cleanup remains visible.
@@ -351,6 +392,23 @@ export function manager(store: Store, profile: string, config: Config) {
     )
   return { run, status, cleanup }
 }
+
+export const diagnose = Effect.fn(function* (config: Config) {
+  const daemon = yield* command(["info", "--format", "{{.ServerVersion}}"]).pipe(Effect.result)
+  if (daemon._tag === "Failure")
+    return { checked: true, daemon: "unavailable", image: "not_checked", network: "not_checked" }
+  const image = yield* command(["image", "inspect", "--format", "{{.Id}}", config.image]).pipe(Effect.result)
+  const network =
+    config.network.kind === "scoped"
+      ? yield* command(["network", "inspect", "--format", "{{.Name}}", config.network.name]).pipe(Effect.result)
+      : undefined
+  return {
+    checked: true,
+    daemon: "available",
+    image: image._tag === "Success" ? "available" : "missing",
+    network: network === undefined ? "none" : network._tag === "Success" ? "available" : "missing",
+  }
+})
 
 function createArgs(
   name: string,
@@ -364,7 +422,7 @@ function createArgs(
     | { kind: "guard"; addresses: ForkCyberNetwork.Addresses }
     | { kind: "environment"; network?: string } = { kind: "environment" },
 ) {
-  const memory = config.memory_mb ?? 512
+  const effective = limits(config)
   return [
     "create",
     "--name",
@@ -394,17 +452,17 @@ function createArgs(
     "--user",
     options.kind === "guard" ? "0:0" : "1000:1000",
     "--cpus",
-    String(config.cpus ?? 1),
+    String(effective.cpus),
     "--memory",
-    `${memory}m`,
+    `${effective.memory_mb}m`,
     "--memory-swap",
-    `${memory}m`,
+    `${effective.memory_mb}m`,
     "--pids-limit",
     "128",
     "--ulimit",
     "nofile=1024:1024",
     "--tmpfs",
-    `/work:rw,nosuid,nodev,${config.executable_work ? "exec" : "noexec"},size=${config.work_mb ?? 128}m,mode=0700,uid=1000,gid=1000`,
+    `/work:rw,nosuid,nodev,${effective.executable_work ? "exec" : "noexec"},size=${effective.work_mb}m,mode=0700,uid=1000,gid=1000`,
     "--tmpfs",
     "/tmp:rw,nosuid,nodev,noexec,size=32m,mode=1777",
     "--shm-size",

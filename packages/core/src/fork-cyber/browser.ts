@@ -108,6 +108,7 @@ export const make = Effect.fn(function* (store: ForkCyberHttp.Store) {
           input,
           provenance: {
             capture: "browser-routed-http-v1",
+            operation_class: "validation",
             scope: assessment.manifest,
             browser_version: browser?.version() ?? null,
             identity: input.identity,
@@ -382,7 +383,11 @@ export const make = Effect.fn(function* (store: ForkCyberHttp.Store) {
               return yield* Effect.fail(
                 new Error(`Browser action failed; evidence ${rows[0]!.id}. ${Cause.pretty(result.cause)}`),
               )
-            return { ...output, evidence: rows[0]!.id }
+            return {
+              ...output,
+              evidence: rows[0]!.id,
+              completion_evidence: window.issues.length === 0 ? [rows[0]!.id] : [],
+            }
           }),
         )
       }),

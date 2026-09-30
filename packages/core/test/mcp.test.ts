@@ -1506,7 +1506,8 @@ it.live("discovers and reads MCP resources through Code Mode", () =>
         metadata: { server: "resources", uri: "docs://readme" },
         sessionID,
         agent: toolIdentity.agent,
-        source: { type: "tool", messageID: toolIdentity.messageID, id: "call_resource" },
+        // fork: Permissions use the canonical Code Mode child identity (F-020).
+        source: { type: "tool", messageID: toolIdentity.messageID, id: "call_resource:codemode:0" },
       })
 
       server.state.contents = [{ uri: "docs://readme", text: "line\n".repeat(20_000), mimeType: "text/plain" }]
@@ -2519,7 +2520,8 @@ it.effect("waits for permission before calling an MCP tool", () =>
       source: {
         type: "tool",
         messageID: toolIdentity.messageID,
-        id: "call_mcp_permission",
+        // fork: Permissions use the canonical Code Mode child identity (F-020).
+        id: "call_mcp_permission:codemode:0",
       },
     })
     expect(calls).toBe(0)

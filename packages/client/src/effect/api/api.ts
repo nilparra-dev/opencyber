@@ -12,13 +12,13 @@ import type { Model } from "@opencode/schema/model"
 import type { DateTime } from "effect"
 import type { Permission } from "@opencode/schema/permission"
 import type { SessionMessage } from "@opencode/schema/session-message"
+import type { Schema } from "effect"
 import type { SessionInbox } from "@opencode/schema/session-inbox"
 import type { PromptInput } from "@opencode/schema/prompt-input"
 import type { AgentAttachment } from "@opencode/schema/prompt"
 import type { Skill } from "@opencode/schema/skill"
 import type { FileDiff } from "@opencode/schema/file-diff"
 import type { InstructionEntry } from "@opencode/schema/instruction-entry"
-import type { Schema } from "effect"
 import type { Event } from "@opencode/schema/event"
 import type { EventLog } from "@opencode/schema/event-log"
 import type { Shell } from "@opencode/schema/shell"
@@ -211,13 +211,107 @@ export type SessionCreateOperation<E = never> = (input?: SessionCreateInput) => 
 export type SessionImportInput = {
   readonly info: Session.Info
   readonly messages: ReadonlyArray<SessionMessage.Info>
+  readonly export_info?:
+    | {
+        readonly profile: "redacted" | "private" | "sanitized" | "analysis"
+        readonly reasoning: boolean
+        readonly partial: boolean
+        readonly omitted_unsettled: number
+        readonly timezone: "UTC"
+        readonly exported_at: number
+        readonly first_activity: number | null
+        readonly last_activity: number | null
+        readonly limitations: ReadonlyArray<string>
+      }
+    | undefined
+  readonly analysis?: {
+    readonly harness: Schema.Json
+    readonly root: {
+      readonly attempts: ReadonlyArray<Schema.Json>
+      readonly instructions: Schema.Json
+      readonly events: ReadonlyArray<Schema.Json>
+    }
+    readonly children: ReadonlyArray<{
+      readonly info: Session.Info
+      readonly messages: ReadonlyArray<SessionMessage.Info>
+      readonly export_info: {
+        readonly profile: "redacted" | "private" | "sanitized" | "analysis"
+        readonly reasoning: boolean
+        readonly partial: boolean
+        readonly omitted_unsettled: number
+        readonly timezone: "UTC"
+        readonly exported_at: number
+        readonly first_activity: number | null
+        readonly last_activity: number | null
+        readonly limitations: ReadonlyArray<string>
+      }
+      readonly trace: {
+        readonly attempts: ReadonlyArray<Schema.Json>
+        readonly instructions: Schema.Json
+        readonly events: ReadonlyArray<Schema.Json>
+      }
+    }>
+    readonly evidence: Schema.Json
+    readonly usage: Schema.Json
+  }
   readonly location?: Location.PublicRef | undefined
 }
 export type SessionImportOutput = Session.Info
 export type SessionImportOperation<E = never> = (input: SessionImportInput) => Effect.Effect<SessionImportOutput, E>
 
-export type SessionExportInput = { readonly sessionID: Session.ID; readonly sanitize?: boolean | undefined }
-export type SessionExportOutput = { readonly info: Session.Info; readonly messages: ReadonlyArray<SessionMessage.Info> }
+export type SessionExportInput = {
+  readonly sessionID: Session.ID
+  readonly sanitize?: boolean | undefined
+  readonly profile?: "redacted" | "private" | "sanitized" | "analysis"
+  readonly reasoning?: boolean
+}
+export type SessionExportOutput = {
+  readonly info: Session.Info
+  readonly messages: ReadonlyArray<SessionMessage.Info>
+  readonly export_info?:
+    | {
+        readonly profile: "redacted" | "private" | "sanitized" | "analysis"
+        readonly reasoning: boolean
+        readonly partial: boolean
+        readonly omitted_unsettled: number
+        readonly timezone: "UTC"
+        readonly exported_at: number
+        readonly first_activity: number | null
+        readonly last_activity: number | null
+        readonly limitations: ReadonlyArray<string>
+      }
+    | undefined
+  readonly analysis?: {
+    readonly harness: Schema.Json
+    readonly root: {
+      readonly attempts: ReadonlyArray<Schema.Json>
+      readonly instructions: Schema.Json
+      readonly events: ReadonlyArray<Schema.Json>
+    }
+    readonly children: ReadonlyArray<{
+      readonly info: Session.Info
+      readonly messages: ReadonlyArray<SessionMessage.Info>
+      readonly export_info: {
+        readonly profile: "redacted" | "private" | "sanitized" | "analysis"
+        readonly reasoning: boolean
+        readonly partial: boolean
+        readonly omitted_unsettled: number
+        readonly timezone: "UTC"
+        readonly exported_at: number
+        readonly first_activity: number | null
+        readonly last_activity: number | null
+        readonly limitations: ReadonlyArray<string>
+      }
+      readonly trace: {
+        readonly attempts: ReadonlyArray<Schema.Json>
+        readonly instructions: Schema.Json
+        readonly events: ReadonlyArray<Schema.Json>
+      }
+    }>
+    readonly evidence: Schema.Json
+    readonly usage: Schema.Json
+  }
+}
 export type SessionExportOperation<E = never> = (input: SessionExportInput) => Effect.Effect<SessionExportOutput, E>
 
 export type SessionActiveOutput = { readonly [x: Session.ID]: { readonly type: "running" } }

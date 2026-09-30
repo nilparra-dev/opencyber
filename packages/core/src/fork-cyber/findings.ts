@@ -1,8 +1,11 @@
 export * as ForkCyberFindings from "./findings.js"
 
 import { Schema } from "effect"
+import { ForkCyberLanguage } from "./language.js"
 
-const text = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(4000), Schema.isPattern(/\S/))
+const text = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(4000), Schema.isPattern(/\S/)).annotate({
+  description: ForkCyberLanguage.prose,
+})
 
 export const Validation = Schema.Struct({
   task: text,

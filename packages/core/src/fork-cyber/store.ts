@@ -9,6 +9,9 @@ import path from "node:path"
 import { ForkCyberScope } from "./scope.js"
 import { ForkCyberCoordination } from "./coordination.js"
 import { ForkCyberFindings } from "./findings.js"
+import { ForkCyberPagination } from "./pagination.js"
+import { ForkCyberRedaction } from "./redaction.js"
+import { ForkCyberDiagnostics } from "./diagnostics.js"
 
 // Fork-owned database: no upstream migrations or session-table ownership.
 export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string) {
@@ -27,7 +30,7 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
   )
   yield* sql`PRAGMA foreign_keys = ON`
   const version = yield* sql<{ user_version: number }>`PRAGMA user_version`
-  if (![0, 1, 2, 3, 4, 5].includes(version[0]?.user_version ?? -1))
+  if (![0, 1, 2, 3, 4, 5, 6].includes(version[0]?.user_version ?? -1))
     return yield* Effect.fail(new Error("Unsupported OpenCyber evidence database version"))
   if (version[0]?.user_version === 0)
     yield* sql
@@ -147,13 +150,78 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
       )
 
   // Charge the whole job allowance before network access. Never refund on crashes or cancellation.
+  if ((version[0]?.user_version ?? 0) < 6)
+    yield* sql
+      .withTransaction(
+        Effect.gen(function* () {
+          yield* sql`CREATE TABLE IF NOT EXISTS harness_request (sha256 TEXT PRIMARY KEY, content TEXT NOT NULL)`
+          yield* sql`CREATE TABLE IF NOT EXISTS harness_attempt (
+        id TEXT PRIMARY KEY, owner TEXT NOT NULL, session TEXT NOT NULL, message TEXT NOT NULL, logical_step INTEGER,
+        started_at INTEGER NOT NULL, finished_at INTEGER, status TEXT NOT NULL,
+        request_sha256 TEXT NOT NULL REFERENCES harness_request(sha256), result TEXT)`
+          yield* sql`CREATE INDEX IF NOT EXISTS harness_attempt_session ON harness_attempt(session, started_at, id)`
+          yield* sql`PRAGMA user_version = 6`
+        }),
+      )
+      .pipe(
+        Effect.retry({
+          while: (error) => error.reason._tag === "LockTimeoutError",
+          times: 3,
+          schedule: Schedule.spaced(25),
+        }),
+      )
+
+  const startAttempt = (input: {
+    id: string
+    owner?: string
+    session: string
+    message: string
+    logical_step?: number
+    request: typeof Schema.Json.Type
+  }) =>
+    sql.withTransaction(
+      Effect.gen(function* () {
+        const content = JSON.stringify(input.request)
+        const sha256 = digest(Buffer.from(content))
+        yield* sql`INSERT INTO harness_request VALUES (${sha256}, ${content}) ON CONFLICT DO NOTHING`
+        yield* sql`INSERT INTO harness_attempt VALUES (${input.id}, ${input.owner ?? input.session}, ${input.session}, ${input.message}, ${input.logical_step ?? null}, ${Date.now()}, NULL, 'running', ${sha256}, NULL)`
+      }),
+    )
+  const finishAttempt = (id: string, status: string, result: typeof Schema.Json.Type) =>
+    sql`UPDATE harness_attempt SET finished_at = ${Date.now()}, status = ${status}, result = ${JSON.stringify(result)} WHERE id = ${id} AND status = 'running'`
+  const attempts = (session: string) =>
+    sql<{
+      id: string
+      session: string
+      message: string
+      logical_step: number | null
+      started_at: number
+      finished_at: number | null
+      status: string
+      request_sha256: string
+      content: string
+      result: string | null
+    }>`SELECT a.*, r.content FROM harness_attempt a JOIN harness_request r ON r.sha256 = a.request_sha256 WHERE a.session = ${session} ORDER BY a.started_at, a.id`
+
   const reserveNetwork = Effect.fn(function* (owner: string, bytes: number, maximum: number) {
     if (!Number.isSafeInteger(bytes) || bytes <= 0 || !Number.isSafeInteger(maximum) || bytes > maximum)
       return yield* Effect.fail(new Error("Invalid network byte reservation"))
     const changed = yield* sql<{ reserved_bytes: number }>`INSERT INTO network_budget VALUES (${owner}, ${bytes})
       ON CONFLICT(owner) DO UPDATE SET reserved_bytes = reserved_bytes + excluded.reserved_bytes
       WHERE reserved_bytes <= ${maximum - bytes} RETURNING reserved_bytes`
-    if (!changed[0]) return yield* Effect.fail(new Error("Engagement network byte budget exhausted"))
+    if (!changed[0])
+      return yield* Effect.fail(
+        new ForkCyberDiagnostics.Failure({
+          category: "budget",
+          operation: "kali_network_reservation",
+          message: "Engagement network byte budget exhausted",
+          target_started: false,
+          effects: "not_started",
+          recovery:
+            "Read the remaining network budget. Use network: none for offline analysis, or have the operator approve a revised budget.",
+          details: { reservation_bytes: bytes, maximum_bytes: maximum, refunds: false },
+        }),
+      )
     return changed[0].reserved_bytes
   })
 
@@ -181,7 +249,16 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
         ? yield* sql`INSERT INTO engagement VALUES (${owner}, 1, ${JSON.stringify(value)}) ON CONFLICT DO NOTHING RETURNING owner`
         : yield* sql`UPDATE engagement SET manifest = ${JSON.stringify(value)}, revision = revision + 1 WHERE owner = ${owner} AND revision = ${revision} RETURNING owner`
     if (changed.length === 0)
-      return yield* Effect.fail(new Error("Engagement changed concurrently; read it again before applying the patch"))
+      return yield* Effect.fail(
+        new ForkCyberDiagnostics.Failure({
+          category: "revision",
+          operation: "engagement_update",
+          message: "Engagement changed concurrently; read it again before applying the patch",
+          target_started: false,
+          effects: "not_started",
+          recovery: "Read engagement and reapply the intended patch to its current revision.",
+        }),
+      )
   })
   const append = (owner: string, content: string, origin: string = crypto.randomUUID()) =>
     sql`INSERT INTO note(owner, origin, content, created_at) VALUES (${owner}, ${origin}, ${content}, ${Date.now()}) ON CONFLICT DO NOTHING`
@@ -192,6 +269,15 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
       content: string
       created_at: number
     }>`SELECT seq, origin, content, created_at FROM note WHERE owner = ${owner} AND seq < ${before} ORDER BY seq DESC LIMIT ${limit}`
+  const notesPage = Effect.fn(function* (owner: string, before?: number) {
+    const rows = yield* notes(owner, before, 26)
+    return {
+      items: rows.slice(0, 25),
+      limit: 25,
+      has_more: rows.length > 25,
+      next_before: rows.length > 25 ? rows[24]!.seq : null,
+    }
+  })
   const artifact = (owner: string, execution: string, kind: string, bytes: Uint8Array, mediaType: string) => {
     const id = crypto.randomUUID()
     return sql<{
@@ -252,6 +338,61 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
     )
   const executions = (owner: string, offset = 0) =>
     sql`SELECT * FROM execution WHERE owner = ${owner} ORDER BY started_at, id LIMIT 25 OFFSET ${offset}`
+  const executionsPage = Effect.fn(function* (
+    owner: string,
+    input: {
+      offset?: number
+      task?: string
+      tool?: string
+      status?: string
+      operation_class?: string
+      detail?: boolean
+    } = {},
+  ) {
+    const rows = yield* sql<{
+      id: string
+      session: string
+      tool: string
+      agent: string
+      status: string
+      started_at: number
+      finished_at: number | null
+      operation_class: string
+      provenance: string
+      completion_evidence: string
+    }>`SELECT e.*, COALESCE(json_extract(e.provenance, '$.operation_class'), 'unknown') AS operation_class,
+      (SELECT json_group_array(a.id) FROM artifact a WHERE a.owner = e.owner AND a.execution = e.id AND a.kind = 'output' AND e.status = 'completed') AS completion_evidence
+      FROM execution e WHERE e.owner = ${owner}
+      AND (${input.task ?? null} IS NULL OR EXISTS (SELECT 1 FROM cyber_task_execution t WHERE t.owner = e.owner AND t.execution = e.id AND t.task = ${input.task ?? null}))
+      AND (${input.tool ?? null} IS NULL OR e.tool = ${input.tool ?? null})
+      AND (${input.status ?? null} IS NULL OR e.status = ${input.status ?? null})
+      AND (${input.operation_class ?? null} IS NULL OR COALESCE(json_extract(e.provenance, '$.operation_class'), 'unknown') = ${input.operation_class ?? null})
+      ORDER BY e.started_at, e.id LIMIT 26 OFFSET ${input.offset ?? 0}`
+    return ForkCyberPagination.page(
+      rows.map((row) => ({
+        id: row.id,
+        session: row.session,
+        tool: row.tool,
+        agent: row.agent,
+        status: row.status,
+        started_at: row.started_at,
+        finished_at: row.finished_at,
+        operation_class: row.operation_class,
+        completion_evidence: Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Array(Schema.String)))(
+          row.completion_evidence,
+        ),
+        ...(input.detail ? { provenance: ForkCyberRedaction.text(row.provenance) } : {}),
+      })),
+      input.offset,
+    )
+  })
+  const networkBudget = Effect.fn(function* (owner: string, maximum: number) {
+    const rows = yield* sql<{
+      reserved_bytes: number
+    }>`SELECT reserved_bytes FROM network_budget WHERE owner = ${owner}`
+    const reserved = rows[0]?.reserved_bytes ?? 0
+    return { total: maximum, reserved, remaining: Math.max(0, maximum - reserved), unit: "bytes" }
+  })
   const artifacts = (owner: string, execution: string) =>
     sql`SELECT id, execution, kind, media_type, sha256, bytes FROM artifact WHERE owner = ${owner} AND execution = ${execution} ORDER BY id`
   const readArtifact = Effect.fn(function* (owner: string, id: string) {
@@ -261,12 +402,24 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
       bytes: number
       media_type: string
       kind: string
-    }>`SELECT data, sha256, bytes, media_type, kind FROM artifact WHERE owner = ${owner} AND id = ${id}`
+      execution: string
+      status: string
+      provenance: string
+    }>`SELECT a.data, a.sha256, a.bytes, a.media_type, a.kind, a.execution, e.status, e.provenance FROM artifact a
+      JOIN execution e ON e.owner = a.owner AND e.id = a.execution WHERE a.owner = ${owner} AND a.id = ${id}`
     if (!rows[0]) return yield* Effect.fail(new Error("Artifact not found in this engagement"))
     const bytes = Buffer.from(rows[0].data, "base64")
     if (bytes.byteLength !== rows[0].bytes || digest(bytes) !== rows[0].sha256)
       return yield* Effect.fail(new Error("Artifact integrity check failed"))
-    return { bytes, media_type: rows[0].media_type, sha256: rows[0].sha256, kind: rows[0].kind }
+    return {
+      bytes,
+      media_type: rows[0].media_type,
+      sha256: rows[0].sha256,
+      kind: rows[0].kind,
+      execution: rows[0].execution,
+      status: rows[0].status,
+      provenance: rows[0].provenance,
+    }
   })
   const finding = (
     owner: string,
@@ -328,6 +481,124 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
     )
   const findings = (owner: string, offset = 0) =>
     sql`SELECT f.*, (SELECT details FROM finding_validation WHERE owner = f.owner AND finding = f.id) AS validation, (SELECT json_group_array(artifact) FROM finding_evidence WHERE owner = f.owner AND finding = f.id) AS evidence FROM finding f WHERE owner = ${owner} ORDER BY updated_at, id LIMIT 25 OFFSET ${offset}`
+  const findingsPage = (owner: string, offset = 0) =>
+    sql`SELECT f.*, (SELECT details FROM finding_validation WHERE owner = f.owner AND finding = f.id) AS validation,
+    (SELECT json_group_array(artifact) FROM finding_evidence WHERE owner = f.owner AND finding = f.id) AS evidence
+    FROM finding f WHERE owner = ${owner} ORDER BY updated_at, id LIMIT 26 OFFSET ${offset}`.pipe(
+      Effect.map((rows) => ForkCyberPagination.page(rows, offset)),
+    )
+  const report = Effect.fn(function* (owner: string, offset = 0) {
+    const tasks = yield* sql`SELECT status, count(*) AS count FROM cyber_task WHERE owner = ${owner} GROUP BY status`
+    const operations =
+      yield* sql`SELECT tool, status, COALESCE(json_extract(provenance, '$.operation_class'), 'unknown') AS operation_class, count(*) AS count
+      FROM execution WHERE owner = ${owner} GROUP BY tool, status, operation_class`
+    const findings = yield* sql`SELECT status, count(*) AS count FROM finding WHERE owner = ${owner} GROUP BY status`
+    const retries =
+      yield* sql`SELECT r.predecessor, p.status AS predecessor_status, r.successor, s.status AS successor_status, r.reason
+      FROM cyber_task_retry r JOIN cyber_task p ON p.owner = r.owner AND p.key = r.predecessor
+      JOIN cyber_task s ON s.owner = r.owner AND s.key = r.successor WHERE r.owner = ${owner}`
+    const outputs = yield* sql<{
+      id: string
+      execution: string
+      tool: string
+      bytes: number
+      sha256: string
+      task: string | null
+    }>`SELECT a.id, a.execution, e.tool, a.bytes, a.sha256, t.task
+      FROM artifact a JOIN execution e ON e.owner = a.owner AND e.id = a.execution
+      LEFT JOIN cyber_task_execution t ON t.owner = e.owner AND t.execution = e.id
+      WHERE a.owner = ${owner} AND a.kind = 'output' AND e.status = 'completed'
+      ORDER BY e.started_at, a.id LIMIT 26 OFFSET ${offset}`
+    const observations = yield* Effect.forEach(outputs.slice(0, 25), (row) =>
+      Effect.gen(function* () {
+        if (row.bytes > 65536) return { ...row, state: "detail_required", properties: null }
+        const artifact = yield* readArtifact(owner, row.id)
+        const payload = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Record(Schema.String, Schema.Json)))(
+          artifact.bytes.toString(),
+        )
+        if (Option.isNone(payload)) return { ...row, state: "detail_required", properties: null }
+        const capture = Schema.decodeUnknownOption(Schema.Record(Schema.String, Schema.Json))(payload.value.capture)
+        const value = Option.isSome(capture) ? capture.value : payload.value
+        // Only producer-owned technical fields enter the compact projection; raw bytes remain behind the ID.
+        const fields = new Set([
+          "format",
+          "module",
+          "protocol",
+          "target",
+          "host",
+          "url",
+          "port",
+          "family",
+          "address",
+          "resolved_addresses",
+          "status",
+          "scanned_ports",
+          "ports",
+          "extra_ports",
+          "unreported_ports",
+          "sha256",
+          "bytes",
+          "response_body",
+          "capture_truncated",
+          "identity",
+          "files",
+          "report",
+          "versions",
+          "chain",
+          "hostname",
+          "trust_source",
+          "trust_verified",
+          "sni",
+          "cipher_coverage",
+          "certificate_time_valid",
+          "query",
+          "records",
+          "ttl",
+          "resolver",
+          "detector_version",
+          "patterns",
+          "coverage",
+          "graph",
+          "uncaptured_assets",
+          "unresolved_imports",
+          "input_batches",
+          "network_requests",
+          "cases",
+          "healthy_control_passed",
+          "candidate_reproduced",
+          "dimensions",
+          "browser_configuration",
+          "limits",
+          "limitations",
+        ])
+        return {
+          ...row,
+          state: "recorded",
+          properties: ForkCyberRedaction.json(
+            Object.fromEntries(Object.entries(value).filter(([key]) => fields.has(key))),
+          ),
+        }
+      }),
+    )
+    return {
+      format: "opencyber-report-v1",
+      tasks,
+      operations,
+      findings,
+      recovered_work: retries,
+      observations: { ...ForkCyberPagination.page(outputs, offset), items: observations },
+      coverage: yield* coordination.coveragePage(owner, offset),
+      executions: yield* executionsPage(owner, { offset }),
+      finding_records: yield* findingsPage(owner, offset),
+      limitations: [
+        "Counts derive from recorded executions and tasks, not security-test counts or complete application coverage.",
+        "Unknown operation classes remain unknown. Preparation and source reads are not network validation.",
+        "Observations preserve recorded tested endpoints and controls; untested ports, families and origin servers remain unknown. Outputs above 64 KiB require evidence detail.",
+        "No matches applies to recorded input hashes and detector versions only. Pending candidates remain candidates.",
+        "Completed successors do not change blocked predecessor history. Report pending runtime dimensions and missing evidence.",
+      ],
+    }
+  })
   const exportArchive = (owner: string) =>
     sql.withTransaction(
       Effect.gen(function* () {
@@ -363,6 +634,48 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
         }
       }),
     )
+  const analysisArchive = (owner: string, sessions?: readonly string[]) =>
+    sql.withTransaction(
+      Effect.gen(function* () {
+        const selected = sessions ? JSON.stringify(sessions) : null
+        const artifacts = yield* sql`SELECT a.id, a.execution, a.kind, a.media_type, a.sha256, a.bytes FROM artifact a
+          JOIN execution e ON e.owner = a.owner AND e.id = a.execution WHERE a.owner = ${owner}
+          AND (${selected} IS NULL OR e.session IN (SELECT value FROM json_each(${selected}))) ORDER BY a.id`
+        return {
+          format: "opencyber-analysis-evidence-v1",
+          owner,
+          selected_sessions: sessions ?? null,
+          engagement: yield* manifest(owner),
+          executions: yield* sql`SELECT * FROM execution WHERE owner = ${owner}
+            AND (${selected} IS NULL OR session IN (SELECT value FROM json_each(${selected}))) ORDER BY started_at, id`,
+          artifacts,
+          artifact_bytes:
+            "Original bytes remain in the private archive. evidence returns redacted previews; cyber_artifacts analyzes original bytes by ID without exposing secret values.",
+          notes: yield* sql`SELECT * FROM note WHERE owner = ${owner} ORDER BY seq`,
+          tasks: yield* sql`SELECT * FROM cyber_task WHERE owner = ${owner}
+            AND (${selected} IS NULL OR ${owner} IN (SELECT value FROM json_each(${selected}))
+              OR session IN (SELECT value FROM json_each(${selected}))) ORDER BY key`,
+          task_evidence: yield* sql`SELECT t.* FROM cyber_task_evidence t
+            JOIN cyber_task c ON c.owner = t.owner AND c.key = t.task WHERE t.owner = ${owner}
+            AND (${selected} IS NULL OR ${owner} IN (SELECT value FROM json_each(${selected}))
+              OR c.session IN (SELECT value FROM json_each(${selected}))) ORDER BY t.task, t.artifact`,
+          task_retries: yield* sql`SELECT r.* FROM cyber_task_retry r WHERE r.owner = ${owner}
+            AND (${selected} IS NULL OR ${owner} IN (SELECT value FROM json_each(${selected}))
+              OR EXISTS (SELECT 1 FROM cyber_task c WHERE c.owner = r.owner
+              AND c.key IN (r.predecessor,r.successor) AND c.session IN (SELECT value FROM json_each(${selected}))))
+            ORDER BY r.predecessor`,
+          findings: yield* sql`SELECT f.* FROM finding f WHERE f.owner = ${owner}
+            AND (${selected} IS NULL OR ${owner} IN (SELECT value FROM json_each(${selected}))
+              OR EXISTS (SELECT 1 FROM finding_evidence t
+              JOIN artifact a ON a.owner = t.owner AND a.id = t.artifact
+              JOIN execution e ON e.owner = a.owner AND e.id = a.execution
+              WHERE t.owner = f.owner AND t.finding = f.id AND e.session IN (SELECT value FROM json_each(${selected}))))
+            ORDER BY f.id`,
+          network_budget: yield* sql`SELECT * FROM network_budget WHERE owner = ${owner}`,
+          shared_context: "Engagement scope, notes and network budgets belong to the top-level engagement.",
+        }
+      }),
+    )
   const purge = (owner: string) =>
     sql.withTransaction(
       Effect.gen(function* () {
@@ -381,6 +694,8 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
         yield* sql`DELETE FROM engagement_approval WHERE owner = ${owner}`
         yield* sql`DELETE FROM http_budget WHERE owner = ${owner}`
         yield* sql`DELETE FROM network_budget WHERE owner = ${owner}`
+        yield* sql`DELETE FROM harness_attempt WHERE owner = ${owner}`
+        yield* sql`DELETE FROM harness_request WHERE NOT EXISTS (SELECT 1 FROM harness_attempt WHERE request_sha256 = harness_request.sha256)`
       }),
     )
   return {
@@ -390,19 +705,28 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
     approveManifest,
     append,
     notes,
+    notesPage,
     start,
     finish,
     executions,
+    executionsPage,
     artifact,
     artifacts,
     readArtifact,
     finding,
     findings,
+    findingsPage,
+    report,
+    startAttempt,
+    finishAttempt,
+    attempts,
     exportArchive,
+    analysisArchive,
     purge,
     legacyAllowed,
     claimHttp,
     reserveNetwork,
+    networkBudget,
     coordination,
   }
 })
@@ -436,24 +760,18 @@ const checkpointPreview = Schema.decodeUnknownOption(
 )
 
 // Checkpoints use an allowlist before pagination; malformed private state is never shown.
-export function preview(text: string, position = 0, kind = "output") {
+export function preview(text: string, position = 0, kind = "output", limit = 8000) {
   if (kind === "browser.state") {
     const state = checkpointPreview(text)
     if (Option.isNone(state))
-      return "Browser checkpoint preview unavailable. Private values are withheld.".slice(position, position + 8000)
+      return "Browser checkpoint preview unavailable. Private values are withheld.".slice(position, position + limit)
     return JSON.stringify({
       cookies: state.value.cookies.map((cookie) => ({ ...cookie, value: "[REDACTED]" })),
       origins: state.value.origins.map((origin) => ({
         origin: origin.origin,
         localStorage: origin.localStorage.map((entry) => ({ name: entry.name, value: "[REDACTED]" })),
       })),
-    }).slice(position, position + 8000)
+    }).slice(position, position + limit)
   }
-  return text
-    .replace(
-      /("(?:authorization|cookie|set-cookie|password|token|api[_-]?key)"\s*,\s*")(?:\\.|[^"\\])*"/gi,
-      '$1[REDACTED]"',
-    )
-    .replace(/(authorization|cookie|set-cookie|password|token|api[_-]?key)(["\s:=]+)[^\r\n,}]+/gi, "$1$2[REDACTED]")
-    .slice(position, position + 8000)
+  return ForkCyberRedaction.text(text).slice(position, position + limit)
 }

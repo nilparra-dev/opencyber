@@ -35,7 +35,13 @@ export const record = Effect.fn(function* <A>(
 ) {
   yield* requireRole(store, assessment)
   const id = crypto.randomUUID()
-  yield* store.start({ ...assessment, id, tool: "cyber_surface", input, provenance: { module, format: "surface-v1" } })
+  yield* store.start({
+    ...assessment,
+    id,
+    tool: "cyber_surface",
+    input,
+    provenance: { module, format: "surface-v1", operation_class: "analysis" },
+  })
   const result = yield* operation(id).pipe(
     Effect.onInterrupt(() =>
       store.finish(assessment.owner, id, "error", { message: "Surface execution interrupted" }).pipe(Effect.asVoid),
@@ -47,7 +53,13 @@ export const record = Effect.fn(function* <A>(
     return yield* Effect.fail(result.failure)
   }
   const output = yield* store.finish(assessment.owner, id, "completed", result.success)
-  return { execution: id, evidence: output[0]!.id, capture: result.success }
+  return {
+    execution: id,
+    evidence: output[0]!.id,
+    completion_evidence: [output[0]!.id],
+    artifacts: yield* store.artifacts(assessment.owner, id),
+    capture: result.success,
+  }
 })
 
 export const importFile = Effect.fn(function* (

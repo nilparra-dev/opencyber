@@ -2,6 +2,8 @@ export * as GrepTool from "./grep.js"
 
 import type { Context } from "@opencode/plugin/effect/plugin"
 import { ToolFailure } from "@opencode/ai"
+// fork: retain typed hardened file-access diagnostics (F-019).
+import { Tool } from "@opencode/schema/tool"
 import { Effect, Schema } from "effect"
 import path from "path"
 import { Environment } from "../../environment/index.js"
@@ -156,7 +158,7 @@ export const Plugin = {
                 metadata: { matches: result.matches.length, truncated: result.truncated },
               })),
               Effect.mapError((error) =>
-                error instanceof ToolFailure
+                error instanceof ToolFailure || error instanceof Tool.Error
                   ? error
                   : error instanceof Ripgrep.InvalidPatternError
                     ? new ToolFailure({ message: `Invalid regex pattern: ${error.message}` })

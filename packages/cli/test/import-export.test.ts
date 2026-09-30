@@ -55,8 +55,11 @@ function run(args: string[], stdin?: string) {
   return Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text(), child.exited])
 }
 
-test("export is raw by default and supports explicit sanitization", async () => {
+// fork: privacy and reasoning selections reach the API for every CLI export (F-023).
+test("export requests redaction by default and supports sanitization, analysis and private profiles", async () => {
   const sanitization: string[] = []
+  const profiles: string[] = []
+  const reasoning: string[] = []
   const server = Bun.serve({
     port: 0,
     fetch(request) {
@@ -65,6 +68,8 @@ test("export is raw by default and supports explicit sanitization", async () => 
       if (url.pathname === `/api/session/${info.id}`) return Response.json({ data: info })
       if (url.pathname === `/api/experimental/session/${info.id}/export`) {
         sanitization.push(url.searchParams.get("sanitize") ?? "")
+        profiles.push(url.searchParams.get("profile") ?? "")
+        reasoning.push(url.searchParams.get("reasoning") ?? "")
         return Response.json({ data: url.searchParams.get("sanitize") === "true" ? sanitizedTransfer : transfer })
       }
       return new Response("Not found", { status: 404 })
@@ -88,7 +93,24 @@ test("export is raw by default and supports explicit sanitization", async () => 
     ])
     expect(sanitizedExitCode).toBe(0)
     expect(JSON.parse(sanitized)).toEqual(sanitizedTransfer)
-    expect(sanitization).toEqual(["false", "true"])
+    for (const profile of ["analysis", "private"]) {
+      const [output, error, code] = await run([
+        "session",
+        "export",
+        info.id,
+        "--profile",
+        profile,
+        "--reasoning=false",
+        "--server",
+        server.url.toString(),
+      ])
+      expect(code).toBe(0)
+      expect(error).toBe("")
+      expect(JSON.parse(output)).toEqual(transfer)
+    }
+    expect(sanitization).toEqual(["false", "true", "false", "false"])
+    expect(profiles).toEqual(["redacted", "redacted", "analysis", "private"])
+    expect(reasoning).toEqual(["true", "true", "false", "false"])
   } finally {
     await server.stop(true)
   }

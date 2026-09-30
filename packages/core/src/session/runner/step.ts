@@ -8,6 +8,7 @@ import {
   isContextOverflowFailure,
   type ProviderErrorEvent,
   type ToolCall,
+  type Usage,
 } from "@opencode/ai"
 import type { Agent } from "@opencode/schema/agent"
 import { Cause, Clock, Data, Effect, Exit, Fiber, Option, Stream } from "effect"
@@ -28,6 +29,8 @@ import { SessionUsage } from "../usage.js"
 import { SessionRunnerModel } from "./model.js"
 import { createLLMEventPublisher } from "./publish-llm-event.js"
 import { SessionRunnerRetry } from "./retry.js"
+// fork: capture irreducible request settings per physical attempt for analysis (F-022).
+import { ForkCyberTrace } from "../../fork-cyber/trace.js"
 
 export type Outcome = Data.TaggedEnum<{
   Completed: { readonly needsContinuation: boolean }
@@ -42,6 +45,7 @@ export type Outcome = Data.TaggedEnum<{
 export const Outcome = Data.taggedEnum<Outcome>()
 
 interface Input {
+  readonly logicalStep?: number
   readonly isLocationClosed: () => boolean
   readonly sessionID: SessionSchema.ID
   readonly assistantMessageID: SessionMessage.ID
@@ -68,9 +72,28 @@ export const make = Effect.gen(function* () {
   const llm = yield* LLMClient.Service
   const snapshots = yield* Snapshot.Service
   const toolOutput = yield* ToolOutput.Service
+  const trace = Option.getOrUndefined(yield* Effect.serviceOption(ForkCyberTrace.Service))
 
   const attempt = Effect.fn("SessionStep.attempt")(function* (input: Input) {
     const startSnapshot = yield* snapshots.capture()
+    const attemptID = yield* trace?.start({
+      session: input.sessionID,
+      message: input.assistantMessageID,
+      logical_step: input.logicalStep,
+      request: {
+        model: input.model.ref,
+        resolved_model: input.model.model,
+        exact_model_version: "unknown",
+        agent: input.agent,
+        system: input.prepared.request.system,
+        messages: input.prepared.request.messages,
+        tools: input.prepared.request.tools,
+        generation: input.prepared.request.generation,
+        provider_options: input.prepared.request.providerOptions,
+        tool_choice: input.prepared.request.toolChoice,
+        opaque_provider_state: "omitted",
+      },
+    }) ?? Effect.succeed(undefined)
     const publisher = createLLMEventPublisher(bus, {
       sessionID: input.sessionID,
       assistantMessageID: input.assistantMessageID,
@@ -100,11 +123,13 @@ export const make = Effect.gen(function* () {
     // Provider and tool fibers retain per-source order without a shared writer queue.
     // A local execution starts only after its Tool.Called publication completes.
     let overflowFailure: ProviderErrorEvent | undefined
+    let reportedUsage: Usage | undefined
     // Read to the end, not just the finish event, so the next request can reuse this response.
     const providerStream = llm.stream(input.prepared.request, input.prepared.options).pipe(
       Stream.runForEach((event) =>
         Effect.gen(function* () {
           if (overflowFailure || publisher.hasProviderError()) return
+          if (event.type === "step-finish") reportedUsage = event.usage
           if (
             LLMEvent.is.providerError(event) &&
             isContextOverflowFailure(event) &&
@@ -271,7 +296,21 @@ export const make = Effect.gen(function* () {
         return Outcome.Completed({
           needsContinuation: input.prepared.request.toolChoice?.type !== "none" && record.needsContinuation,
         })
-      }),
+      }).pipe(
+        Effect.onExit(
+          (exit) =>
+            trace?.finish(
+              attemptID,
+              Exit.isSuccess(exit) ? "settled" : Exit.hasInterrupts(exit) ? "interrupted" : "failed",
+              {
+                outcome: Exit.isSuccess(exit) ? exit.value : null,
+                usage: reportedUsage ?? null,
+                normalized_usage: reportedUsage ? (publisher.record().finish?.tokens ?? null) : null,
+                failure: publisher.record().failure ?? null,
+              },
+            ) ?? Effect.void,
+        ),
+      ),
     )
   }, Effect.scoped)
 

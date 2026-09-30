@@ -36,6 +36,63 @@ const report = (changes: Record<string, unknown> = {}) => ({
   ],
 })
 
+test("source identity preserves commit, dirty state and changed file hashes without asserting deployed identity", async () => {
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const env = yield* laboratory
+        const git = (args: string[]) =>
+          Effect.tryPromise(async () => {
+            const child = Bun.spawn(["git", ...args], { cwd: env.assessment.directory, stdout: "pipe", stderr: "pipe" })
+            const [code, output, error] = await Promise.all([
+              child.exited,
+              new Response(child.stdout).text(),
+              new Response(child.stderr).text(),
+            ])
+            if (code !== 0) throw new Error(error)
+            return output.trim()
+          })
+        yield* git(["init", "--quiet"])
+        yield* git(["add", "healthy.ts"])
+        yield* git([
+          "-c",
+          "user.name=Fixture",
+          "-c",
+          "user.email=fixture@example.test",
+          "-c",
+          "core.hooksPath=disabled",
+          "-c",
+          "commit.gpgsign=false",
+          "commit",
+          "--quiet",
+          "-m",
+          "Synthetic source",
+        ])
+        const commit = yield* git(["rev-parse", "HEAD"])
+        const clean = yield* ForkCyberCodeReview.run(env.store, env.assessment, {
+          action: "snapshot",
+          files: ["healthy.ts"],
+        })
+        if (!("identity" in clean)) throw new Error("Expected source snapshot")
+        expect(clean.identity).toMatchObject({ commit, dirty: false, deployment_relation: "unverified" })
+        yield* Effect.promise(() =>
+          Bun.write(path.join(env.assessment.directory, "healthy.ts"), "export const source = 'changed local source';"),
+        )
+        const changed = yield* ForkCyberCodeReview.run(env.store, env.assessment, {
+          action: "snapshot",
+          files: ["healthy.ts"],
+        })
+        if (!("identity" in changed)) throw new Error("Expected source snapshot")
+        expect(changed.identity).toMatchObject({ commit, dirty: true, deployment_relation: "unverified" })
+        expect(changed.files[0]!.sha256).not.toBe(clean.files[0]!.sha256)
+        expect(changed.files[0]!.sha256).toBe(
+          ForkCyberStore.digest(Buffer.from("export const source = 'changed local source';")),
+        )
+      }),
+    ),
+  )
+})
+
 test("real Semgrep lab imports a candidate, preserves sources and distinguishes its healthy control", async () => {
   using db = new Database(":memory:")
   db.exec("CREATE TABLE account(id INTEGER, name TEXT); INSERT INTO account VALUES (1, 'alice'), (2, 'bob')")

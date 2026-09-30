@@ -100,6 +100,12 @@ test("HTTP lab: two accounts expose the broken control but deny the healthy cont
 test("scope rejects excluded hosts, CIDRs and DNS answers, including IPv4-mapped IPv6", () => {
   expect(() => ForkCyberHttp.authorize(new URL("http://outside.test"), manifest)).toThrow("outside")
   expect(() =>
+    ForkCyberHttp.authorize(new URL("http://outside.test"), {
+      ...manifest,
+      scope: { ...manifest.scope, excluded: ["outside.test"] },
+    }),
+  ).toThrow("HTTP destination is excluded")
+  expect(() =>
     ForkCyberHttp.authorize(new URL("http://127.0.0.1"), {
       ...manifest,
       scope: { ...manifest.scope, excluded: ["127.0.0.0/8"] },
@@ -354,7 +360,20 @@ test("interruption aborts the socket and never records a completed exchange", as
         yield* Effect.promise(() => arrived.promise)
         yield* Fiber.interrupt(fiber)
         yield* Effect.promise(() => closed.promise).pipe(Effect.timeout(2000))
-        expect((yield* store.executions("owner"))[0]?.status).toBe("running")
+        const execution = (yield* store.executions("owner"))[0]!
+        expect(execution.status).toBe("error")
+        const output = (yield* store.artifacts("owner", String(execution.id))).find(
+          (artifact) => artifact.kind === "error",
+        )!
+        expect(JSON.parse((yield* store.readArtifact("owner", String(output.id))).bytes.toString())).toMatchObject({
+          diagnostic: {
+            category: "transport",
+            operation: "http_request",
+            target_started: true,
+            effects: "unknown",
+            recovery: "Reconcile this execution before repeating a request.",
+          },
+        })
       }),
     ),
   )

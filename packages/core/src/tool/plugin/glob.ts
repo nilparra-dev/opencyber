@@ -1,6 +1,8 @@
 export * as GlobTool from "./glob.js"
 
 import { ToolFailure } from "@opencode/ai"
+// fork: retain typed hardened file-access diagnostics (F-019).
+import { Tool } from "@opencode/schema/tool"
 import type { Context } from "@opencode/plugin/effect/plugin"
 import { Effect, Schema } from "effect"
 import path from "path"
@@ -127,7 +129,7 @@ export const Plugin = {
                 metadata: { count: result.entries.length, truncated: result.truncated },
               })),
               Effect.mapError((error) =>
-                error instanceof ToolFailure
+                error instanceof ToolFailure || error instanceof Tool.Error
                   ? error
                   : new ToolFailure({ message: `Unable to find files matching ${input.pattern}`, error }),
               ),

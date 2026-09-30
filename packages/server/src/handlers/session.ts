@@ -167,7 +167,13 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
         Effect.fn(function* (ctx) {
           return {
             data: yield* transfer
-              .export({ sessionID: ctx.params.sessionID, sanitize: ctx.query.sanitize })
+              // fork: forward privacy and reasoning options for every export format (F-023).
+              .export({
+                sessionID: ctx.params.sessionID,
+                sanitize: ctx.query.sanitize,
+                profile: ctx.query.profile,
+                reasoning: ctx.query.reasoning,
+              })
               .pipe(
                 Effect.catchTag("Session.NotFoundError", missingSession),
                 Effect.catchTag("Session.MessageDecodeError", failedMessageDecode),

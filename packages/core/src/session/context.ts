@@ -1,4 +1,6 @@
 export * as SessionContext from "./context.js"
+// fork: observations use the existing instruction epochs and update persistence (F-021).
+import { ForkCyberInstructions } from "../fork-cyber/instructions.js"
 
 import { Model } from "../model.js"
 import { Permission } from "../permission.js"
@@ -89,6 +91,7 @@ const layer = Layer.effect(
     const skillInstructions = yield* SkillInstructions.Service
     const store = yield* SessionStore.Service
     const registry = yield* Tool.Service
+    const cyberInstructions = yield* ForkCyberInstructions.Service
 
     const resolveModel = (session: SessionSchema.Info) => models.resolve(session, model.available)
 
@@ -155,6 +158,7 @@ const layer = Layer.effect(
           loaded.discovery,
           loaded.builtins,
           loaded.entries,
+          cyberInstructions.load(sessionID),
         ]),
         tools: loaded.tools,
       }
@@ -190,6 +194,7 @@ export const node = makeLocationNode({
   layer,
   deps: [
     Agent.node,
+    ForkCyberInstructions.node,
     Model.node,
     Database.node,
     InstructionBuiltIns.node,

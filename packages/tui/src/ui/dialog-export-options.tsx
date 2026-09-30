@@ -6,6 +6,9 @@ import { createStore } from "solid-js/store"
 import { For, Show } from "solid-js"
 
 export type ExportFormat = "markdown" | "json"
+// fork: use one privacy selection for JSON, Markdown and clipboard (F-023).
+export type ExportProfile = "redacted" | "analysis" | "private" | "sanitized"
+const profiles: ExportProfile[] = ["redacted", "analysis", "private", "sanitized"]
 
 export type DialogExportOptionsProps = {
   defaultThinking: boolean
@@ -15,21 +18,22 @@ export type DialogExportOptionsProps = {
     thinking: boolean
     tools: boolean
     sanitize: boolean
+    profile: ExportProfile
   }) => void
   onCancel?: () => void
 }
 
-type Active = ExportFormat | "thinking" | "tools" | "sanitize" | "copy" | "export"
+type Active = ExportFormat | "thinking" | "tools" | "sanitize" | "profile" | "copy" | "export"
 
 export function DialogExportOptions(props: DialogExportOptionsProps) {
   const dialog = useDialog()
   const theme = useTheme().surface("dialog")
-  const overlayTheme = useTheme()
   const [store, setStore] = createStore({
     format: "markdown" as ExportFormat,
     thinking: props.defaultThinking,
     tools: true,
     sanitize: false,
+    profile: profiles[0],
     active: "markdown" as Active,
   })
 
@@ -40,6 +44,7 @@ export function DialogExportOptions(props: DialogExportOptionsProps) {
       thinking: store.thinking,
       tools: store.tools,
       sanitize: store.sanitize,
+      profile: store.profile,
     })
 
   const activate = () => {
@@ -50,6 +55,8 @@ export function DialogExportOptions(props: DialogExportOptionsProps) {
     if (store.active === "thinking") setStore("thinking", !store.thinking)
     if (store.active === "tools") setStore("tools", !store.tools)
     if (store.active === "sanitize") setStore("sanitize", !store.sanitize)
+    if (store.active === "profile")
+      setStore("profile", profiles[(profiles.indexOf(store.profile) + 1) % profiles.length])
     if (store.active === "copy" || store.active === "export") confirm(store.active)
   }
 
@@ -63,8 +70,8 @@ export function DialogExportOptions(props: DialogExportOptionsProps) {
         run: () => {
           const order: Active[] =
             store.format === "markdown"
-              ? ["markdown", "json", "thinking", "tools", "copy", "export"]
-              : ["markdown", "json", "sanitize", "copy", "export"]
+              ? ["markdown", "json", "profile", "thinking", "tools", "sanitize", "copy", "export"]
+              : ["markdown", "json", "profile", "thinking", "sanitize", "copy", "export"]
           setStore("active", order[(order.indexOf(store.active) + 1) % order.length])
         },
       },
@@ -125,45 +132,45 @@ export function DialogExportOptions(props: DialogExportOptionsProps) {
           </For>
         </box>
       </box>
-      <Show when={store.format === "markdown"}>
-        <box
-          flexDirection="row"
-          gap={1}
-          backgroundColor={
+      <box
+        flexDirection="row"
+        gap={1}
+        backgroundColor={
+          store.active === "thinking"
+            ? theme.background.formfield.focused
+            : store.thinking
+              ? theme.background.formfield.selected
+              : theme.background.formfield.base
+        }
+        onMouseUp={() => {
+          setStore("active", "thinking")
+          setStore("thinking", !store.thinking)
+        }}
+      >
+        <text
+          fg={
             store.active === "thinking"
-              ? theme.background.formfield.focused
+              ? theme.text.formfield.focused
               : store.thinking
-                ? theme.background.formfield.selected
-                : theme.background.formfield.base
+                ? theme.text.formfield.selected
+                : theme.text.formfield.base
           }
-          onMouseUp={() => {
-            setStore("active", "thinking")
-            setStore("thinking", !store.thinking)
-          }}
         >
-          <text
-            fg={
-              store.active === "thinking"
-                ? theme.text.formfield.focused
-                : store.thinking
-                  ? theme.text.formfield.selected
-                  : theme.text.formfield.base
-            }
-          >
-            {store.thinking ? "[x]" : "[ ]"}
-          </text>
-          <text
-            fg={
-              store.active === "thinking"
-                ? theme.text.formfield.focused
-                : store.thinking
-                  ? theme.text.formfield.selected
-                  : theme.text.formfield.base
-            }
-          >
-            Include thinking
-          </text>
-        </box>
+          {store.thinking ? "[x]" : "[ ]"}
+        </text>
+        <text
+          fg={
+            store.active === "thinking"
+              ? theme.text.formfield.focused
+              : store.thinking
+                ? theme.text.formfield.selected
+                : theme.text.formfield.base
+          }
+        >
+          Include thinking
+        </text>
+      </box>
+      <Show when={store.format === "markdown"}>
         <box
           flexDirection="row"
           gap={1}
@@ -203,62 +210,74 @@ export function DialogExportOptions(props: DialogExportOptionsProps) {
           </text>
         </box>
       </Show>
-      <Show when={store.format === "json"}>
-        <box
-          flexDirection="row"
-          gap={1}
-          backgroundColor={
+      <box
+        flexDirection="row"
+        gap={1}
+        onMouseUp={() => {
+          setStore("active", "profile")
+          activate()
+        }}
+      >
+        <text fg={store.active === "profile" ? theme.text.formfield.focused : theme.text.formfield.base}>
+          Profile: {store.profile}
+        </text>
+      </box>
+      <box
+        flexDirection="row"
+        gap={1}
+        backgroundColor={
+          store.active === "sanitize"
+            ? theme.background.formfield.focused
+            : store.sanitize
+              ? theme.background.formfield.selected
+              : theme.background.formfield.base
+        }
+        onMouseUp={() => {
+          setStore("active", "sanitize")
+          setStore("sanitize", !store.sanitize)
+        }}
+      >
+        <text
+          fg={
             store.active === "sanitize"
-              ? theme.background.formfield.focused
+              ? theme.text.formfield.focused
               : store.sanitize
-                ? theme.background.formfield.selected
-                : theme.background.formfield.base
+                ? theme.text.formfield.selected
+                : theme.text.formfield.base
           }
-          onMouseUp={() => {
-            setStore("active", "sanitize")
-            setStore("sanitize", !store.sanitize)
-          }}
         >
-          <text
-            fg={
-              store.active === "sanitize"
-                ? theme.text.formfield.focused
-                : store.sanitize
-                  ? theme.text.formfield.selected
-                  : theme.text.formfield.base
-            }
-          >
-            {store.sanitize ? "[x]" : "[ ]"}
-          </text>
-          <text
-            fg={
-              store.active === "sanitize"
-                ? theme.text.formfield.focused
-                : store.sanitize
-                  ? theme.text.formfield.selected
-                  : theme.text.formfield.base
-            }
-          >
-            Sanitize sensitive data
-          </text>
-        </box>
-      </Show>
+          {store.sanitize ? "[x]" : "[ ]"}
+        </text>
+        <text
+          fg={
+            store.active === "sanitize"
+              ? theme.text.formfield.focused
+              : store.sanitize
+                ? theme.text.formfield.selected
+                : theme.text.formfield.base
+          }
+        >
+          Replace transcript content
+        </text>
+      </box>
       <box flexDirection="row" justifyContent="flex-end" gap={1} paddingBottom={1}>
         <box
           paddingLeft={4}
           paddingRight={4}
-          backgroundColor={overlayTheme.background.raised.high}
+          backgroundColor={
+            store.active === "copy" ? theme.background.action.secondary.focused : theme.background.action.secondary.base
+          }
           onMouseUp={() => confirm("copy")}
         >
-          <text fg={overlayTheme.text.base}>Copy</text>
+          <text fg={store.active === "copy" ? theme.text.action.secondary.focused : theme.text.action.secondary.base}>
+            Copy
+          </text>
         </box>
         <box
           paddingLeft={4}
           paddingRight={4}
           backgroundColor={
-            store.active === "export"
-              ? theme.background.action.primary.focused
-              : theme.background.action.primary.base
+            store.active === "export" ? theme.background.action.primary.focused : theme.background.action.primary.base
           }
           onMouseUp={() => confirm("export")}
         >
@@ -278,6 +297,7 @@ DialogExportOptions.show = (dialog: DialogContext, defaultThinking: boolean) => 
     thinking: boolean
     tools: boolean
     sanitize: boolean
+    profile: ExportProfile
   } | null>((resolve) => {
     dialog.replace(
       () => (

@@ -31,6 +31,8 @@ import { SessionStep } from "./step.js"
 import { ToolOutput } from "../../tool-output.js"
 import { Plugin } from "../../plugin.js"
 import { MAX_STEPS_PROMPT } from "./max-steps.js"
+// fork: provide request trace storage without changing runner orchestration (F-022).
+import { ForkCyberTrace } from "../../fork-cyber/trace.js"
 
 const CONTINUE_AFTER_INCOMPLETE_STREAM =
   "The previous response was interrupted. Continue from where you left off without repeating completed content."
@@ -243,6 +245,7 @@ const layer = Layer.effect(
           inputTokens: SessionCompaction.estimatePrompt(loaded),
         })
         const outcome = yield* steps.attempt({
+          logicalStep: step,
           isLocationClosed: lifecycle.isClosed,
           sessionID,
           assistantMessageID,
@@ -371,5 +374,6 @@ export const node = makeLocationNode({
     Snapshot.node,
     ToolOutput.node,
     Database.node,
+    ForkCyberTrace.node,
   ],
 })

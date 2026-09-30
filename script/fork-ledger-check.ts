@@ -7,11 +7,11 @@ import path from "node:path"
 // conflict resolver (fork-resolve.yml tells an agent to follow section 6, which keys on "is this
 // file recorded?") and a human mid-merge. Completeness used to be a documented manual check.
 //
-// Usage: bun script/fork-ledger-check.ts [ref]
+// Usage: bun script/fork-ledger-check.ts [ref] [--worktree]
 
 const CODE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"])
 const root = path.join(import.meta.dir, "..")
-const ref = process.argv[2] ?? "HEAD"
+const ref = process.argv.slice(2).find((arg) => arg !== "--worktree") ?? "HEAD"
 
 const git = (...args: string[]) => spawnSync("git", args, { cwd: root, encoding: "utf8" })
 
@@ -35,7 +35,7 @@ if (!tag) {
   process.exit(1)
 }
 
-const diff = git("diff", "--name-only", `${tag}...${ref}`)
+const diff = git("diff", "--name-only", process.argv.includes("--worktree") ? tag : `${tag}...${ref}`)
 if (diff.status !== 0) {
   console.error(diff.stderr.trim())
   process.exit(1)
@@ -53,9 +53,13 @@ const checks = [
     offenders: upstreamFiles.filter((file) => !ledger.covers(file)),
   },
   {
-    label: "every changed upstream code file carries a // fork: marker",
+    label: "every changed upstream non-generated code file carries a // fork: marker",
     offenders: upstreamFiles.filter(
-      (file) => CODE_EXTENSIONS.has(path.extname(file)) && existsSync(path.join(root, file)) && !hasMarker(file),
+      (file) =>
+        CODE_EXTENSIONS.has(path.extname(file)) &&
+        existsSync(path.join(root, file)) &&
+        !generatedClient(file) &&
+        !hasMarker(file),
     ),
   },
   {
@@ -110,7 +114,10 @@ function readLedger(): Ledger {
 }
 
 function cellsOf(line: string) {
-  return line.split(/(?<!\\)\|/).slice(1, -1).map((cell) => cell.trim())
+  return line
+    .split(/(?<!\\)\|/)
+    .slice(1, -1)
+    .map((cell) => cell.trim())
 }
 
 function trimSlash(candidate: string) {
@@ -123,6 +130,16 @@ function backticked(text: string) {
 
 function hasMarker(file: string) {
   return /\/\/ fork:|\/\* fork:/.test(readFileSync(path.join(root, file), "utf8"))
+}
+
+function generatedClient(file: string) {
+  // Public API changes regenerate these outputs; inserting markers by hand violates AGENTS.md.
+  // Their owning Protocol/Schema patch and the generated paths still require a ledger entry.
+  return [
+    "packages/client/src/promise/generated/",
+    "packages/client/src/effect/generated/",
+    "packages/client/src/effect/api/",
+  ].some((prefix) => file.startsWith(prefix))
 }
 
 function markerIds(file: string) {
