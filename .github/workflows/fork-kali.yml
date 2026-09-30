@@ -32,11 +32,11 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/fork-setup-bun
-      - run: docker build --tag opencyber-kali:3 fork-kali
+      - run: docker build --tag opencyber-kali:4 fork-kali
       - name: Exercise the real Docker lifecycle
         working-directory: packages/core
         run: |
-          export OPENCYBER_TEST_KALI_IMAGE="$(docker image inspect opencyber-kali:3 --format '{{.Id}}')"
+          export OPENCYBER_TEST_KALI_IMAGE="$(docker image inspect opencyber-kali:4 --format '{{.Id}}')"
           bun test test/plugin/fork-cyber-kali.test.ts test/plugin/fork-cyber-network.test.ts test/plugin/fork-cyber-services.test.ts
           bun build --compile --format=esm --minify --bytecode test/fixture/fork-cyber-services-smoke.ts --outfile /tmp/opencyber-services-smoke
           cd /tmp

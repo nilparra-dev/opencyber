@@ -13,7 +13,7 @@ docker image inspect opencyber-kali:3 --format '{{.Id}}'
 
 Version 3 removes the packaged Nmap binary's file capabilities. The module invokes `/usr/lib/nmap/nmap --unprivileged` directly because Kali's `/usr/bin/nmap` wrapper requests privileged mode for non-root users. The workload retains `cap-drop=ALL` and `no-new-privileges`; no raw-socket profile is added. Rebuilding against the rolling package repository can change installed versions. The immutable image ID and captured package inventory identify the actual tools.
 
-Configure the printed image ID and a dedicated scoped Docker network in the operator's `opencyber-kali.jsonc`, following [Kali configuration](fork-cyber-kali.md) and [network enforcement](fork-cyber-network.md). Record an explicit, non-derived engagement with network budgets. The current scope schema represents hosts and networks, not port-level authorization; an engagement restricted to particular ports must not be widened to whole-host scope.
+Configure the printed image ID and a dedicated scoped Docker network in the operator's `opencyber-kali.jsonc`, following [Kali configuration](fork-cyber-kali.md) and [network enforcement](fork-cyber-network.md). Record an explicit, non-derived engagement with network budgets. Service-only authorization now uses `scope.services` with target, TCP/UDP transport and explicit ports, leaving whole-host/network lists empty. Every requested scan port must be authorized. See the [phase 7 surface guide](fork-cyber-surfaces.md).
 
 Read procedures without installing Docker or configuring Kali:
 
@@ -70,4 +70,4 @@ PowerShell uses `$env:OPENCYBER_TEST_KALI_IMAGE = docker image inspect opencyber
 
 Local Windows validation with Bun 1.4.2 and Docker Linux containers passed 133 tests across 12 Core files, with five existing Windows skips. This includes real Chromium, Kali, HTTP and network labs. Root lint and all 35 typecheck tasks passed. The compiled TCP capture smoke passed outside the checkout, and formatting plus `git diff --check` passed.
 
-TCP inventory and local source review are the implemented phase 7 modules. Protocol-specific validation, cloud, identity, mobile, binaries, wireless and operational technology remain planned according to engagements and available labs. Phase 8 has not started.
+The [additional local phase 7 modules](fork-cyber-surfaces.md) now cover TLS/SSH, identity, AWS S3, Android manifests, ELF, wireless captures and Modbus simulators. Their external infrastructure coverage remains listed as pending. Phase 8 has not started. Image version 4 retains this module's Nmap contract and is built by the current Kali CI workflow.

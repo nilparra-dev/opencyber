@@ -36,6 +36,15 @@ export function policy(manifest: ForkCyberScope.Manifest, addresses: Addresses) 
     [...new Set(values)]
       .map((value) => `${isIP(value.split("/")[0]!) === 4 ? "ip" : "ip6"} daddr ${value} ${action}`)
       .join("\n")
+  const services = (values: readonly (typeof ForkCyberScope.Service.Type)[], action: string) =>
+    values
+      .flatMap((entry) =>
+        resolve([entry.target]).map(
+          (address) =>
+            `${isIP(address.split("/")[0]!) === 4 ? "ip" : "ip6"} daddr ${address} ${entry.protocol} dport { ${[...new Set(entry.ports)].toSorted((a, b) => a - b).join(", ")} } ${action}`,
+        ),
+      )
+      .join("\n")
   // After conntrack (-200), before Docker's output DNAT (-100), including embedded DNS.
   return `table inet opencyber {
     quota traffic { over ${budget.bytes_per_job} bytes; }
@@ -49,9 +58,11 @@ export function policy(manifest: ForkCyberScope.Manifest, addresses: Addresses) 
       type filter hook output priority -150; policy drop;
       ip6 hoplimit 255 icmpv6 type { nd-neighbor-solicit, nd-neighbor-advert } limit rate 10/second accept
       ${match(deny, "counter drop")}
+      ${services(manifest.scope.excluded_services ?? [], "counter drop")}
       ip daddr 127.0.0.0/8 counter drop
       ip6 daddr ::1 counter drop
       ${match(allow, "jump permitted")}
+      ${services(manifest.scope.services ?? [], "jump permitted")}
     }
     chain input {
       type filter hook input priority 0; policy drop;

@@ -101,6 +101,38 @@ const context = Effect.fn(function* (
   return event.system.map((part) => part.text).join("\n")
 })
 
+it.live("surface modules are native, require claims and enforce artifact read permissions", () =>
+  Effect.gen(function* () {
+    const env = yield* project
+    yield* Effect.gen(function* () {
+      for (const module of ["tls", "ssh", "identity", "cloud", "mobile", "binary", "wireless", "ot"])
+        expect(yield* call(env.root.id, "cyber_surface", { action: "procedures", module })).toContain("procedures")
+      for (const role of ["cyber-recon", "cyber-report", "cyber-code-review"])
+        expect(
+          String(
+            yield* call(env.child.id, "cyber_surface", { action: "procedures", module: "binary" }, role).pipe(
+              Effect.flip,
+            ),
+          ),
+        ).toContain(`Role ${role} cannot execute cyber_surface`)
+      yield* Effect.promise(() => Bun.write(path.join(env.directory, "artifact.bin"), "fixture"))
+      const input = { module: "binary", action: "import", file: "artifact.bin" }
+      expect(String(yield* call(env.child.id, "cyber_surface", input, "cyber-validate").pipe(Effect.flip))).toContain(
+        "Claim a cyber_tasks task",
+      )
+      expect(yield* call(env.root.id, "cyber_surface", input)).toContain("sha256")
+      const agents = yield* Agent.Service
+      yield* agents.transform((editor) =>
+        editor.update(Agent.ID.make("build"), (agent) => {
+          agent.permissions.push({ action: "read", resource: "*", effect: "deny" })
+        }),
+      )
+      expect(Exit.isFailure(yield* call(env.root.id, "cyber_surface", input).pipe(Effect.exit))).toBe(true)
+      expect(yield* context(env.root.id, "compaction")).toContain("Modbus simulator")
+    }).pipe(env.provide)
+  }),
+)
+
 it.live("activates in a clean external project without inferring scope from a prompt", () =>
   Effect.gen(function* () {
     const env = yield* project

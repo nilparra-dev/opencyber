@@ -72,13 +72,15 @@ export function authorize(target: URL, manifest: ForkCyberScope.Manifest, addres
   const excluded = manifest.scope.excluded.map(ForkCyberScope.normalize)
   if (excluded.some((entry) => sameHost(host, entry) || matches(host, entry)))
     throw new Error("HTTP destination is excluded")
-  if (
-    !manifest.scope.domains.some((entry) => sameHost(host, ForkCyberScope.normalize(entry))) &&
-    !manifest.scope.cidrs.some((entry) => matches(host, entry))
-  )
-    throw new Error("HTTP destination is outside the recorded scope")
   if (addresses.some((address) => excluded.some((entry) => sameHost(address, entry) || matches(address, entry))))
     throw new Error("Resolved HTTP address is excluded")
+  ForkCyberScope.authorize(
+    manifest,
+    host,
+    "tcp",
+    Number(target.port || (target.protocol === "https:" ? 443 : 80)),
+    addresses,
+  )
 }
 
 export const run = (store: Store, resolve: () => Effect.Effect<Assessment, Error>, input: Request, source?: string) =>
