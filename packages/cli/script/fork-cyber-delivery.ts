@@ -68,6 +68,11 @@ await Effect.runPromise(
           using archive = new Database(path.join(root, "data", "opencode", "opencyber", "evidence.sqlite"), {
             readonly: true,
           })
+          if (
+            step >= 4 &&
+            !archive.query("SELECT id FROM execution WHERE tool = 'cyber_services' AND status = 'completed'").get()
+          )
+            throw new Error(`TCP inventory did not complete: ${JSON.stringify(body.messages.at(-1))}`)
           const output =
             step >= 4
               ? Schema.decodeUnknownSync(Schema.Struct({ id: Schema.String, data: Schema.String }))(
@@ -129,12 +134,14 @@ await Effect.runPromise(
             { action: "claim", key: "delivery", revision: 1 },
             { action: "scan", host: "target", ports: surfaces ? [8444, 8001] : [8000, 8001] },
             {
-              id: "reachable-service",
-              revision: 0,
-              title: "Fixture TCP listener",
-              status: "candidate",
-              rationale: "Reachable listener; protocol impact remains pending",
-              evidence,
+              write: {
+                id: "reachable-service",
+                revision: 0,
+                title: "Fixture TCP listener",
+                status: "candidate",
+                rationale: "Reachable listener; protocol impact remains pending",
+                evidence,
+              },
             },
             {
               action: "complete",
@@ -152,12 +159,14 @@ await Effect.runPromise(
                 { module: "tls", action: "probe", host: "target", port: 8444 },
                 { module: "tls", action: "probe", host: "target", port: 8443 },
                 {
-                  id: "reachable-service",
-                  revision: 1,
-                  title: "Fixture legacy TLS",
-                  status: "confirmed",
-                  rationale: "Actual TLSv1 handshake succeeds; healthy control negotiates TLSv1.2",
-                  evidence,
+                  write: {
+                    id: "reachable-service",
+                    revision: 1,
+                    title: "Fixture legacy TLS",
+                    status: "confirmed",
+                    rationale: "Actual TLSv1 handshake succeeds; healthy control negotiates TLSv1.2",
+                    evidence,
+                  },
                 },
                 ...inventoryInputs.slice(5),
               ]
@@ -255,7 +264,10 @@ await Effect.runPromise(
       ).pipe(Effect.timeout(120000))
       yield* Effect.promise(() => Bun.write(path.join(root, "stdout.jsonl"), stdout))
       yield* Effect.promise(() => Bun.write(path.join(root, "stderr.txt"), stderr))
-      if (code !== 0) throw new Error(`CLI exited ${code}; inspect ${root}`)
+      if (code !== 0) {
+        console.error(stdout, stderr)
+        throw new Error(`CLI exited ${code}; inspect ${root}`)
+      }
       using archive = new Database(path.join(root, "data", "opencode", "opencyber", "evidence.sqlite"), {
         readonly: true,
       })
@@ -265,7 +277,16 @@ await Effect.runPromise(
       const execution = Schema.decodeUnknownSync(Schema.Struct({ status: Schema.String }))(
         archive.query("SELECT status FROM execution WHERE tool = 'cyber_services'").get(),
       )
-      if (task.status !== "completed" || execution.status !== "completed" || step !== steps.length + 1)
+      const finding = Schema.decodeUnknownSync(Schema.Struct({ status: Schema.String, revision: Schema.Number }))(
+        archive.query("SELECT status, revision FROM finding WHERE id = 'reachable-service'").get(),
+      )
+      if (
+        task.status !== "completed" ||
+        execution.status !== "completed" ||
+        finding.status !== (surfaces ? "confirmed" : "candidate") ||
+        finding.revision !== (surfaces ? 2 : 1) ||
+        step !== steps.length + 1
+      )
         throw new Error(`Delivery acceptance failed; inspect ${root}`)
       console.log(`CLI ${surfaces ? "TCP and TLS" : "TCP"} workflow passed; artifacts retained at ${root}`)
     }),
