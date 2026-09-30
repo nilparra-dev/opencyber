@@ -11,6 +11,9 @@ import { Project } from "./project.js"
 import { AbsolutePath } from "./schema.js"
 import type { SessionErrors } from "./session/error.js"
 import type { Tool } from "./tool.js"
+// fork: hardened assessment reads stay inside canonical source roots (F-019).
+import { ForkCyberPolicy } from "./fork-cyber/policy.js"
+import { ForkCyberDiagnostics } from "./fork-cyber/diagnostics.js"
 
 export const Kind = Schema.Literals(["file", "directory"])
 export type Kind = typeof Kind.Type
@@ -46,7 +49,7 @@ export interface ReadOptions {
 
 export interface Interface {
   /** Resolve a lexical path and its permission resources, without requesting approval. */
-  readonly resolve: (input: ResolveInput) => Effect.Effect<Target, FSUtil.Error>
+  readonly resolve: (input: ResolveInput) => Effect.Effect<Target, FSUtil.Error | Error>
   /** Approve external directories in one batch, preserving first-seen resource order. */
   readonly authorizeExternal: (
     targets: readonly Target[],
@@ -89,10 +92,33 @@ const layer = Layer.effect(
     const fs = yield* FSUtil.Service
     const location = yield* Location.Service
     const permission = yield* Permission.Service
+    const cyberMode = yield* ForkCyberPolicy.Service
 
     const resolve = Effect.fn("FileAccess.resolve")(function* (input: ResolveInput) {
       const absolute = AbsolutePath.make(resolvePath(location.directory, input.path))
       const worktree = path.resolve(location.project.directory)
+      if (cyberMode !== "development") {
+        const resolved = yield* fs.resolve(absolute)
+        const roots = yield* Effect.forEach(
+          [location.directory, ...(worktree === path.parse(worktree).root ? [] : [worktree])],
+          fs.resolve,
+        )
+        if (!roots.some((root) => FSUtil.contains(root, resolved)))
+          return yield* Effect.fail(
+            ForkCyberDiagnostics.toolError(
+              new ForkCyberDiagnostics.Failure({
+                category: "scope",
+                operation: "file_access",
+                message: "Hardened source reads must stay inside the Location or project worktree",
+                target_started: false,
+                effects: "not_started",
+                recovery:
+                  "Use cyber_capabilities for environment diagnostics. The operator prepares the profile outside assessment; select an explicit source Location for additional code review.",
+              }),
+              "file_access",
+            ),
+          )
+      }
       const internal =
         FSUtil.contains(location.directory, absolute) ||
         (worktree !== path.parse(worktree).root && FSUtil.contains(worktree, absolute))
@@ -164,4 +190,8 @@ const layer = Layer.effect(
   }),
 )
 
-export const node = makeLocationNode({ service: Service, layer, deps: [FSUtil.node, Location.node, Permission.node] })
+export const node = makeLocationNode({
+  service: Service,
+  layer,
+  deps: [FSUtil.node, Location.node, Permission.node, ForkCyberPolicy.node],
+})

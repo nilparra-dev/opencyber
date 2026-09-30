@@ -71,7 +71,14 @@ export default Runtime.handler(
           })
       if (!sessionID) return
       const data = yield* Effect.tryPromise({
-        try: () => client.session.export({ sessionID, sanitize: input.sanitize }),
+        // fork: preserve the operator's export profile and reasoning selection (F-023).
+        try: () =>
+          client.session.export({
+            sessionID,
+            sanitize: input.sanitize,
+            profile: input.profile,
+            reasoning: input.reasoning,
+          }),
         catch: (cause) => cause,
       })
       process.stdout.write(JSON.stringify(data, null, 2) + EOL)

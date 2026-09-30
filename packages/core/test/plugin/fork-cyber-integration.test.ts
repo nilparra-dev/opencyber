@@ -1,5 +1,5 @@
 import { expect, setDefaultTimeout } from "bun:test"
-import { Effect, Exit, Schema } from "effect"
+import { Deferred, Effect, Exit, Fiber, Schema } from "effect"
 import path from "path"
 import { Agent } from "@opencode/core/agent"
 import { Bus } from "@opencode/core/bus"
@@ -10,6 +10,7 @@ import { LocationServiceMap } from "@opencode/core/location-service-map"
 import { KV } from "@opencode/core/kv"
 import { Plugin } from "@opencode/core/plugin"
 import { ForkCyberPlugin } from "@opencode/core/plugin/fork-cyber"
+import { ForkCyberStore } from "@opencode/core/fork-cyber/store"
 import { PluginHooks } from "@opencode/core/plugin/hooks"
 import { PluginHost } from "@opencode/core/plugin/host"
 import { Permission } from "@opencode/core/permission"
@@ -101,6 +102,173 @@ const context = Effect.fn(function* (
   return event.system.map((part) => part.text).join("\n")
 })
 
+it.live("captures distinct nested Code Mode calls and correlates their container", () =>
+  Effect.gen(function* () {
+    const env = yield* project
+    yield* Effect.gen(function* () {
+      const plugins = yield* Plugin.Service
+      yield* plugins.awaitActivation
+      const tools = yield* Tool.Service
+      yield* tools.transform((editor) => {
+        editor.add({
+          name: "fixture_echo",
+          description: "Return harmless fixture text",
+          input: Schema.Struct({ text: Schema.String }),
+          output: Schema.String,
+          execute: (input) => Effect.succeed({ output: input.text }),
+        })
+        editor.add({
+          name: "fixture_failure",
+          description: "Fail a harmless fixture",
+          input: Schema.Struct({}),
+          execute: () => Effect.fail(new Tool.Error({ message: "fixture failed" })),
+        })
+      })
+      expect(
+        yield* call(env.root.id, "execute", { code: 'return await tools.fixture_echo({text: "safe fixture"})' }),
+      ).toBe("safe fixture")
+      expect(
+        yield* call(env.root.id, "execute", {
+          code: 'const first = await tools.fixture_echo({text: "first"}); const second = await tools.fixture_echo({text: "second"}); return [first, second]',
+        }),
+      ).toContain('"second"')
+      expect(
+        yield* call(env.root.id, "execute", {
+          code: 'return await Promise.all([tools.fixture_echo({text: "parallel one"}), tools.fixture_echo({text: "parallel two"})])',
+        }),
+      ).toContain("parallel two")
+      expect(yield* call(env.root.id, "execute", { code: "return await tools.fixture_failure({})" })).toContain(
+        "fixture failed",
+      )
+      const global = yield* Global.Service
+      const store = yield* ForkCyberStore.open(path.join(global.data, "opencyber", "evidence.sqlite"))
+      const rows = yield* store.executions(env.root.id)
+      expect(rows).toHaveLength(10)
+      expect(rows.filter((row) => row.tool === "fixture_echo")).toHaveLength(5)
+      expect(rows.filter((row) => row.tool === "fixture_failure")).toMatchObject([{ status: "error" }])
+      const provenance = Schema.decodeUnknownSync(
+        Schema.fromJsonString(
+          Schema.Struct({
+            call: Schema.Struct({ id: Schema.String, parent: Schema.NullOr(Schema.String) }),
+          }),
+        ),
+      )
+      const calls = rows.map((row) => provenance(row.provenance).call)
+      expect(new Set(calls.map((item) => item.id)).size).toBe(10)
+      for (const child of calls.filter((item) => item.parent !== null))
+        expect(calls.some((parent) => parent.id === child.parent)).toBe(true)
+    }).pipe(env.provide)
+  }),
+)
+
+it.live("preserves nested call identities and unresolved effects when Code Mode is interrupted", () =>
+  Effect.gen(function* () {
+    const env = yield* project
+    yield* Effect.gen(function* () {
+      const plugins = yield* Plugin.Service
+      yield* plugins.awaitActivation
+      const started = yield* Deferred.make<void>()
+      const tools = yield* Tool.Service
+      yield* tools.transform((editor) =>
+        editor.add({
+          name: "fixture_wait",
+          description: "Wait for cancellation",
+          input: Schema.Struct({}),
+          execute: () => Deferred.succeed(started, undefined).pipe(Effect.andThen(Effect.never)),
+        }),
+      )
+      const fiber = yield* call(env.root.id, "execute", { code: "return await tools.fixture_wait({})" }).pipe(
+        Effect.forkChild,
+      )
+      yield* Deferred.await(started)
+      yield* Fiber.interrupt(fiber)
+      const global = yield* Global.Service
+      const store = yield* ForkCyberStore.open(path.join(global.data, "opencyber", "evidence.sqlite"))
+      const executions = yield* store.executions(env.root.id)
+      expect(executions).toHaveLength(2)
+      expect(executions.every((execution) => execution.status === "running")).toBe(true)
+      expect(executions.map((execution) => execution.tool).toSorted()).toEqual(["execute", "fixture_wait"])
+      expect(new Set(executions.map((execution) => execution.id)).size).toBe(2)
+    }).pipe(env.provide)
+  }),
+)
+
+it.live("redacts model-visible returns while retaining original capture bytes", () =>
+  Effect.gen(function* () {
+    const env = yield* project
+    yield* Effect.gen(function* () {
+      const plugins = yield* Plugin.Service
+      yield* plugins.awaitActivation
+      const tools = yield* Tool.Service
+      yield* tools.transform((editor) =>
+        editor.add({
+          name: "fixture_secret",
+          options: { codemode: false },
+          description: "Synthetic private evidence",
+          input: Schema.Struct({}),
+          execute: () => Effect.succeed({ content: 'password="synthetic-capture-secret"' }),
+        }),
+      )
+      expect(yield* call(env.root.id, "fixture_secret", {})).not.toContain("synthetic-capture-secret")
+      const global = yield* Global.Service
+      const store = yield* ForkCyberStore.open(path.join(global.data, "opencyber", "evidence.sqlite"))
+      const execution = (yield* store.executions(env.root.id))[0]!
+      const artifacts = yield* store.artifacts(env.root.id, String(execution.id))
+      const output = artifacts.find((artifact) => artifact.kind === "output")!
+      expect((yield* store.readArtifact(env.root.id, String(output.id))).bytes.toString()).toContain(
+        "synthetic-capture-secret",
+      )
+      expect(
+        ForkCyberStore.preview((yield* store.readArtifact(env.root.id, String(output.id))).bytes.toString()),
+      ).not.toContain("synthetic-capture-secret")
+    }).pipe(env.provide)
+  }),
+)
+
+it.live("native web planning accepts only completed evidence and retains blocked dimensions in reporting", () =>
+  Effect.gen(function* () {
+    const env = yield* project
+    yield* Effect.gen(function* () {
+      const global = yield* Global.Service
+      const store = yield* ForkCyberStore.open(path.join(global.data, "opencyber", "evidence.sqlite"))
+      const execution = crypto.randomUUID()
+      const input = yield* store.start({
+        owner: env.root.id,
+        session: env.root.id,
+        agent: "build",
+        tool: "fixture_features",
+        id: execution,
+        input: {},
+      })
+      const action = { features: ["storage", "csp"], evidence: [input[0]!.id] }
+      expect(yield* call(env.root.id, "cyber_web_plan", action).pipe(Effect.isFailure)).toBe(true)
+      const output = yield* store.finish(env.root.id, execution, "completed", { features: action.features })
+      const parse = Schema.decodeUnknownSync(
+        Schema.fromJsonString(
+          Schema.Struct({
+            execution: Schema.String,
+            completion_evidence: Schema.Array(Schema.String),
+            dimensions: Schema.Array(Schema.Struct({ state: Schema.String, runtime_verified: Schema.Boolean })),
+          }),
+        ),
+      )
+      const plan = parse(yield* call(env.root.id, "cyber_web_plan", { ...action, evidence: [output[0]!.id] }))
+      expect(plan.dimensions).toHaveLength(2)
+      expect(plan.dimensions.every((dimension) => dimension.state === "blocked" && !dimension.runtime_verified)).toBe(
+        true,
+      )
+      expect(plan.completion_evidence).toHaveLength(1)
+      expect((yield* store.readArtifact(env.root.id, plan.completion_evidence[0]!)).execution).toBe(plan.execution)
+      const report = yield* call(env.root.id, "cyber_report", {})
+      expect(report).toContain('"tool":"cyber_web_plan"')
+      expect(report).toContain('"operation_class":"preparation"')
+      expect(report).toContain('"state":"blocked"')
+      expect(report).toContain('"runtime_verified":false')
+      expect(report).not.toContain('"operation_class":"security_test"')
+    }).pipe(env.provide)
+  }),
+)
+
 it.live("surface modules are native, require claims and enforce artifact read permissions", () =>
   Effect.gen(function* () {
     const env = yield* project
@@ -128,7 +296,7 @@ it.live("surface modules are native, require claims and enforce artifact read pe
         }),
       )
       expect(Exit.isFailure(yield* call(env.root.id, "cyber_surface", input).pipe(Effect.exit))).toBe(true)
-      expect(yield* context(env.root.id, "compaction")).toContain("Modbus simulator")
+      expect(yield* context(env.root.id, "compaction")).toContain("cyber_surface.procedures")
     }).pipe(env.provide)
   }),
 )
@@ -187,7 +355,9 @@ it.live("phase tasks require claims, correlate real evidence and survive compact
       expect(String(yield* call(env.child.id, "read", { path: file }, "cyber-recon").pipe(Effect.flip))).toContain(
         "Claim a cyber_tasks task",
       )
-      expect(yield* call(env.root.id, "evidence", {})).toBe("[]")
+      expect(yield* call(env.root.id, "evidence", {})).toBe(
+        JSON.stringify({ items: [], offset: 0, limit: 25, has_more: false, next_offset: null }),
+      )
       yield* call(env.root.id, "cyber_tasks", {
         action: "create",
         key: "local-proof",
@@ -351,7 +521,7 @@ it.live("local code review is native, enforces read permissions and keeps candid
         },
         "cyber-code-review",
       )
-      expect(yield* context(env.child.id, "compaction", "cyber-code-review")).toContain("local source review")
+      expect(yield* context(env.child.id, "compaction", "cyber-code-review")).toContain("cyber_code_review")
       expect(yield* call(env.child.id, "findings", {}, "cyber-report")).toContain(captured.output)
       const agents = yield* Agent.Service
       yield* agents.transform((editor) =>
@@ -399,14 +569,16 @@ it.live("phase restrictions reject direct tool calls even with permissive agent 
             agent.permissions.push({ action: "*", resource: "*", effect: "allow" })
           }),
         )
-        for (const tool of ["shell", "kali_run", "cyber_browser", "http_replay", "webfetch", "subagent", "execute"]) {
+        for (const tool of ["shell", "kali_run", "cyber_browser", "http_replay", "webfetch", "subagent"]) {
           expect(String(yield* call(env.child.id, tool, {}, role).pipe(Effect.flip))).toContain(
             `Role ${role} cannot execute ${tool}`,
           )
         }
         expect(Exit.isFailure(yield* call(env.root.id, "engagement", { manifest }, role).pipe(Effect.exit))).toBe(true)
       }
-      expect(yield* call(env.root.id, "evidence", {})).toBe("[]")
+      expect(yield* call(env.root.id, "evidence", {})).toBe(
+        JSON.stringify({ items: [], offset: 0, limit: 25, has_more: false, next_offset: null }),
+      )
       expect(yield* call(env.root.id, "engagement", {})).toContain("No engagement recorded")
       yield* agents.transform((editor) =>
         editor.update(Agent.ID.make("build"), (agent) => {
@@ -424,7 +596,9 @@ it.live("phase restrictions reject direct tool calls even with permissive agent 
           }).pipe(Effect.exit),
         ),
       ).toBe(true)
-      expect(yield* call(env.child.id, "cyber_tasks", { action: "list" }, "cyber-report")).toBe("[]")
+      expect(yield* call(env.child.id, "cyber_tasks", { action: "list" }, "cyber-report")).toBe(
+        JSON.stringify({ items: [], offset: 0, limit: 25, has_more: false, next_offset: null }),
+      )
     }).pipe(env.provide)
   }),
 )
@@ -542,7 +716,9 @@ it.live("Kali tools are native, optional and reject invalid scope, reporting age
         }),
       )
       expect(Exit.isFailure(yield* call(env.child.id, "kali_run", { argv: ["true"] }).pipe(Effect.exit))).toBe(true)
-      expect(yield* call(env.root.id, "evidence", {})).toBe("[]")
+      expect(yield* call(env.root.id, "evidence", {})).toBe(
+        JSON.stringify({ items: [], offset: 0, limit: 25, has_more: false, next_offset: null }),
+      )
     }).pipe(env.provide)
   }),
 )
@@ -604,8 +780,10 @@ it.live("TCP service procedures need no Docker; scan prerequisites and permissio
         }),
       )
       expect(Exit.isFailure(yield* call(env.root.id, "cyber_services", scan).pipe(Effect.exit))).toBe(true)
-      expect(yield* call(env.root.id, "evidence", {})).toBe("[]")
-      expect(yield* context(env.child.id, "compaction", "cyber-enum")).toContain("TCP service inventory")
+      expect(yield* call(env.root.id, "evidence", {})).toBe(
+        JSON.stringify({ items: [], offset: 0, limit: 25, has_more: false, next_offset: null }),
+      )
+      expect(yield* context(env.child.id, "compaction", "cyber-enum")).toContain("cyber_services.procedures")
     }).pipe(env.provide)
   }),
 )
@@ -648,7 +826,9 @@ it.live("browser activation is optional and checks scope, roles and permissions 
           yield* call(env.child.id, "cyber_browser", { action: "open", identity: "alice" }).pipe(Effect.exit),
         ),
       ).toBe(true)
-      expect(yield* call(env.root.id, "evidence", {})).toBe("[]")
+      expect(yield* call(env.root.id, "evidence", {})).toBe(
+        JSON.stringify({ items: [], offset: 0, limit: 25, has_more: false, next_offset: null }),
+      )
     }).pipe(env.provide)
   }),
 )
@@ -794,7 +974,9 @@ it.live("captures real tool results, links findings and preserves evidence throu
     yield* Effect.promise(() =>
       Bun.write(path.join(env.directory, "proof.txt"), "local proof\nAuthorization: Bearer secret-value"),
     )
-    const records = Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Array(Schema.Struct({ id: Schema.String }))))
+    const records = Schema.decodeUnknownSync(
+      Schema.fromJsonString(Schema.Struct({ items: Schema.Array(Schema.Struct({ id: Schema.String })) })),
+    )
     const artifactRecords = Schema.decodeUnknownSync(
       Schema.fromJsonString(Schema.Array(Schema.Struct({ id: Schema.String, kind: Schema.String }))),
     )
@@ -803,7 +985,7 @@ it.live("captures real tool results, links findings and preserves evidence throu
       expect(yield* call(env.child.id, "read", { path: path.join(env.directory, "proof.txt") })).toContain(
         "local proof",
       )
-      const executions = records(yield* call(env.root.id, "evidence", {}))
+      const executions = records(yield* call(env.root.id, "evidence", {})).items
       expect(executions).toHaveLength(1)
       const artifacts = artifactRecords(yield* call(env.root.id, "evidence", { execution: executions[0]!.id }))
       expect(artifacts).toHaveLength(2)

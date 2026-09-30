@@ -409,7 +409,13 @@ const EndpointSessionCreate = (raw: RawClient["server.session"]) => (input?: Ses
 const EndpointSessionImport = (raw: RawClient["server.session"]) => (input: SessionImportInput) =>
   preserveEffect<SessionImportOutput>()(
     raw["session.import"]({
-      payload: { info: input["info"], messages: input["messages"], location: input["location"] },
+      payload: {
+        info: input["info"],
+        messages: input["messages"],
+        export_info: input["export_info"],
+        analysis: input["analysis"],
+        location: input["location"],
+      },
     }).pipe(
       Effect.mapError(mapClientError),
       Effect.map((value) => value.data),
@@ -418,7 +424,10 @@ const EndpointSessionImport = (raw: RawClient["server.session"]) => (input: Sess
 
 const EndpointSessionExport = (raw: RawClient["server.session"]) => (input: SessionExportInput) =>
   preserveEffect<SessionExportOutput>()(
-    raw["session.export"]({ params: { sessionID: input["sessionID"] }, query: { sanitize: input["sanitize"] } }).pipe(
+    raw["session.export"]({
+      params: { sessionID: input["sessionID"] },
+      query: { sanitize: input["sanitize"], profile: input["profile"], reasoning: input["reasoning"] },
+    }).pipe(
       Effect.mapError(mapClientError),
       Effect.map((value) => value.data),
     ),

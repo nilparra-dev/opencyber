@@ -3,6 +3,8 @@ import { SessionInbox } from "@opencode/schema/session-inbox"
 import { PromptInput } from "@opencode/schema/prompt-input"
 import { Session } from "@opencode/schema/session"
 import { SessionStats } from "@opencode/schema/session-stats"
+// fork: export the selected privacy profile consistently across clients (F-023).
+import { SessionTransfer } from "@opencode/schema/session-transfer"
 import { InstructionEntry } from "@opencode/schema/instruction-entry"
 import { Project } from "@opencode/schema/project"
 import {
@@ -125,6 +127,17 @@ const PublicSessionInfo = Schema.Struct({
 const PublicSessionTransfer = Schema.Struct({
   info: PublicSessionInfo,
   messages: Schema.Array(PublicSessionMessage),
+  export_info: SessionTransfer.Data.fields.export_info,
+  analysis: Schema.Struct({
+    ...SessionTransfer.Analysis.fields,
+    children: Schema.Array(
+      Schema.Struct({
+        ...SessionTransfer.Child.fields,
+        info: PublicSessionInfo,
+        messages: Schema.Array(PublicSessionMessage),
+      }),
+    ),
+  }).pipe(Schema.optionalKey),
 }).annotate({ identifier: "SessionTransfer.Data" })
 
 const PublicMovePayload = Schema.Struct({
@@ -170,12 +183,10 @@ export const SessionsQuery = Schema.Struct({
   cursor: SessionsQueryCursor.pipe(Schema.optional),
 }).annotate({ identifier: "SessionsQuery" })
 
-export const makeSessionGroup = <
-  I extends HttpApiMiddleware.AnyId,
-  S,
-  FormI extends HttpApiMiddleware.AnyId,
-  FormS,
->(sessionLocationMiddleware: Context.Key<I, S>, formLocationMiddleware: Context.Key<FormI, FormS>) =>
+export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S, FormI extends HttpApiMiddleware.AnyId, FormS>(
+  sessionLocationMiddleware: Context.Key<I, S>,
+  formLocationMiddleware: Context.Key<FormI, FormS>,
+) =>
   HttpApiGroup.make("server.session")
     .add(
       HttpApiEndpoint.get("session.list", "/api/session", {
@@ -256,7 +267,11 @@ export const makeSessionGroup = <
     .add(
       HttpApiEndpoint.get("session.export", "/api/experimental/session/:sessionID/export", {
         params: { sessionID: Session.ID },
-        query: Schema.Struct({ sanitize: BooleanFromString.pipe(Schema.optional) }),
+        query: Schema.Struct({
+          sanitize: BooleanFromString.pipe(Schema.optional),
+          profile: SessionTransfer.Profile.pipe(Schema.optionalKey),
+          reasoning: BooleanFromString.pipe(Schema.optionalKey),
+        }),
         success: Schema.Struct({ data: PublicSessionTransfer }),
         error: [SessionNotFoundError, UnknownError],
       }).annotateMerge(
@@ -559,9 +574,7 @@ export const makeSessionGroup = <
         error: [SessionNotFoundError, SessionBusyError],
       })
         .middleware(sessionLocationMiddleware)
-        .annotateMerge(
-          OpenApi.annotations({ identifier: "session.revert.commit", summary: "Commit staged revert" }),
-        ),
+        .annotateMerge(OpenApi.annotations({ identifier: "session.revert.commit", summary: "Commit staged revert" })),
     )
     .add(
       HttpApiEndpoint.get("session.context", "/api/session/:sessionID/context", {

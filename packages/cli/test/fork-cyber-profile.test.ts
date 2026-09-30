@@ -2,6 +2,7 @@ import { expect, test } from "bun:test"
 import os from "node:os"
 import path from "node:path"
 import { cyberProfile } from "../src/fork-cyber-profile"
+import { tmpdir } from "./fixture/tmpdir"
 
 test("isolates runtime paths before application imports and overrides inherited shared paths", async () => {
   const root = path.join(os.tmpdir(), "opencyber-profile-test", crypto.randomUUID())
@@ -53,4 +54,40 @@ test("selects the hardened policy before the child imports application code", as
   })
   expect((await new Response(child.stdout).text()).trim()).toBe("review")
   expect(await child.exited).toBe(0)
+})
+
+test("assessment launcher overrides target configuration before child startup and preserves inherited mode", async () => {
+  await using temporary = await tmpdir()
+  expect(cyberProfile(temporary.path, { OPENCYBER_MODE: "assessment" }).OPENCYBER_MODE).toBe("assessment")
+  expect(() => cyberProfile(temporary.path, { OPENCYBER_MODE: "unknown" })).toThrow("Invalid")
+  const child = Bun.spawn(
+    [
+      process.execPath,
+      "script/fork-cyber-assess.ts",
+      "--profile",
+      temporary.path,
+      "--",
+      process.execPath,
+      "-e",
+      "console.log(JSON.stringify({mode:process.env.OPENCYBER_MODE,config:process.env.OPENCODE_CONFIG,tmp:process.env.TMPDIR,database:process.env.OPENCODE_DB}))",
+    ],
+    {
+      env: { ...process.env, OPENCODE_CONFIG: "target-config", OPENCYBER_MODE: "development" },
+      stdout: "pipe",
+      stderr: "pipe",
+    },
+  )
+  const [code, output, error] = await Promise.all([
+    child.exited,
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+  ])
+  expect(code).toBe(0)
+  expect(error).toBe("")
+  expect(JSON.parse(output)).toEqual({
+    mode: "assessment",
+    tmp: path.join(temporary.path, "tmp"),
+    database: path.join(temporary.path, "data", "opencode", "opencode.db"),
+  })
+  expect(await Bun.file(path.join(temporary.path, "tmp")).stat()).toMatchObject({ size: expect.any(Number) })
 })

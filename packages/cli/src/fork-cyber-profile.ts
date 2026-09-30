@@ -4,9 +4,11 @@ import path from "node:path"
 export function cyberProfile(
   root: string,
   inherited: NodeJS.ProcessEnv,
-  mode: "development" | "review" | "assessment" = "development",
+  mode?: "development" | "review" | "assessment",
 ) {
   if (!path.isAbsolute(root)) throw new Error("The cyber profile directory must be absolute")
+  const selectedMode = mode ?? inherited.OPENCYBER_MODE ?? "development"
+  if (!["development", "review", "assessment"].includes(selectedMode)) throw new Error("Invalid cyber process mode")
   const env = { ...inherited }
   delete env.OPENCODE_CONFIG
   delete env.OPENCODE_CONFIG_CONTENT
@@ -23,6 +25,6 @@ export function cyberProfile(
     OPENCODE_DB: path.join(root, "data", "opencode", "opencode.db"),
     OPENCODE_TUI_CHANNEL: "cyber",
     OPENCODE_DISABLE_CHANNEL_DB: "1",
-    OPENCYBER_MODE: mode,
+    OPENCYBER_MODE: selectedMode,
   }
 }

@@ -1,3 +1,4 @@
+// fork: distinguish native tools from execute inventory (F-020).
 export * as CodeModeInstructions from "./instructions.js"
 
 import { searchSignature, toolExpression } from "@opencode/codemode"
@@ -9,6 +10,8 @@ import { CodeModeCatalog } from "./catalog.js"
 const prompt = (hasMoreTools: boolean) => `# Code Mode
 
 Use the \`execute\` tool to call the tools listed below. They cannot be called directly${hasMoreTools ? ", and neither can \`search\`. Both" : ". They"} only work inside code you pass to \`execute\`.
+
+Native tools advertised separately in the request are called directly. They are not part of this catalog and are unavailable inside \`execute\`.
 
 ${hasMoreTools ? `The catalog is partial. Inside \`execute\`, use \`search(...)\` to find a tool, then call it by the \`path\` in the result. \`search\` is synchronous. Call it without \`await\`; it does not return a Promise. Do not guess tool names.
 

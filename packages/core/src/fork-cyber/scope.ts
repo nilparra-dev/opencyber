@@ -2,6 +2,7 @@
 
 import { Schema } from "effect"
 import { BlockList, isIP } from "node:net"
+import { ForkCyberDiagnostics } from "./diagnostics.js"
 
 export const Host = Schema.String.check(
   Schema.makeFilter<string>(
@@ -15,11 +16,14 @@ export const Target = Schema.Union([Host, Cidr])
 export const Service = Schema.Struct({
   target: Target,
   protocol: Schema.Literals(["tcp", "udp"]),
+  scheme: Schema.optional(Schema.Literals(["http", "https"])),
   ports: Schema.Array(Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 1, maximum: 65535 }))).check(
     Schema.isMinLength(1),
     Schema.isMaxLength(128),
   ),
-})
+}).check(
+  Schema.makeFilter((value) => !value.scheme || value.protocol === "tcp" || "HTTP(S) scheme requires TCP transport"),
+)
 const Text = Schema.String.check(Schema.makeFilter<string>((value) => value.trim().length > 0 || "Must not be blank"))
 const budget = (maximum: number) => Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 1, maximum }))
 export const NetworkBudget = Schema.Struct({
@@ -57,13 +61,17 @@ export const Manifest = Schema.Struct({
   }),
   // Compatibility with existing session records. New manifests need no derived flag.
   derived: Schema.optional(Schema.Boolean),
+  provenance: Schema.optional(
+    Schema.Record(Schema.String, Schema.Literals(["operator", "system_default", "agent_proposal", "unknown"])),
+  ),
 })
 export type Manifest = typeof Manifest.Type
 
 export function render(manifest: Manifest) {
   return [
     "# Engagement",
-    `Engagement: ${manifest.engagement}. Operator-provided reference: ${manifest.authorization_ref}. Declared by: ${manifest.authorized_by}.`,
+    `Engagement: ${manifest.engagement}. Recorded reference: ${manifest.authorization_ref}. Declared by: ${manifest.authorized_by}.`,
+    `Value provenance: ${JSON.stringify(manifest.provenance ?? { status: "unknown_for_legacy_record" })}. Do not attribute defaults or proposals to the operator.`,
     "The record does not verify a signature or authorization document.",
     `Scope hosts: ${list(manifest.scope.domains)}`,
     `Scope networks: ${list(manifest.scope.cidrs)}`,
@@ -91,6 +99,25 @@ export function render(manifest: Manifest) {
   ].join("\n")
 }
 
+export function webService(value: string) {
+  const url = new URL(value)
+  if (!["http:", "https:"].includes(url.protocol) || url.username || url.password)
+    throw new Error("Web scope requires an HTTP(S) URL without credentials")
+  return {
+    domains: [],
+    cidrs: [],
+    excluded: [],
+    services: [
+      {
+        target: url.hostname.replace(/^\[|\]$/g, ""),
+        protocol: "tcp" as const,
+        scheme: url.protocol === "https:" ? ("https" as const) : ("http" as const),
+        ports: [Number(url.port || (url.protocol === "https:" ? 443 : 80))],
+      },
+    ],
+  }
+}
+
 export function normalize(value: string) {
   return value.trim().toLowerCase()
 }
@@ -114,19 +141,31 @@ export function authorize(
   port: number,
   addresses: readonly string[] = [],
 ) {
-  if (manifest.derived) throw new Error("Network access requires explicit engagement scope")
+  if (manifest.derived) throw scopeFailure("Network access requires explicit engagement scope")
   const serviceMatches = (entry: typeof Service.Type, value: string) =>
     entry.protocol === protocol && entry.ports.includes(port) && matches(value, entry.target)
   const excluded = (value: string) =>
     manifest.scope.excluded.some((entry) => matches(value, entry)) ||
     manifest.scope.excluded_services?.some((entry) => serviceMatches(entry, value))
-  if (excluded(host)) throw new Error("Network destination or service is excluded")
-  if (addresses.some(excluded)) throw new Error("Resolved network address or service is excluded")
+  if (excluded(host)) throw scopeFailure("Network destination or service is excluded")
+  if (addresses.some(excluded)) throw scopeFailure("Resolved network address or service is excluded")
   if (
     ![...manifest.scope.domains, ...manifest.scope.cidrs].some((entry) => matches(host, entry)) &&
     !manifest.scope.services?.some((entry) => serviceMatches(entry, host))
   )
-    throw new Error("Network destination or service is outside the recorded scope")
+    throw scopeFailure("Network destination or service is outside the recorded scope")
+}
+
+export function scopeFailure(message: string) {
+  return new ForkCyberDiagnostics.Failure({
+    category: "scope",
+    operation: "network_authorization",
+    message,
+    target_started: false,
+    effects: "not_started",
+    recovery:
+      "Use the recorded authorized host, scheme, service and port. Read engagement scope; the operator must approve any expansion.",
+  })
 }
 
 function isHost(value: string) {

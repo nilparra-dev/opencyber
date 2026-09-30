@@ -1,15 +1,8 @@
 export * as CodeModeTool from "./tool.js"
 
 import { CodeMode, Namespace, Tool, toolError } from "@opencode/codemode"
-import type {
-  Content,
-  Context,
-  Error,
-  Info,
-  Metadata,
-  Namespace as ToolNamespace,
-  Result,
-} from "@opencode/schema/tool"
+import { CallID } from "@opencode/schema/tool"
+import type { Content, Context, Error, Info, Metadata, Namespace as ToolNamespace, Result } from "@opencode/schema/tool"
 import { Effect, Ref, Schema, Semaphore } from "effect"
 import { definition, normalizedName } from "../tool/runtime.js"
 import { CodeModeCatalog } from "./catalog.js"
@@ -92,7 +85,11 @@ export const create = (
           (name, tool, input) =>
             Effect.gen(function* () {
               const index = yield* Ref.getAndUpdate(callIndex, (index) => index + 1)
-              const executed = yield* executeTool(name, tool, input, context)
+              // fork: nested calls need independent capture and permission identities (F-020).
+              const executed = yield* executeTool(name, tool, input, {
+                ...context,
+                id: CallID.make(`${context.id}:codemode:${index}`),
+              })
               const content =
                 typeof executed.content === "string"
                   ? [{ type: "text" as const, text: executed.content }]

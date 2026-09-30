@@ -13,6 +13,7 @@ import { ReadToolFileSystem } from "../read-filesystem.js"
 import { Environment } from "../../environment/index.js"
 // fork: target AGENTS.md remains file data in hardened modes (F-019).
 import { ForkCyberPolicy } from "../../fork-cyber/policy.js"
+import { Tool } from "@opencode/schema/tool"
 
 export const name = "read"
 const FILENAME = "AGENTS.md"
@@ -121,6 +122,7 @@ export const Plugin = {
                 metadata: { truncated: result.output.type === "file" ? false : result.output.truncated },
               })),
               Effect.mapError((error) => {
+                if (error instanceof Tool.Error) return error
                 if (error instanceof ToolFailure) return error
                 const message =
                   error instanceof ReadToolFileSystem.BinaryFileError ||

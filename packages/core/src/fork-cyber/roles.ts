@@ -15,6 +15,7 @@ export type Phase = typeof Phase.Type
 export const worker = Schema.is(Phase)
 
 const read = [
+  "execute",
   "read",
   "glob",
   "grep",
@@ -25,8 +26,10 @@ const read = [
   "http_compare",
   "cyber_tasks",
   "cyber_coverage",
+  "cyber_capabilities",
+  "cyber_report",
 ]
-const observe = [...read, "http_request", "cyber_services"]
+const observe = [...read, "http_request", "cyber_services", "cyber_artifacts", "cyber_dns", "cyber_web_plan"]
 const assess = [
   ...observe,
   "http_replay",
@@ -38,8 +41,9 @@ const assess = [
 ]
 
 export function tools(agent: string) {
+  if (agent === "cyber-validate") return [...assess, "cyber_local_validation"]
   if (agent === "cyber-report") return read
-  if (agent === "cyber-code-review") return [...read, "cyber_code_review"]
+  if (agent === "cyber-code-review") return [...read, "cyber_code_review", "cyber_artifacts"]
   if (agent === "cyber-recon" || agent === "cyber-enum") return observe
   if (worker(agent)) return assess
   return undefined

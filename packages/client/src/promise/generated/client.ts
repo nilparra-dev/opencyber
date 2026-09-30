@@ -595,7 +595,13 @@ export function make(options: ClientOptions) {
           {
             method: "POST",
             path: `/api/experimental/session/import`,
-            body: { info: input["info"], messages: input["messages"], location: input["location"] },
+            body: {
+              info: input["info"],
+              messages: input["messages"],
+              export_info: input["export_info"],
+              analysis: input["analysis"],
+              location: input["location"],
+            },
             successStatus: 200,
             declaredStatuses: [400, 401, 404, 409],
             empty: false,
@@ -607,7 +613,7 @@ export function make(options: ClientOptions) {
           {
             method: "GET",
             path: `/api/experimental/session/${encodeURIComponent(input.sessionID)}/export`,
-            query: { sanitize: input["sanitize"] },
+            query: { sanitize: input["sanitize"], profile: input["profile"], reasoning: input["reasoning"] },
             successStatus: 200,
             declaredStatuses: [400, 401, 404, 500],
             empty: false,

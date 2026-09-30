@@ -77,6 +77,8 @@ import { normalizePath } from "../../util/path"
 import { PermissionPrompt } from "./permission"
 import { FormPrompt } from "./form"
 import { DialogExportOptions } from "../../ui/dialog-export-options"
+// fork: one formatter preserves privacy and analysis metadata in both formats (F-023).
+import { formatTranscript } from "../../fork-cyber-export"
 import { DialogExportResult } from "../../ui/dialog-export-result"
 import { sessionEpilogue } from "../../util/presentation"
 import { useConfig } from "../../config"
@@ -1202,8 +1204,9 @@ export function Session(props: {
         try {
           const sessionData = session()
           if (!sessionData) return
-          const transcript = await client.api.session.export({ sessionID: sessionData.id })
-          const content = formatSessionTranscript(transcript.info, transcript.messages, true)
+          // fork: clipboard uses the normal redacted audit export (F-023).
+          const transcript = await client.api.session.export({ sessionID: sessionData.id, profile: "redacted" })
+          const content = formatTranscript(transcript, { format: "markdown", thinking: true, tools: true })
           await clipboard.write(content)
           toast.show({ message: "Session transcript copied to clipboard!", variant: "success" })
         } catch {
@@ -1230,12 +1233,11 @@ export function Session(props: {
 
           const transcript = await client.api.session.export({
             sessionID: sessionData.id,
-            sanitize: options.format === "json" ? options.sanitize : undefined,
+            sanitize: options.sanitize,
+            profile: options.profile,
+            reasoning: options.thinking,
           })
-          const content =
-            options.format === "markdown"
-              ? formatSessionTranscript(transcript.info, transcript.messages, options.thinking, options.tools)
-              : JSON.stringify(transcript, null, 2) + EOL
+          const content = formatTranscript(transcript, options)
 
           if (options.action === "copy") {
             await clipboard.write(content)
@@ -1447,9 +1449,7 @@ export function Session(props: {
                   onMouseOut={() => setLatestHovered(false)}
                   onMouseUp={toBottom}
                 >
-                  <text
-                    fg={latestHovered() ? theme.text.action.secondary.hovered : theme.text.action.secondary.base}
-                  >
+                  <text fg={latestHovered() ? theme.text.action.secondary.hovered : theme.text.action.secondary.base}>
                     Jump to latest ↓
                   </text>
                 </box>
@@ -1494,12 +1494,7 @@ export function Session(props: {
                     }}
                   </Show>
                 </Match>
-                <Match
-                  when={
-                    session() &&
-                    currentLocation.error?.location.directory === session()!.location.directory
-                  }
-                >
+                <Match when={session() && currentLocation.error?.location.directory === session()!.location.directory}>
                   <SessionLocationMissing
                     directory={session()!.location.directory}
                     projectID={session()!.projectID}
@@ -2750,9 +2745,7 @@ function BlockTool(props: BlockToolProps) {
               <Show
                 when={props.spinner}
                 fallback={
-                  <text
-                    fg={permission() ? theme.text.feedback.warning.base : (props.headerColor ?? theme.text.muted)}
-                  >
+                  <text fg={permission() ? theme.text.feedback.warning.base : (props.headerColor ?? theme.text.muted)}>
                     {title()}
                   </text>
                 }
@@ -2940,11 +2933,7 @@ function ShellDisplay(props: {
           <Show
             when={isRunning()}
             fallback={
-              <text
-                fg={theme.text.base}
-                wrapMode={expanded() ? "word" : "char"}
-                maxHeight={expanded() ? undefined : 2}
-              >
+              <text fg={theme.text.base} wrapMode={expanded() ? "word" : "char"} maxHeight={expanded() ? undefined : 2}>
                 {limitedInput()}
               </text>
             }
@@ -3517,38 +3506,6 @@ function stringValue(value: unknown) {
 
 function recordValue(value: unknown): Record<string, unknown> | undefined {
   return isRecord(value) ? value : undefined
-}
-
-function formatSessionTranscript(
-  session: SessionInfo,
-  messages: SessionMessageInfo[],
-  thinking: boolean,
-  tools = true,
-) {
-  const body = messages.flatMap((message) => {
-    if (message.type === "user") return [`## User\n\n${message.text}`]
-    if (message.type === "shell")
-      return [`## Shell\n\n\`\`\`\n$ ${message.command}\n${message.output?.output ?? ""}\n\`\`\``]
-    if (message.type !== "assistant") return []
-    const content = message.content.flatMap((item) => {
-      if (item.type === "text") return [item.text]
-      if (item.type === "reasoning") return thinking ? [`_Thinking:_\n\n${item.text}`] : []
-      if (!tools) return []
-      const input = typeof item.state.input === "string" ? item.state.input : JSON.stringify(item.state.input, null, 2)
-      const output =
-        item.state.status === "error"
-          ? item.state.error.message
-          : item.state.status === "streaming"
-            ? ""
-            : toolDisplayContent(item.state)
-                .flatMap((entry) => (entry.type === "text" ? [entry.text] : [entry.name ?? entry.uri]))
-                .join("\n")
-      return [`**Tool: ${item.name}**\n\n**Input:**\n\`\`\`json\n${input}\n\`\`\`\n\n${output}`]
-    })
-    if (content.length === 0) return []
-    return [`## Assistant\n\n${content.join("\n\n")}`]
-  })
-  return `# ${withTimestampedFallback(session)}\n\n**Session ID:** ${session.id}\n**Created:** ${new Date(session.time.created).toLocaleString()}\n**Updated:** ${new Date(session.time.updated).toLocaleString()}\n\n---\n\n${body.join("\n\n---\n\n")}\n`
 }
 
 export function parseApplyPatchFiles(value: unknown) {

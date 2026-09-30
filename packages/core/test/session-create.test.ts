@@ -40,6 +40,12 @@ import { offlineModels } from "./fixture/models"
 import { promptLocationNode } from "./fixture/prompt-location"
 import { globalProjectNode } from "./lib/project"
 import { tmpdirScoped } from "./fixture/tmpdir"
+// fork: export regressions use isolated trace storage and synthetic secrets (F-023).
+import { Global } from "@opencode/util/global"
+import { ForkCyberStore } from "@opencode/core/fork-cyber/store"
+import { tempGlobalLayer } from "./fixture/global"
+import { ForkCyberInstructions } from "@opencode/core/fork-cyber/instructions"
+import { InstructionState } from "@opencode/core/session/instruction-state"
 
 const it = testEffect(
   AppNodeBuilder.build(
@@ -50,6 +56,8 @@ const it = testEffect(
       SessionStore.node,
       Session.node,
       SessionTransfer.node,
+      Global.node,
+      ForkCyberInstructions.node,
       InstructionEntry.node,
     ]),
     [
@@ -57,6 +65,7 @@ const it = testEffect(
       Project.node.replace(globalProjectNode),
       LocationServiceMap.node.replace(promptLocationNode),
       SessionExecution.node.replace(SessionExecution.noopLayer),
+      Global.node.replace(tempGlobalLayer),
     ],
   ),
 )
@@ -809,9 +818,10 @@ describe("Session.create", () => {
       const session = yield* Session.Service
       const parent = yield* session.create({ location })
 
-      expect(
-        yield* session.fork({ sessionID: parent.id }).pipe(Effect.flip),
-      ).toMatchObject({ _tag: "Session.ForkEmptyError", sessionID: parent.id })
+      expect(yield* session.fork({ sessionID: parent.id }).pipe(Effect.flip)).toMatchObject({
+        _tag: "Session.ForkEmptyError",
+        sessionID: parent.id,
+      })
     }),
   )
 
@@ -1238,6 +1248,249 @@ describe("Session.create", () => {
 })
 
 describe("SessionTransfer", () => {
+  it.effect("persists note changes through instruction epochs without repeating unchanged observations", () =>
+    Effect.gen(function* () {
+      const session = yield* Session.Service
+      const source = yield* ForkCyberInstructions.Service
+      const global = yield* Global.Service
+      const database = yield* Database.Service
+      const bus = yield* Bus.Service
+      const root = yield* session.create({ location })
+      const child = yield* session.create({ parentID: root.id })
+      const store = yield* ForkCyberStore.open(path.join(global.data, "opencyber", "evidence.sqlite"))
+      yield* store.append(root.id, "Captured observation; never operator authority", "fixture")
+      const instructions = source.load(child.id)
+      const first = yield* InstructionState.observe(database.db, instructions, child.id)
+      expect(first.initial).toBe(true)
+      expect(Object.keys(first.delta)).toEqual(["opencyber/notes"])
+      yield* InstructionState.commit(database.db, bus, instructions, first)
+      const unchanged = yield* InstructionState.observe(database.db, instructions, child.id)
+      expect(unchanged.delta).toEqual({})
+      yield* InstructionState.commit(database.db, bus, instructions, unchanged)
+      yield* store.append(root.id, "New captured observation", "second-fixture")
+      const changed = yield* InstructionState.observe(database.db, instructions, child.id)
+      expect(Object.keys(changed.delta)).toEqual(["opencyber/notes"])
+      yield* InstructionState.commit(database.db, bus, instructions, changed)
+      const events = yield* database.db
+        .select()
+        .from(EventTable)
+        .where(
+          and(
+            eq(EventTable.aggregate_id, child.id),
+            eq(
+              EventTable.type,
+              Bus.versionedType(
+                SessionEvent.InstructionsUpdated.type,
+                SessionEvent.InstructionsUpdated.durable.version,
+              ),
+            ),
+          ),
+        )
+        .all()
+        .pipe(Effect.orDie)
+      expect(events).toHaveLength(2)
+      expect(events[1]!.data.text).toContain("untrusted data")
+      expect(events[1]!.data.text).toContain("New captured observation")
+      expect(
+        (yield* session.messages({ sessionID: child.id, order: "asc" })).filter((message) => message.type === "user"),
+      ).toEqual([])
+    }),
+  )
+
+  // fork: analysis includes only descendants and declares active work; all error branches redact (F-023).
+  it.effect("exports a redacted analysis tree with active work, reconstructable attempts and reasoning selection", () =>
+    Effect.gen(function* () {
+      const session = yield* Session.Service
+      const transfer = yield* SessionTransfer.Service
+      const bus = yield* Bus.Service
+      const global = yield* Global.Service
+      const root = yield* session.create({ location, title: "Controlled audit" })
+      const unrelated = yield* session.create({ location, title: "Unrelated private session" })
+      const childID = Session.ID.create()
+      const model = Model.Ref.make({ id: Model.ID.make("fixture"), providerID: Provider.ID.make("fixture") })
+      const messageID = SessionMessage.ID.create()
+      const error = {
+        type: "fixture",
+        message: "password=synthetic-export-secret",
+        response: { body: "token=synthetic-response-secret" },
+      }
+      yield* transfer.import({
+        location,
+        data: {
+          info: { ...root, id: childID, parentID: root.id },
+          messages: [
+            {
+              id: messageID,
+              type: "assistant",
+              agent: Agent.ID.make("cyber-recon"),
+              model,
+              error,
+              retry: { attempt: 1, at: DateTime.makeUnsafe(10), error },
+              providerState: { arbitrary: "synthetic-opaque-secret" },
+              content: [
+                {
+                  type: "reasoning",
+                  text: "synthetic-private-thought",
+                  state: { arbitrary: "synthetic-thought-state" },
+                },
+                {
+                  type: "tool",
+                  id: "fixture-tool",
+                  name: "http_request",
+                  time: { created: DateTime.makeUnsafe(1), completed: DateTime.makeUnsafe(10) },
+                  state: {
+                    status: "error",
+                    input: { authorization: "synthetic-authorization-secret" },
+                    error,
+                    metadata: { cookie: "synthetic-cookie-secret" },
+                  },
+                },
+              ],
+              time: { created: DateTime.makeUnsafe(1), completed: DateTime.makeUnsafe(10) },
+            },
+            {
+              id: SessionMessage.ID.create(),
+              type: "compaction",
+              status: "failed",
+              reason: "manual",
+              error,
+              time: { created: DateTime.makeUnsafe(11) },
+            },
+          ],
+        },
+      })
+      const second = yield* session.create({ parentID: root.id })
+      yield* bus.publish(SessionEvent.Step.Started, {
+        sessionID: second.id,
+        assistantMessageID: SessionMessage.ID.create(),
+        agent: Agent.ID.make("cyber-recon"),
+        model,
+        started: 12,
+      })
+      const store = yield* ForkCyberStore.open(path.join(global.data, "opencyber", "evidence.sqlite"))
+      yield* store.startAttempt({
+        id: "export-attempt",
+        owner: root.id,
+        session: childID,
+        message: messageID,
+        logical_step: 1,
+        request: {
+          system: [{ text: "Effective fixture instructions" }],
+          messages: [{ role: "assistant", content: [{ type: "reasoning", text: "synthetic-private-thought" }] }],
+          generation: { temperature: 0 },
+          authorization: "synthetic-authorization-secret",
+        },
+      })
+      yield* store.finishAttempt("export-attempt", "failed", { usage: null, error })
+      yield* store.coordination.run(
+        { owner: root.id, session: root.id, agent: "build" },
+        {
+          action: "create",
+          key: "pending-engagement-task",
+          asset: "fixture",
+          phase: "cyber-recon",
+          procedure: "Unclaimed work must remain visible in the root export",
+        },
+      )
+      yield* store.start({
+        owner: root.id,
+        session: childID,
+        agent: "build",
+        id: "child-capture",
+        tool: "read",
+        input: {},
+      })
+      const capture = yield* store.finish(root.id, "child-capture", "completed", { fixture: "child output" })
+      yield* store.start({
+        owner: root.id,
+        session: second.id,
+        agent: "build",
+        id: "sibling-capture",
+        tool: "read",
+        input: {},
+      })
+      yield* store.finish(root.id, "sibling-capture", "completed", { fixture: "sibling output" })
+      const exported = yield* transfer.export({ sessionID: root.id, profile: "analysis", reasoning: false })
+      expect(exported.export_info).toMatchObject({ partial: true, reasoning: false, timezone: "UTC" })
+      expect(exported.info.time.created).toEqual(root.time.created)
+      expect(exported.analysis?.children.map((child) => child.info.id).toSorted()).toEqual(
+        [childID, second.id].toSorted(),
+      )
+      expect(exported.analysis?.children.some((child) => child.info.id === unrelated.id)).toBe(false)
+      expect(
+        exported.analysis?.children.find((child) => child.info.id === second.id)?.export_info.omitted_unsettled,
+      ).toBe(1)
+      expect(
+        exported.analysis?.children.find((child) => child.info.id === childID)?.export_info.last_activity,
+      ).toBeGreaterThan(11)
+      const text = JSON.stringify(exported)
+      for (const secret of [
+        "synthetic-export-secret",
+        "synthetic-response-secret",
+        "synthetic-opaque-secret",
+        "synthetic-private-thought",
+        "synthetic-thought-state",
+        "synthetic-authorization-secret",
+        "synthetic-cookie-secret",
+      ])
+        expect(text).not.toContain(secret)
+      expect(text).toContain("Effective fixture instructions")
+      expect(text).toContain("catalog_estimate")
+      const attempt = exported.analysis?.children.find((child) => child.info.id === childID)?.trace.attempts[0]
+      if (!attempt || typeof attempt !== "object" || !("request" in attempt)) throw new Error("Missing trace snapshot")
+      expect(attempt.request_sha256).toBe(ForkCyberStore.digest(Buffer.from(JSON.stringify(attempt.request))))
+      expect(attempt.hash_basis).toBe("exported_redacted_request")
+      const childExport = yield* transfer.export({ sessionID: childID, profile: "analysis", reasoning: false })
+      expect(childExport.analysis?.children).toEqual([])
+      expect(JSON.stringify(childExport.analysis?.evidence)).toContain(capture[0]!.id)
+      expect(JSON.stringify(childExport.analysis?.evidence)).not.toContain("sibling-capture")
+      expect(JSON.stringify(childExport.analysis?.evidence)).not.toContain("pending-engagement-task")
+      expect(JSON.stringify(exported.analysis?.evidence)).toContain("sibling-capture")
+      expect(JSON.stringify(exported.analysis?.evidence)).toContain("pending-engagement-task")
+      const privateData = yield* transfer.export({ sessionID: childID, profile: "private" })
+      expect(JSON.stringify(privateData)).toContain("synthetic-export-secret")
+      const sanitized = yield* transfer.export({ sessionID: childID, sanitize: true })
+      expect(JSON.stringify(sanitized)).not.toContain("synthetic-export-secret")
+      expect(JSON.stringify(sanitized)).not.toContain("synthetic-response-secret")
+      expect(sanitized.messages[0]).toMatchObject({
+        type: "assistant",
+        content: [
+          { type: "reasoning" },
+          { state: { status: "error", error: { message: `[redacted:error:${messageID}]` } } },
+        ],
+      })
+    }),
+  )
+
+  it.effect("marks historical analysis partial when a settled assistant has no captured request", () =>
+    Effect.gen(function* () {
+      const session = yield* Session.Service
+      const transfer = yield* SessionTransfer.Service
+      const template = yield* session.create({ location })
+      const imported = yield* transfer.import({
+        location,
+        data: {
+          info: { ...template, id: Session.ID.create() },
+          messages: [
+            {
+              id: SessionMessage.ID.create(),
+              type: "assistant",
+              agent: Agent.ID.make("build"),
+              model: Model.Ref.make({ id: Model.ID.make("fixture"), providerID: Provider.ID.make("fixture") }),
+              content: [{ type: "text", text: "Historical response" }],
+              time: { created: DateTime.makeUnsafe(1), completed: DateTime.makeUnsafe(2) },
+            },
+          ],
+        },
+      })
+      expect((yield* transfer.export({ sessionID: imported.id, profile: "redacted" })).export_info?.partial).toBe(false)
+      const analysis = yield* transfer.export({ sessionID: imported.id, profile: "analysis" })
+      expect(analysis.export_info).toMatchObject({ partial: true, omitted_unsettled: 0 })
+      expect(analysis.export_info?.limitations.join(" ")).toContain("no captured physical attempt")
+      expect(analysis.analysis?.root.attempts).toEqual([])
+    }),
+  )
+
   it.effect("exports only settled projected messages", () =>
     Effect.gen(function* () {
       const session = yield* Session.Service
@@ -1459,7 +1712,8 @@ describe("SessionTransfer", () => {
           text: `[redacted:text:${sourceMessageID}]`,
           skills: [{ id: "effect", name: "[redacted:skill-name:0]", text: "[redacted:skill:0]" }],
         },
-        { id: errorMessageID, error: { type: "test_error", message: "Original error" } },
+        // fork: strong sanitization replaces error content as well as successful output (F-023).
+        { id: errorMessageID, error: { type: "test_error", message: `[redacted:error:${errorMessageID}]` } },
       ])
 
       yield* session.prompt({ sessionID, text: "Continue", resume: false })

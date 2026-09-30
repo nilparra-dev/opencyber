@@ -134,7 +134,9 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
               "log",
               "repos",
             ]).pipe(
-              Argument.withDescription("Print only one path: db, home, data, config, cache, state, tmp, bin, log, repos"),
+              Argument.withDescription(
+                "Print only one path: db, home, data, config, cache, state, tmp, bin, log, repos",
+              ),
               Argument.optional,
             ),
           },
@@ -453,6 +455,11 @@ const Root = Spec.make(typeof OPENCODE_CLI_NAME === "string" ? OPENCODE_CLI_NAME
               Flag.withDescription("Redact sensitive transcript and file data"),
               Flag.withDefault(false),
             ),
+            // fork: privacy profiles are explicit; analysis includes child and attempt traces (F-023).
+            profile: Flag.choice("profile", ["redacted", "private", "sanitized", "analysis"]).pipe(
+              Flag.withDefault("redacted"),
+            ),
+            reasoning: Flag.boolean("reasoning").pipe(Flag.withDefault(true)),
           },
         }),
         Spec.make("import", {

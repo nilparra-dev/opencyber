@@ -110,6 +110,28 @@ export const run = Effect.fn("ForkCyberCodeReview.run")(function* (
   if (input.action === "procedures") return procedures
   if (ForkCyberRoles.worker(assessment.agent)) yield* store.coordination.requireClaim(assessment)
   const root = yield* Effect.tryPromise(() => realpath(assessment.directory))
+  const identity = yield* Effect.forEach(["commit", "dirty"] as const, (kind) =>
+    Effect.tryPromise(async () => {
+      const child = Bun.spawn(
+        [
+          "git",
+          "-c",
+          "core.fsmonitor=false",
+          "-c",
+          "core.untrackedCache=false",
+          ...(kind === "commit"
+            ? ["rev-parse", "HEAD"]
+            : ["status", "--porcelain", "--untracked-files=no", "--ignore-submodules=all"]),
+        ],
+        { cwd: root, stdout: "pipe", stderr: "ignore" },
+      )
+      const timer = setTimeout(() => child.kill(), 3000)
+      const output = await new Response(child.stdout).text()
+      const code = await child.exited
+      clearTimeout(timer)
+      return code === 0 ? output.trim() : null
+    }).pipe(Effect.orElseSucceed(() => null)),
+  )
   const report =
     input.action === "sarif" ? yield* read(root, input.report, 2 * 1024 * 1024, assessment.permission) : undefined
   const parsed = report
@@ -151,6 +173,7 @@ export const run = Effect.fn("ForkCyberCodeReview.run")(function* (
     input,
     provenance: {
       module: procedures.module,
+      operation_class: "source_read",
       directory: root,
       scanner: parsed?.runs.map((run) => run.tool.driver) ?? null,
     },
@@ -180,6 +203,14 @@ export const run = Effect.fn("ForkCyberCodeReview.run")(function* (
     const capture = {
       format: "opencyber-code-review-v1",
       execution: id,
+      identity: {
+        kind: "local_source",
+        deployment_relation: "unverified",
+        commit: identity[0],
+        dirty: identity[1] === null ? null : identity[1] !== "",
+        untracked_files: "not_included",
+        captured_at: Date.now(),
+      },
       action: input.action,
       report_artifact: reportArtifact?.[0]?.id ?? null,
       files,
@@ -203,7 +234,12 @@ export const run = Effect.fn("ForkCyberCodeReview.run")(function* (
       limitations: procedures.limits,
     }
     const output = yield* store.finish(assessment.owner, id, "completed", capture)
-    return { ...capture, output: output[0]!.id }
+    return {
+      ...capture,
+      output: output[0]!.id,
+      completion_evidence: [output[0]!.id],
+      artifacts: yield* store.artifacts(assessment.owner, id),
+    }
   }).pipe(Effect.result)
   if (result._tag === "Success") return result.success
   yield* store.finish(assessment.owner, id, "error", { message: String(result.failure) })
