@@ -10,6 +10,7 @@ import { LocationServiceMap } from "@opencode/core/location-service-map"
 import { KV } from "@opencode/core/kv"
 import { Plugin } from "@opencode/core/plugin"
 import { ForkCyberPlugin } from "@opencode/core/plugin/fork-cyber"
+import { ForkCyberCoordination } from "@opencode/core/fork-cyber/coordination"
 import { ForkCyberStore } from "@opencode/core/fork-cyber/store"
 import { PluginHooks } from "@opencode/core/plugin/hooks"
 import { PluginHost } from "@opencode/core/plugin/host"
@@ -101,6 +102,81 @@ const context = Effect.fn(function* (
   })
   return event.system.map((part) => part.text).join("\n")
 })
+
+it.live("repairs string revisions before claiming and releasing durable cyber tasks", () =>
+  Effect.gen(function* () {
+    const env = yield* project
+    yield* Effect.gen(function* () {
+      const decode = Schema.decodeUnknownSync(
+        Schema.fromJsonString(Schema.Struct({ status: Schema.String, revision: Schema.Number })),
+      )
+      yield* call(env.root.id, "cyber_tasks", {
+        action: "create",
+        key: "fixture-recon",
+        asset: "fixture.txt",
+        procedure: "Read a local fixture",
+        phase: "cyber-recon",
+      })
+      expect(
+        decode(yield* call(env.root.id, "cyber_tasks", { action: "claim", key: "fixture-recon", revision: "1" })),
+      ).toEqual({ status: "active", revision: 2 })
+      expect(
+        (yield* call(env.root.id, "cyber_tasks", {
+          action: "release",
+          key: "fixture-recon",
+          revision: "invalid",
+        }).pipe(Effect.flip)).message,
+      ).toContain("revision: Expected number")
+      expect(
+        (yield* call(env.root.id, "cyber_tasks", {
+          action: "release",
+          key: "fixture-recon",
+          revision: "1",
+        }).pipe(Effect.flip)).message,
+      ).toContain("revision is stale")
+      expect(decode(yield* call(env.root.id, "cyber_tasks", { action: "get", key: "fixture-recon" }))).toEqual({
+        status: "active",
+        revision: 2,
+      })
+      expect(
+        decode(yield* call(env.root.id, "cyber_tasks", { action: "release", key: "fixture-recon", revision: "2" })),
+      ).toEqual({ status: "pending", revision: 3 })
+    }).pipe(env.provide)
+  }),
+)
+
+it.live("repairs nested task unions while preserving required revision validation", () =>
+  Effect.gen(function* () {
+    const env = yield* project
+    yield* Effect.gen(function* () {
+      const plugins = yield* Plugin.Service
+      yield* plugins.awaitActivation
+      const tools = yield* Tool.Service
+      const input = Schema.Struct({ task: ForkCyberCoordination.Action })
+      yield* tools.transform((editor) =>
+        editor.add({
+          name: "fixture_task",
+          options: { codemode: false },
+          description: "Return a task fixture",
+          input,
+          execute: (input) => Effect.succeed({ content: JSON.stringify(input) }),
+        }),
+      )
+      expect(
+        Schema.decodeUnknownSync(Schema.fromJsonString(input))(
+          yield* call(env.root.id, "fixture_task", {
+            task: JSON.stringify({ action: "claim", key: "fixture-recon", revision: "1" }),
+          }),
+        ),
+      ).toEqual({ task: { action: "claim", key: "fixture-recon", revision: 1 } })
+      expect(
+        (yield* call(env.root.id, "fixture_task", {
+          task: { action: "claim", key: "fixture-recon" },
+        }).pipe(Effect.flip)).message,
+      ).toContain("task.revision")
+    }).pipe(env.provide)
+  }),
+)
 
 it.live("captures distinct nested Code Mode calls and correlates their container", () =>
   Effect.gen(function* () {
