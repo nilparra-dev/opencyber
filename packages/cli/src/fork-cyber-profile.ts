@@ -1,7 +1,11 @@
 import path from "node:path"
 
 // Called by the launcher before importing application modules that resolve XDG paths.
-export function cyberProfile(root: string, inherited: NodeJS.ProcessEnv) {
+export function cyberProfile(
+  root: string,
+  inherited: NodeJS.ProcessEnv,
+  mode: "development" | "review" | "assessment" = "development",
+) {
   if (!path.isAbsolute(root)) throw new Error("The cyber profile directory must be absolute")
   const env = { ...inherited }
   delete env.OPENCODE_CONFIG
@@ -19,5 +23,6 @@ export function cyberProfile(root: string, inherited: NodeJS.ProcessEnv) {
     OPENCODE_DB: path.join(root, "data", "opencode", "opencode.db"),
     OPENCODE_TUI_CHANNEL: "cyber",
     OPENCODE_DISABLE_CHANNEL_DB: "1",
+    OPENCYBER_MODE: mode,
   }
 }

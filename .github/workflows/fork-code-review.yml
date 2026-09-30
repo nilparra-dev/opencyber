@@ -1,17 +1,7 @@
 name: fork-code-review
 
 on:
-  pull_request:
-    branches: [custom]
-    paths:
-      - packages/core/src/fork-cyber/**
-      - packages/core/src/plugin/fork-cyber.ts
-      - packages/core/test/plugin/fork-cyber-code-review.test.ts
-      - packages/core/test/plugin/fork-cyber-integration.test.ts
-      - packages/core/test/fixture/fork-cyber-code-review/**
-      - packages/core/test/fixture/fork-cyber-code-review-smoke.ts
-      - .github/workflows/fork-code-review.yml
-      - bun.lock
+  workflow_call:
   workflow_dispatch:
 
 permissions:

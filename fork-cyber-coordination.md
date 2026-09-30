@@ -44,7 +44,7 @@ The IDs above are placeholders for actual captured artifacts. Completion require
 
 Outcomes are `observed`, `supported`, `refuted` and `inconclusive`. Supported/refuted require a recorded hypothesis. They record the agent's interpretation and rationale, not an automatic vulnerability verdict. Use the existing `findings` tool for candidate, confirmed and discarded findings; shared artifact references connect findings to task executions. A refuted hypothesis does not establish that an asset is secure.
 
-`release` returns an active claim to pending only if no execution has started. Once work has started, complete it or use `block` with a reason. A blocked task retains its executions, has no successful coverage result and cannot be reclaimed. Completed tasks cannot be reclaimed either. Use an explicitly new key for a deliberate follow-up procedure.
+`release` returns an active claim to pending only if no execution has started. Once work has started, complete it or use `block` with a reason. A blocked task retains its executions, has no successful coverage result and cannot be reclaimed. Completed tasks cannot be reclaimed either. Use `retry` to create an explicitly linked successor for recoverable work, preserving the predecessor and its evidence. It records a reason, declared authorization and effect state, checks read-only operations, and requires completed reconciliation evidence for unknown effects. Claim the successor normally. See [audit corrections](fork-cyber-audit.md).
 
 ```json
 {"action":"release","key":"not-started-yet","revision":2}

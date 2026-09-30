@@ -51,6 +51,7 @@ jobs:
       unit: ${{ steps.affected.outputs.unit }}
       unit_filters: ${{ steps.affected.outputs.unit_filters }}
       core: ${{ steps.affected.outputs.core }}
+      cyber: ${{ steps.affected.outputs.cyber }}
     steps:
       # A pull_request checkout is GitHub's merge commit, so HEAD^1 is the base
       # it was merged onto and HEAD^1..HEAD is exactly the PR's change.
@@ -85,11 +86,15 @@ jobs:
           }
           everything() {
             echo "$1: running everything"
+            echo 'cyber=true' >> "$GITHUB_OUTPUT"
             write "$(filters "$HEAVY")" "$(sed 's/^/--filter=!/' <<< "$HEAVY" | paste -sd' ')" "--filter=!./packages/core" true
             exit 0
           }
           if [ "$GITHUB_EVENT_NAME" != pull_request ]; then everything "not a pull request"; fi
           code=$(git diff --name-only HEAD^1 HEAD | grep -vE '\.md$' || true)
+          if grep -qE '^(packages/(core|cli|plugin|ai|schema|protocol|server|client|util)/|fork-kali/|script/fork-|\.github/(workflows/fork-|actions/fork-)|bun\.lock$|package\.json$)' <<< "$code"; then
+            echo 'cyber=true' >> "$GITHUB_OUTPUT"
+          fi
           if [ -z "$code" ]; then
             echo "only markdown changed: skipping"
             echo "code=false" >> "$GITHUB_OUTPUT"
@@ -211,6 +216,26 @@ jobs:
       - name: Unit tests (packages/core shard)
         run: GITHUB_ACTIONS=false bun turbo test --filter=./packages/core -- --shard=${{ matrix.shard }}/${{ strategy.job-total }}
 
+  cyber-kali:
+    needs: changes
+    if: needs.changes.outputs.cyber == 'true'
+    uses: ./.github/workflows/fork-kali.yml
+
+  cyber-browser:
+    needs: changes
+    if: needs.changes.outputs.cyber == 'true'
+    uses: ./.github/workflows/fork-browser.yml
+
+  cyber-code-review:
+    needs: changes
+    if: needs.changes.outputs.cyber == 'true'
+    uses: ./.github/workflows/fork-code-review.yml
+
+  cyber-surfaces:
+    needs: changes
+    if: needs.changes.outputs.cyber == 'true'
+    uses: ./.github/workflows/fork-surfaces.yml
+
   # Branch protection requires checks named `typecheck` and `test`; these jobs
   # report the combined result of the jobs above under those names.
   typecheck:
@@ -224,11 +249,14 @@ jobs:
         run: exit 1
 
   test:
-    needs: [changes, unit, core]
+    needs: [changes, unit, core, cyber-kali, cyber-browser, cyber-code-review, cyber-surfaces]
     if: always() && github.event_name != 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Check test results
         if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1
+      - name: Require all relevant cyber labs and compiled smokes
+        if: needs.changes.outputs.cyber == 'true' && (needs.cyber-kali.result != 'success' || needs.cyber-browser.result != 'success' || needs.cyber-code-review.result != 'success' || needs.cyber-surfaces.result != 'success')
         run: exit 1

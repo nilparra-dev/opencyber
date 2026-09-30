@@ -103,9 +103,12 @@ import { VcsGitPlugin } from "./vcs/git.js"
 import { VerbosityPlugin } from "./verbosity.js"
 import { WarmingPlugin } from "./warming.js"
 import { ForkCyberPlugin } from "./fork-cyber.js"
+// fork: bind the trusted mode to built-in policy enforcement (F-019).
+import { ForkCyberPolicy } from "../fork-cyber/policy.js"
 import { WellKnownPlugin } from "../wellknown/plugin.js"
 
 const services = [
+  ForkCyberPolicy.Service,
   Agent.Service,
   AppProcess.Service,
   Provider.Service,
@@ -159,6 +162,7 @@ const services = [
 export type Requirements = Context.Service.Identifier<(typeof services)[number]>
 
 export const requirements = LayerNode.group([
+  ForkCyberPolicy.node,
   Agent.node,
   AppProcess.node,
   Provider.node,
@@ -271,7 +275,12 @@ const post = [
 
 // Repository config must not switch off policy enforcement or the Console connection that delivers
 // organization statements, so plugin remove operations skip these IDs.
-export const guarded: ReadonlySet<string> = new Set([OpencodePlugin.id, ConfigPolicyPlugin.Plugin.id])
+// fork: configuration cannot remove the cyber runtime checks (F-019).
+export const guarded: ReadonlySet<string> = new Set([
+  OpencodePlugin.id,
+  ConfigPolicyPlugin.Plugin.id,
+  ForkCyberPlugin.Plugin.id,
+])
 
 export const list = Effect.fn("PluginInternal.list")(function* () {
   // Capture only services; activation supplies the child Scope and batching context.

@@ -49,6 +49,7 @@ const Inspect = Schema.Array(
   }),
 )
 const decodeInspect = Schema.decodeUnknownEffect(Schema.fromJsonString(Inspect.check(Schema.isMinLength(1))))
+export const INPUT_LIMIT = 2 * 1024 * 1024
 const limit = 2 * 1024 * 1024
 
 // The host owns Docker. Only explicit artifacts and argv cross into the container.
@@ -129,7 +130,7 @@ export function manager(store: Store, profile: string, config: Config) {
             .readArtifact(owner, file.artifact)
             .pipe(
               Effect.flatMap((artifact) =>
-                artifact.bytes.length > limit
+                artifact.bytes.length > INPUT_LIMIT
                   ? Effect.fail(new Error("Input artifact exceeds 2 MiB"))
                   : Effect.succeed({ name: file.name, base64: artifact.bytes.toString("base64") }),
               ),

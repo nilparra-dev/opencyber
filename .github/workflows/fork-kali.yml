@@ -1,19 +1,7 @@
 name: fork-kali
 
 on:
-  pull_request:
-    branches: [custom]
-    paths:
-      - fork-kali/**
-      - packages/core/src/fork-cyber/**
-      - packages/core/src/plugin/fork-cyber.ts
-      - packages/core/test/plugin/fork-cyber-kali.test.ts
-      - packages/core/test/plugin/fork-cyber-network.test.ts
-      - packages/core/test/plugin/fork-cyber-services.test.ts
-      - packages/core/test/fixture/fork-cyber-services/**
-      - packages/core/test/fixture/fork-cyber-services-smoke.ts
-      - .github/workflows/fork-kali.yml
-      - bun.lock
+  workflow_call:
   workflow_dispatch:
 
 permissions:

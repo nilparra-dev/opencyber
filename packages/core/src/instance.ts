@@ -52,12 +52,15 @@ import { ReadToolFileSystem } from "./tool/read-filesystem.js"
 import { Tool } from "./tool.js"
 import { ToolOutput } from "./tool-output.js"
 import { Vcs } from "./vcs.js"
+// fork: select project trust before configuration and plugins boot (F-019).
+import { ForkCyberPolicy } from "./fork-cyber/policy.js"
 
 export * as Instance from "./instance.js"
 export { Service, node, type Interface } from "./instance/service.js"
 
 const nodes = [
   Location.node,
+  ForkCyberPolicy.node,
   LocationLifecycle.node,
   Environment.node,
   Config.node,
@@ -117,6 +120,8 @@ export type Services = LayerNode.Output<typeof graph>
 export type Error = Layer.Error<ReturnType<typeof layer>>
 
 export interface Options {
+  // fork: trusted operator policy, inherited by every Location in a dedicated process (F-019).
+  readonly cyberMode?: ForkCyberPolicy.Mode
   // Plugins this instance is born with; empty and absent are equivalent.
   readonly plugins?: InstancePlugins.List
   // Filesystem config discovery; true (default) is today's behavior. When
@@ -147,11 +152,22 @@ const vanillaReplacements: LayerNode.Replacements = [
 // One instance is one compiled, fresh copy of the graph standing on a directory.
 export function layer(ref: Location.Ref, options: Options = {}): Layer.Layer<Services> {
   const startedAt = performance.now()
+  const cyberMode = options.cyberMode ?? ForkCyberPolicy.selected()
   // Ordered: vanilla defaults, then caller replacements (which win over the
   // defaults), then instance bindings (which win over everything).
   const replacements: LayerNode.Replacements = [
     ...(options.discovery === false ? vanillaReplacements : []),
     ...(options.replacements ?? []),
+    // fork: target configuration cannot override a hardened process policy (F-019).
+    ...(cyberMode === "development"
+      ? []
+      : [
+          Config.node.replace(Config.configured({ project: false, global: options.discovery !== false })),
+          InstructionDiscovery.node.replace(
+            InstructionDiscovery.configured({ project: false, global: options.discovery !== false }),
+          ),
+        ]),
+    ForkCyberPolicy.node.replace(ForkCyberPolicy.configured(cyberMode)),
     Location.node.replace(Location.boundNode(ref)),
     InstancePlugins.node.replace(InstancePlugins.bound(options.plugins ?? [])),
   ]

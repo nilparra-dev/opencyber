@@ -15,10 +15,17 @@ export const Request = Schema.Struct({
   headers: Schema.optional(Schema.Record(Schema.String, Schema.String)),
   body: Schema.optional(
     Schema.Union([
-      Schema.String.check(Schema.isMaxLength(1024 * 1024)),
+      // Large maxLength keywords exhaust provider grammar budgets; keep validation local.
+      Schema.String.check(
+        Schema.isMaxLength(1024 * 1024, {
+          toJsonSchema: () => ({ description: "Text request body, at most 1 MiB when UTF-8 encoded." }),
+        }),
+      ),
       Schema.Struct({
         base64: Schema.String.check(
-          Schema.isMaxLength(1398104),
+          Schema.isMaxLength(1398104, {
+            toJsonSchema: () => ({ description: "Base64 request body, at most 1 MiB after decoding." }),
+          }),
           Schema.isPattern(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/),
         ),
       }),

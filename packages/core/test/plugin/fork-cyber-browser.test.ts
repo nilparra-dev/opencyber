@@ -137,13 +137,17 @@ browserTest(
             id: "browser-proof",
             revision: 0,
             title: "Fixture broken authorization",
-            status: "confirmed",
+            status: "candidate",
             rationale: "Bob reads Alice's record on the broken route; the healthy and anonymous controls deny access",
             evidence: [alice.requests[0]!, bob.requests[0]!, healthy.requests[0]!, anonymous[0]!.output],
           })
           expect(yield* env.store.findings("owner")).toHaveLength(1)
           const state = yield* env.run({ action: "checkpoint", identity: "alice" })
           const checkpoint = (yield* env.store.readArtifact("owner", state.artifacts[0]!.artifact)).bytes.toString()
+          const preview = ForkCyberStore.preview(checkpoint, 0, "browser.state")
+          expect(preview).not.toContain('"value":"alice"')
+          expect(preview).not.toContain('"value":"fixture"')
+          expect(preview).toContain("[REDACTED]")
           expect(checkpoint).toContain('"name":"preference"')
           expect(checkpoint).toContain('"localStorage":[{"name":"account","value":"alice"}]')
           yield* env.run({ action: "close", identity: "alice" })

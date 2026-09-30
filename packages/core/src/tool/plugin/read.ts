@@ -3,7 +3,7 @@ export * as ReadTool from "./read.js"
 import type { Context } from "@opencode/plugin/effect/plugin"
 import { basename, dirname, join } from "path"
 import { ToolFailure } from "@opencode/ai"
-import { Effect, Schema } from "effect"
+import { Effect, Option, Schema } from "effect"
 import { FSUtil } from "@opencode/util/fs-util"
 import { Location } from "../../location.js"
 import { FileAccess } from "../../file-access.js"
@@ -11,6 +11,8 @@ import { SessionInstructions } from "../../session/instructions.js"
 import { AbsolutePath } from "../../schema.js"
 import { ReadToolFileSystem } from "../read-filesystem.js"
 import { Environment } from "../../environment/index.js"
+// fork: target AGENTS.md remains file data in hardened modes (F-019).
+import { ForkCyberPolicy } from "../../fork-cyber/policy.js"
 
 export const name = "read"
 const FILENAME = "AGENTS.md"
@@ -34,6 +36,7 @@ export const Plugin = {
     const sessionInstructions = yield* SessionInstructions.Service
     const fs = yield* FSUtil.Service
     const location = yield* Location.Service
+    const cyberMode = Option.getOrElse(yield* Effect.serviceOption(ForkCyberPolicy.Service), () => "development")
 
     yield* ctx.tool
       .transform((editor) =>
@@ -85,7 +88,7 @@ export const Plugin = {
               // is discovered); for a file it starts at the file's dirname. External reads are
               // skipped, and discovery failures never fail the read.
               yield* Effect.gen(function* () {
-                if (result.target.externalDirectory !== undefined) return
+                if (cyberMode !== "development" || result.target.externalDirectory !== undefined) return
                 const resolved = yield* fs.resolve(result.target.absolute)
                 const root = yield* fs.resolve(location.directory)
                 // up() searches its stop directory, so the Location-root AGENTS.md (already

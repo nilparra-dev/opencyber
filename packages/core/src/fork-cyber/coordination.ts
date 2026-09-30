@@ -1,6 +1,6 @@
 export * as ForkCyberCoordination from "./coordination.js"
 
-import { Effect, Schema } from "effect"
+import { Effect, Option, Schema } from "effect"
 import { SqlClient } from "effect/unstable/sql"
 import { ForkCyberRoles } from "./roles.js"
 
@@ -23,6 +23,16 @@ export const Action = Schema.Union([
   Schema.Struct({ action: Schema.Literal("claim"), key, revision }),
   Schema.Struct({ action: Schema.Literal("release"), key, revision }),
   Schema.Struct({ action: Schema.Literal("block"), key, revision, reason: text }),
+  Schema.Struct({
+    action: Schema.Literal("retry"),
+    key,
+    revision,
+    successor: key,
+    reason: text,
+    authorization: text,
+    effect_state: Schema.Literals(["read_only", "reconciled"]),
+    reconciliation: Schema.Array(Schema.String).check(Schema.isMaxLength(32)),
+  }),
   Schema.Struct({
     action: Schema.Literal("complete"),
     key,
@@ -72,6 +82,8 @@ export function make(sql: SqlClient.SqlClient) {
           yield* sql`SELECT e.* FROM execution e JOIN cyber_task_execution t ON t.owner = e.owner AND t.execution = e.id WHERE t.owner = ${owner} AND t.task = ${key} ORDER BY e.started_at, e.id LIMIT 25 OFFSET ${offset}`,
         evidence:
           yield* sql`SELECT artifact FROM cyber_task_evidence WHERE owner = ${owner} AND task = ${key} ORDER BY artifact`,
+        retries:
+          yield* sql`SELECT * FROM cyber_task_retry WHERE owner = ${owner} AND (predecessor = ${key} OR successor = ${key})`,
       }
     })
   const active = (actor: Actor) =>
@@ -122,6 +134,69 @@ export function make(sql: SqlClient.SqlClient) {
         )
       return yield* get(actor.owner, input.key)
     }
+    if (input.action === "retry")
+      return yield* sql.withTransaction(
+        Effect.gen(function* () {
+          const changed = yield* sql<{
+            asset: string
+            procedure: string
+            phase: string
+            hypothesis: string | null
+          }>`UPDATE cyber_task SET revision = revision + 1, updated_at = ${Date.now()}
+        WHERE owner = ${actor.owner} AND key = ${input.key} AND revision = ${input.revision} AND status = 'blocked'
+        AND ((session = ${actor.session} AND agent = ${actor.agent}) OR ${actor.session === actor.owner && !ForkCyberRoles.worker(actor.agent)})
+        RETURNING asset, procedure, phase, hypothesis`
+          if (!changed[0])
+            return yield* Effect.fail(new Error("Retry requires an owned blocked task at the current revision"))
+          if (input.successor === input.key) return yield* Effect.fail(new Error("Retry requires a new successor key"))
+          const attempts = yield* sql<{
+            tool: string
+            status: string
+            input: string
+          }>`SELECT e.tool, e.status, a.data AS input FROM execution e
+        JOIN cyber_task_execution t ON t.owner = e.owner AND t.execution = e.id
+        JOIN artifact a ON a.owner = e.owner AND a.execution = e.id AND a.kind = 'input'
+        WHERE t.owner = ${actor.owner} AND t.task = ${input.key}`
+          if (attempts.some((attempt) => attempt.status === "running"))
+            return yield* Effect.fail(new Error("Running predecessor executions must finish before retry"))
+          if (input.effect_state === "read_only") {
+            const request = Schema.decodeUnknownOption(
+              Schema.fromJsonString(
+                Schema.Struct({ method: Schema.optional(Schema.Literals(["GET", "HEAD", "OPTIONS"])) }),
+              ),
+            )
+            if (
+              attempts.some(
+                (attempt) =>
+                  !["read", "glob", "grep", "cyber_code_review"].includes(attempt.tool) &&
+                  !(
+                    attempt.tool === "http_request" &&
+                    Option.isSome(request(Buffer.from(attempt.input, "base64").toString()))
+                  ),
+              )
+            )
+              return yield* Effect.fail(
+                new Error("Unknown remote effects require completed reconciliation evidence before retry"),
+              )
+          }
+          if (input.effect_state === "reconciled") {
+            if (!input.reconciliation.length) return yield* Effect.fail(new Error("Reconciled retry requires evidence"))
+            for (const artifact of new Set(input.reconciliation)) {
+              const linked =
+                yield* sql`SELECT a.id FROM artifact a JOIN execution e ON e.owner = a.owner AND e.id = a.execution
+            WHERE a.owner = ${actor.owner} AND a.id = ${artifact} AND a.kind = 'output' AND e.status = 'completed'`
+              if (!linked.length)
+                return yield* Effect.fail(
+                  new Error("Reconciliation requires completed output evidence from this engagement"),
+                )
+            }
+          }
+          yield* sql`INSERT INTO cyber_task(owner, key, asset, procedure, phase, hypothesis, status, created_at, updated_at)
+        VALUES (${actor.owner}, ${input.successor}, ${changed[0].asset}, ${changed[0].procedure}, ${changed[0].phase}, ${changed[0].hypothesis}, 'pending', ${Date.now()}, ${Date.now()})`
+          yield* sql`INSERT INTO cyber_task_retry VALUES (${actor.owner}, ${input.key}, ${input.successor}, ${input.reason}, ${input.effect_state}, ${input.authorization}, ${JSON.stringify(input.reconciliation)})`
+          return yield* get(actor.owner, input.successor)
+        }),
+      )
     return yield* sql.withTransaction(
       Effect.gen(function* () {
         // Acquire the write lock before checking executions and evidence. A failure rolls back this revision.

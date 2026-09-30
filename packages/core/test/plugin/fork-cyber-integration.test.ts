@@ -769,6 +769,25 @@ it.live("keeps legacy records visible until a durable scope supersedes them", ()
   }),
 )
 
+it.live("denied engagement mutations fail even through an unfiltered snapshot", () =>
+  Effect.gen(function* () {
+    const env = yield* project
+    yield* Effect.gen(function* () {
+      yield* call(env.root.id, "engagement", { manifest })
+      const agents = yield* Agent.Service
+      yield* agents.transform((editor) =>
+        editor.update(Agent.ID.make("build"), (agent) => {
+          agent.permissions.push({ action: "engagement", resource: "*", effect: "deny" })
+        }),
+      )
+      expect(
+        yield* call(env.root.id, "engagement", { include: ["excluded.example.test"] }).pipe(Effect.isFailure),
+      ).toBe(true)
+      expect(yield* call(env.root.id, "engagement", {})).toContain("excluded.example.test")
+    }).pipe(env.provide)
+  }),
+)
+
 it.live("captures real tool results, links findings and preserves evidence through compaction", () =>
   Effect.gen(function* () {
     const env = yield* project
@@ -795,7 +814,7 @@ it.live("captures real tool results, links findings and preserves evidence throu
       const write = {
         revision: 0,
         title: "fixture finding",
-        status: "confirmed",
+        status: "candidate",
         rationale: "fixture only",
         evidence: [output.id],
       }
@@ -812,6 +831,26 @@ it.live("captures real tool results, links findings and preserves evidence throu
       )
       yield* call(env.root.id, "read", { path: path.join(env.directory, "missing.txt") }).pipe(Effect.exit)
       expect(yield* call(env.root.id, "evidence", {})).toContain('"status":"error"')
+    }).pipe(env.provide)
+  }),
+)
+
+it.live("registered HTTP request and replay schemas omit large grammar bounds", () =>
+  Effect.gen(function* () {
+    const env = yield* project
+    yield* Effect.gen(function* () {
+      const plugins = yield* Plugin.Service
+      yield* plugins.awaitActivation
+      const tools = yield* Tool.Service
+      const snapshot = yield* tools.snapshot()
+      ;["http_request", "http_replay"].forEach((name) => {
+        const tool = snapshot.definitions.find((tool) => tool.name === name)
+        expect(tool).toBeDefined()
+        const schema = JSON.stringify(tool?.inputSchema)
+        expect(schema).not.toMatch(/"maxLength":(?:1048576|1398104)\b/)
+        expect(schema).toContain("1 MiB when UTF-8 encoded")
+        expect(schema).toContain("1 MiB after decoding")
+      })
     }).pipe(env.provide)
   }),
 )

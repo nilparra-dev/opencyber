@@ -36,3 +36,21 @@ test("isolates runtime paths before application imports and overrides inherited 
   expect(env.OPENCODE_TUI_CHANNEL).toBe("cyber")
   expect(() => cyberProfile("relative", {})).toThrow("absolute")
 })
+
+test("selects the hardened policy before the child imports application code", async () => {
+  const root = path.join(os.tmpdir(), "opencyber-review-test", crypto.randomUUID())
+  const env = cyberProfile(
+    root,
+    { OPENCODE_CONFIG: "target-config", OPENCODE_CONFIG_CONTENT: "target-content" },
+    "review",
+  )
+  expect(env.OPENCYBER_MODE).toBe("review")
+  expect("OPENCODE_CONFIG" in env).toBe(false)
+  const child = Bun.spawn([process.execPath, "-e", "console.log(process.env.OPENCYBER_MODE)"], {
+    env,
+    stdout: "pipe",
+    stderr: "pipe",
+  })
+  expect((await new Response(child.stdout).text()).trim()).toBe("review")
+  expect(await child.exited).toBe(0)
+})
