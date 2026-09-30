@@ -1,12 +1,13 @@
 export * as ForkCyberNotes from "./notes.js"
 
 import { Schema } from "effect"
+import { ForkCyberLanguage } from "./language.js"
 
 // Only the model-visible projection is bounded; storage retains every entry.
 export const Patch = Schema.Struct({
   append: Schema.optional(
     Schema.String.check(Schema.isMaxLength(16000)).annotate({
-      description: "Fact to append: finding, asset touched, foothold or open lead.",
+      description: `Fact to append: finding, asset touched, foothold or open lead. ${ForkCyberLanguage.prose}`,
     }),
   ),
   before: Schema.optional(Schema.Number.check(Schema.isInt(), Schema.isGreaterThan(0))),

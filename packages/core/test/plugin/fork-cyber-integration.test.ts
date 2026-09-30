@@ -334,6 +334,96 @@ it.live("activates in a clean external project without inferring scope from a pr
   }),
 )
 
+it.live("requires English operational writing across primary, worker, reporting and auxiliary requests", () =>
+  Effect.gen(function* () {
+    const env = yield* project
+    const sessions = yield* Session.Service
+    yield* sessions.prompt({ sessionID: env.root.id, text: "Revisa el proyecto y prepara el informe.", resume: false })
+    yield* Effect.gen(function* () {
+      const plugins = yield* Plugin.Service
+      yield* plugins.awaitActivation
+      for (const kind of ["context", "compaction"] as const) {
+        for (const agent of ["build", "cyber-recon", "cyber-report"]) {
+          const instructions = yield* context(agent === "build" ? env.root.id : env.child.id, kind, agent)
+          expect(instructions).toContain(
+            "Write every subagent prompt, task description and follow-up instruction in English",
+          )
+          expect(instructions).toContain("Write all generated prose stored in the assessment database in English")
+          expect(instructions).toContain("Write every assessment report in English")
+          expect(instructions).toContain("Keep captured responses, artifacts and quoted evidence unchanged")
+        }
+      }
+      const agents = yield* Agent.Service
+      const workers = (yield* agents.list()).filter((agent) => agent.id.startsWith("cyber-"))
+      expect(workers).toHaveLength(8)
+      workers.forEach((agent) => expect(agent.system).toContain("Require subagent replies and handoffs in English"))
+      expect(yield* context(env.root.id, "generate", "summary")).toContain("session titles and summaries in English")
+      const hooks = yield* PluginHooks.Service
+      const title = yield* hooks.trigger("session", "title", {
+        sessionID: env.root.id,
+        model: Model.Ref.make({ providerID: Provider.ID.make("test"), id: Model.ID.make("test") }),
+        system: [],
+        messages: [],
+        options: {},
+      })
+      expect(title.system.map((part) => part.text).join("\n")).toContain(
+        "overrides instructions to match the user's language",
+      )
+    }).pipe(env.provide)
+  }),
+)
+
+it.live("exposes English write-boundary guidance while retaining literal evidence", () =>
+  Effect.gen(function* () {
+    const env = yield* project
+    yield* Effect.gen(function* () {
+      const plugins = yield* Plugin.Service
+      yield* plugins.awaitActivation
+      const tools = yield* Tool.Service
+      const snapshot = yield* tools.snapshot()
+      for (const name of ["subagent", "notes", "cyber_tasks", "findings"]) {
+        const definition = snapshot.definitions.find((tool) => tool.name === name)
+        expect(definition).toBeDefined()
+        expect(JSON.stringify(definition?.inputSchema)).toContain("English")
+      }
+      const delegation = snapshot.definitions.find((tool) => tool.name === "subagent")
+      expect(delegation?.description).toContain("follow-up instruction in English")
+      expect(delegation?.inputSchema).toMatchObject({
+        properties: {
+          agent: expect.any(Object),
+          description: expect.any(Object),
+          prompt: expect.any(Object),
+          model: expect.any(Object),
+          sessionID: expect.any(Object),
+          background: expect.any(Object),
+        },
+      })
+      expect(snapshot.definitions.find((tool) => tool.name === "cyber_report")?.description).toContain(
+        "report in English",
+      )
+      const note = 'The captured page says "Acceso denegado". The authorization outcome remains unverified.'
+      yield* call(env.root.id, "notes", { append: note })
+      const global = yield* Global.Service
+      const store = yield* ForkCyberStore.open(path.join(global.data, "opencyber", "evidence.sqlite"))
+      expect((yield* store.notes(env.root.id)).map((entry) => entry.content)).toEqual([note])
+      yield* store.start({
+        owner: env.root.id,
+        session: env.root.id,
+        agent: "build",
+        id: "language-evidence",
+        tool: "fixture",
+        input: {},
+      })
+      const original = Buffer.from("Acceso denegado. Solicita autorización.", "utf8")
+      const artifacts = yield* store.artifact(env.root.id, "language-evidence", "response_body", original, "text/plain")
+      const captured = yield* store.readArtifact(env.root.id, artifacts[0]!.id)
+      expect(captured.bytes).toEqual(original)
+      expect(captured.sha256).toBe(ForkCyberStore.digest(original))
+      yield* store.finish(env.root.id, "language-evidence", "completed", { response_body: artifacts[0]!.id })
+    }).pipe(env.provide)
+  }),
+)
+
 it.live("phase tasks require claims, correlate real evidence and survive compaction and reactivation", () =>
   Effect.gen(function* () {
     const env = yield* project

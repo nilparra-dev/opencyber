@@ -3,6 +3,7 @@ export * as ForkCyberAgents from "./agents.js"
 import type { AgentEditor } from "@opencode/plugin/effect/agent"
 import { Agent } from "@opencode/schema/agent"
 import { ForkCyberRoles } from "./roles.js"
+import { ForkCyberLanguage } from "./language.js"
 
 // Phase subagents registered for every location. They exist so the primary agent
 // can delegate reconnaissance, validation and reporting without flooding its own
@@ -80,8 +81,7 @@ const REPORT = [
   "You are read-only: you document what exists, you do not test new hypotheses.",
 ].join("\n")
 
-const COORDINATION =
-  "\nRead cyber_capabilities before planning work. Read the assigned cyber_tasks key and claim its current revision before executing work. Use findings for durable candidates and confirmed/discarded findings; notes are supporting observations. Complete your task with completion_evidence from your own executions, a rationale and hypothesis outcome. Block failed or interrupted work explicitly. Record a cyber_tasks.handoff with completed, partial or blocked status, performed work, completed evidence, and pending work with required capability and reason. Return that structured result to the coordinator. A missing capability does not invalidate completed observations. Read cyber_coverage and cyber_report before claiming coverage."
+const COORDINATION = `\n${ForkCyberLanguage.policy}\nRead cyber_capabilities before planning work. Read the assigned cyber_tasks key and claim its current revision before executing work. Use findings for durable candidates and confirmed/discarded findings; notes are supporting observations. Complete your task with completion_evidence from your own executions, a rationale and hypothesis outcome. Block failed or interrupted work explicitly. Record a cyber_tasks.handoff with completed, partial or blocked status, performed work, completed evidence, and pending work with required capability and reason. Return that structured result to the coordinator. A missing capability does not invalidate completed observations. Read cyber_coverage and cyber_report before claiming coverage.`
 
 export function register(editor: AgentEditor) {
   editor.update(Agent.ID.make("cyber-code-review"), (agent) => {
@@ -162,6 +162,7 @@ export function register(editor: AgentEditor) {
     agent.mode = "subagent"
     agent.system =
       REPORT +
+      `\n${ForkCyberLanguage.policy}` +
       "\nRead cyber_tasks and cyber_coverage to report pending, blocked and inconclusive work alongside findings. You cannot send network requests, operate environments, or mutate the archive."
     agent.permissions.push(...ForkCyberRoles.permissions("cyber-report"))
   })

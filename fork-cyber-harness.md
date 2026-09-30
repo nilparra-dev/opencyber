@@ -27,6 +27,8 @@ The implementation uses synthetic fixtures and loopback services. The external e
 
 ## Operator workflow
 
+English is the working language for generated assessment records and reports. The coordinator writes subagent prompts, descriptions and follow-up instructions in English; workers return English results and handoffs. Notes, task procedures, hypotheses, reasons, finding titles, validation prose and remediation also use English, regardless of the operator's conversation language. This policy is included in normal and compaction requests and in each Cyber agent's instructions, with tool-schema reminders at write boundaries. Auxiliary title and summary requests also require English. It is a model instruction, not automatic translation or language detection. Original evidence, literal identifiers and historical records retain their original content.
+
 From the repository root, start a clean assessment profile before application imports:
 
 ```powershell

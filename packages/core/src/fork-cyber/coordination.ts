@@ -5,8 +5,11 @@ import { SqlClient } from "effect/unstable/sql"
 import { ForkCyberRoles } from "./roles.js"
 import { ForkCyberPagination } from "./pagination.js"
 import { ForkCyberDiagnostics } from "./diagnostics.js"
+import { ForkCyberLanguage } from "./language.js"
 
-const text = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(2000), Schema.isPattern(/\S/))
+const text = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(2000), Schema.isPattern(/\S/)).annotate({
+  description: ForkCyberLanguage.prose,
+})
 const key = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(200), Schema.isPattern(/^[a-zA-Z0-9._:/-]+$/))
 const revision = Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(1))
 const offset = Schema.optional(Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0)))
