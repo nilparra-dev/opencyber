@@ -22,10 +22,17 @@ import { ForkCyberCoordination } from "../fork-cyber/coordination.js"
 import { ForkCyberRoles } from "../fork-cyber/roles.js"
 import { ForkCyberCodeReview } from "../fork-cyber/code-review.js"
 import { ForkCyberServices } from "../fork-cyber/services.js"
+import { ForkCyberModules } from "../fork-cyber/modules.js"
+import { ForkCyberSurface } from "../fork-cyber/surface.js"
+import { ForkCyberServiceValidation } from "../fork-cyber/service-validation.js"
+import { ForkCyberIdentityCloud } from "../fork-cyber/identity-cloud.js"
+import { ForkCyberArtifactValidation } from "../fork-cyber/artifact-validation.js"
+import { ForkCyberOt } from "../fork-cyber/ot.js"
 import { Permission } from "../permission.js"
 
 const OPERATOR = [
   "# OpenCyber",
+  "Use cyber_surface.procedures for TLS, SSH, identity, AWS S3, Android APK, ELF, wireless PCAP and Modbus simulator workflows. Each module reports its tested boundaries and pending coverage. Imported artifacts remain engagement-owned; use completed evidence for hypotheses and findings. No module automatically confirms findings. Cloud resources require explicit scope.resources. Service-only authorization uses scope.services with empty host/network lists; TCP and UDP exclusions take precedence.",
   "For local source review, use cyber_code_review.procedures and snapshot explicit project files. Import locally produced SARIF reports as candidates, inspect source and healthy controls, and record findings with completed output evidence. The cyber-code-review role never executes source or confirms findings. Local review needs no network scope or Docker.",
   "For TCP service inventory, read cyber_services.procedures and scan one explicit host and port list in scoped Kali. Keep XML and network-policy evidence. Port-table names are guesses; validation must reproduce any authentication or impact claim separately. Recon and enumeration can use this bounded tool but cannot run arbitrary Kali commands.",
   "Investigate security hypotheses, validate findings with executed evidence, and document coverage and limitations.",
@@ -219,6 +226,7 @@ export const Plugin = define({
       "cyber_coverage",
       "cyber_code_review",
       "cyber_services",
+      "cyber_surface",
     ])
     const executionID = (event: { sessionID: string; messageID: string; id: string }) =>
       ForkCyberStore.digest(Buffer.from(JSON.stringify([event.sessionID, event.messageID, event.id])))
@@ -342,6 +350,85 @@ export const Plugin = define({
       }
     })
     yield* ctx.tool.transform((editor) => {
+      editor.add({
+        name: "cyber_surface",
+        options: { codemode: false },
+        input: ForkCyberModules.Action,
+        description:
+          "Read module procedures; import explicit local artifacts; validate TLS/SSH, identity controls, AWS S3 listing/policies, Android APK manifests, ELF metadata and isolated reproduction, wireless beacon PCAP, or Modbus simulators. Validation workers require a claim. Network probes enforce service scope; artifact jobs require network-disabled Kali. No automatic finding confirmation. Static mobile and wireless capture do not establish device or radio validation.",
+        execute: (input, context) =>
+          Effect.gen(function* () {
+            if (input.action === "procedures")
+              return { content: JSON.stringify(ForkCyberModules.procedures[input.module]) }
+            if (input.action === "import") {
+              return {
+                content: JSON.stringify(
+                  yield* ForkCyberSurface.importFile(
+                    store,
+                    {
+                      owner: yield* topLevel(context.sessionID),
+                      session: context.sessionID,
+                      agent: context.agent,
+                      directory: ctx.location.directory,
+                      permission: (file) =>
+                        Effect.forEach(["cyber_surface", "read"], (action) =>
+                          permission.assert({
+                            action,
+                            resources: [file],
+                            save: [file],
+                            sessionID: context.sessionID,
+                            agent: context.agent,
+                            source: { type: "tool", messageID: context.messageID, id: context.id },
+                          }),
+                        ).pipe(
+                          Effect.asVoid,
+                          Effect.mapError((error) => new Error(String(error))),
+                        ),
+                    },
+                    input.module,
+                    input,
+                  ),
+                ),
+              }
+            }
+            if (input.module === "identity" || input.module === "cloud")
+              return {
+                content: JSON.stringify(
+                  yield* ForkCyberIdentityCloud.run(store, () => httpAssessment(context, "cyber_surface"), input),
+                ),
+              }
+            const runtime = yield* kali(context, "cyber_surface")
+            if (input.action === "probe")
+              return {
+                content: JSON.stringify(
+                  yield* ForkCyberServiceValidation.run(
+                    store,
+                    global.data,
+                    runtime.configuration,
+                    runtime.assessment,
+                    input,
+                  ),
+                ),
+              }
+            if (input.module === "ot")
+              return {
+                content: JSON.stringify(
+                  yield* ForkCyberOt.run(store, global.data, runtime.configuration, runtime.assessment, input),
+                ),
+              }
+            return {
+              content: JSON.stringify(
+                yield* ForkCyberArtifactValidation.run(
+                  store,
+                  global.data,
+                  runtime.configuration,
+                  runtime.assessment,
+                  input,
+                ),
+              ),
+            }
+          }).pipe(Effect.mapError((error) => new Tool.Error({ message: String(error) }))),
+      })
       editor.add({
         name: "cyber_services",
         options: { codemode: false },

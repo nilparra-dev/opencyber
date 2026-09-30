@@ -1,0 +1,56 @@
+name: fork-surfaces
+
+on:
+  pull_request:
+    branches: [custom]
+    paths:
+      - fork-kali/**
+      - packages/core/src/fork-cyber/**
+      - packages/core/src/plugin/fork-cyber.ts
+      - packages/core/test/plugin/fork-cyber-surfaces.test.ts
+      - packages/core/test/plugin/fork-cyber-integration.test.ts
+      - packages/core/test/fixture/fork-cyber-surfaces/**
+      - packages/core/test/fixture/fork-cyber-surfaces-smoke.ts
+      - packages/cli/script/fork-cyber-delivery.ts
+      - .github/workflows/fork-surfaces.yml
+      - bun.lock
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fork-surfaces-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  labs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/fork-setup-bun
+      - run: docker build --tag opencyber-kali:4 fork-kali
+      - name: Exercise positive and negative surface labs
+        working-directory: packages/core
+        run: |
+          export OPENCYBER_TEST_SURFACES_IMAGE="$(docker image inspect opencyber-kali:4 --format '{{.Id}}')"
+          bun test test/plugin/fork-cyber-surfaces.test.ts test/plugin/fork-cyber-integration.test.ts
+          bun build --compile --format=esm --minify --bytecode test/fixture/fork-cyber-surfaces-smoke.ts --outfile /tmp/opencyber-surfaces-smoke
+          cd /tmp
+          OPENCYBER_SURFACE_REPORT=/tmp/opencyber-phase-seven-report.json ./opencyber-surfaces-smoke
+      - name: Preserve report and raw fixture evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: phase-seven-lab-report
+          path: /tmp/opencyber-phase-seven-report.json
+          if-no-files-found: warn
+      - name: Compile and exercise the CLI delivery workflow
+        working-directory: packages/cli
+        run: |
+          bun run build --single --skip-install --skip-web-ui --outdir=dist/phase-seven
+          export OPENCYBER_TEST_KALI_IMAGE="$(docker image inspect opencyber-kali:4 --format '{{.Id}}')"
+          bun script/fork-cyber-delivery.ts dist/phase-seven/cli-linux-x64/bin/opencode --surfaces

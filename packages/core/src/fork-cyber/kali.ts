@@ -23,6 +23,7 @@ export const Config = Schema.Struct({
   work_mb: Schema.optional(integer(16, 1024)),
   cpus: Schema.optional(Schema.Number.check(Schema.isBetween({ minimum: 0.1, maximum: 8 }))),
   timeout_ms: Schema.optional(integer(100, 900000)),
+  executable_work: Schema.optional(Schema.Boolean),
 })
 export type Config = typeof Config.Type
 export const Run = Schema.Struct({
@@ -188,7 +189,12 @@ export function manager(store: Store, profile: string, config: Config) {
               yield* command(["start", resolver])
               const hosts = [
                 ...new Set(
-                  [...assessment.manifest.scope.domains, ...assessment.manifest.scope.excluded]
+                  [
+                    ...assessment.manifest.scope.domains,
+                    ...assessment.manifest.scope.excluded,
+                    ...(assessment.manifest.scope.services ?? []).map((entry) => entry.target),
+                    ...(assessment.manifest.scope.excluded_services ?? []).map((entry) => entry.target),
+                  ]
                     .map(ForkCyberScope.normalize)
                     .filter((value) => !value.includes("/") && !isIP(value)),
                 ),
@@ -397,7 +403,7 @@ function createArgs(
     "--ulimit",
     "nofile=1024:1024",
     "--tmpfs",
-    `/work:rw,nosuid,nodev,size=${config.work_mb ?? 128}m,mode=0700,uid=1000,gid=1000`,
+    `/work:rw,nosuid,nodev,${config.executable_work ? "exec" : "noexec"},size=${config.work_mb ?? 128}m,mode=0700,uid=1000,gid=1000`,
     "--tmpfs",
     "/tmp:rw,nosuid,nodev,noexec,size=32m,mode=1777",
     "--shm-size",

@@ -53,7 +53,7 @@ export function apply(manifest: ForkCyberScope.Manifest, patch: Patch): ForkCybe
   for (const target of patch.include ?? []) excluded.delete(ForkCyberScope.normalize(target))
   return {
     ...manifest,
-    scope: { domains: [...domains], cidrs: [...cidrs], excluded: [...excluded] },
+    scope: { ...manifest.scope, domains: [...domains], cidrs: [...cidrs], excluded: [...excluded] },
     ...(patch.contact === undefined
       ? {}
       : { rules_of_engagement: { ...manifest.rules_of_engagement, contact: patch.contact } }),

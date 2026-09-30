@@ -87,10 +87,7 @@ export const run = Effect.fn("ForkCyberServices.run")(function* (
     if (assessment.manifest.derived) throw new Error("TCP scans require explicit engagement scope")
     if (assessment.manifest.scope.excluded.some((entry) => matches(host, entry)))
       throw new Error("TCP destination is excluded")
-    if (
-      ![...assessment.manifest.scope.domains, ...assessment.manifest.scope.cidrs].some((entry) => matches(host, entry))
-    )
-      throw new Error("TCP destination is outside the recorded scope")
+    ports.forEach((port) => ForkCyberScope.authorize(assessment.manifest, host, "tcp", port))
     if (isIP(host) && (isIP(host) === 6) !== (input.family === "ipv6"))
       throw new Error("The target IP must match the selected address family")
   }).pipe(Effect.mapError((error) => new Error(String(error.cause))))

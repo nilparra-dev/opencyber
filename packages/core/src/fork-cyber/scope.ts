@@ -1,7 +1,7 @@
 ﻿export * as ForkCyberScope from "./scope.js"
 
 import { Schema } from "effect"
-import { isIP } from "node:net"
+import { BlockList, isIP } from "node:net"
 
 export const Host = Schema.String.check(
   Schema.makeFilter<string>(
@@ -12,6 +12,14 @@ export const Cidr = Schema.String.check(
   Schema.makeFilter<string>((value) => isCidr(value) || "Expected an IPv4 or IPv6 CIDR with a valid prefix length"),
 )
 export const Target = Schema.Union([Host, Cidr])
+export const Service = Schema.Struct({
+  target: Target,
+  protocol: Schema.Literals(["tcp", "udp"]),
+  ports: Schema.Array(Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 1, maximum: 65535 }))).check(
+    Schema.isMinLength(1),
+    Schema.isMaxLength(128),
+  ),
+})
 const Text = Schema.String.check(Schema.makeFilter<string>((value) => value.trim().length > 0 || "Must not be blank"))
 const budget = (maximum: number) => Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 1, maximum }))
 export const NetworkBudget = Schema.Struct({
@@ -32,6 +40,13 @@ export const Manifest = Schema.Struct({
     domains: Schema.Array(Host),
     cidrs: Schema.Array(Cidr),
     excluded: Schema.Array(Target),
+    services: Schema.optional(Schema.Array(Service).check(Schema.isMaxLength(64))),
+    excluded_services: Schema.optional(Schema.Array(Service).check(Schema.isMaxLength(64))),
+    resources: Schema.optional(
+      Schema.Array(Schema.String.check(Schema.isPattern(/^arn:aws:s3:::[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/))).check(
+        Schema.isMaxLength(64),
+      ),
+    ),
   }),
   rules_of_engagement: Schema.Struct({
     no_dos: Schema.Boolean,
@@ -53,6 +68,10 @@ export function render(manifest: Manifest) {
     `Scope hosts: ${list(manifest.scope.domains)}`,
     `Scope networks: ${list(manifest.scope.cidrs)}`,
     `Excluded (take precedence over inclusions): ${list(manifest.scope.excluded)}`,
+    `Authorized services: ${JSON.stringify(manifest.scope.services ?? [])}`,
+    `Excluded services (take precedence): ${JSON.stringify(manifest.scope.excluded_services ?? [])}`,
+    `Authorized cloud resources: ${list(manifest.scope.resources ?? [])}`,
+    "Hosts and networks authorize all TCP/UDP ports. For service-only scope leave those lists empty and use services. Protocol means TCP or UDP transport, not an application protocol or URL path.",
     `Rules of engagement: max ${manifest.rules_of_engagement.max_rps} requests/second${
       manifest.rules_of_engagement.no_dos ? ", no denial-of-service" : ""
     }, window ${manifest.rules_of_engagement.window}. Security contact: ${manifest.rules_of_engagement.contact}.`,
@@ -74,6 +93,40 @@ export function render(manifest: Manifest) {
 
 export function normalize(value: string) {
   return value.trim().toLowerCase()
+}
+
+export function matches(host: string, entry: string) {
+  const target = normalize(entry)
+  if (!isIP(host)) return normalize(host) === target
+  const address = target.split("/")[0]!
+  if (!isIP(address)) return false
+  const list = new BlockList()
+  const family = isIP(address) === 4 ? "ipv4" : "ipv6"
+  if (target.includes("/")) list.addSubnet(address, Number(target.split("/")[1]), family)
+  if (!target.includes("/")) list.addAddress(address, family)
+  return list.check(host, isIP(host) === 4 ? "ipv4" : "ipv6")
+}
+
+export function authorize(
+  manifest: Manifest,
+  host: string,
+  protocol: "tcp" | "udp",
+  port: number,
+  addresses: readonly string[] = [],
+) {
+  if (manifest.derived) throw new Error("Network access requires explicit engagement scope")
+  const serviceMatches = (entry: typeof Service.Type, value: string) =>
+    entry.protocol === protocol && entry.ports.includes(port) && matches(value, entry.target)
+  const excluded = (value: string) =>
+    manifest.scope.excluded.some((entry) => matches(value, entry)) ||
+    manifest.scope.excluded_services?.some((entry) => serviceMatches(entry, value))
+  if (excluded(host)) throw new Error("Network destination or service is excluded")
+  if (addresses.some(excluded)) throw new Error("Resolved network address or service is excluded")
+  if (
+    ![...manifest.scope.domains, ...manifest.scope.cidrs].some((entry) => matches(host, entry)) &&
+    !manifest.scope.services?.some((entry) => serviceMatches(entry, host))
+  )
+    throw new Error("Network destination or service is outside the recorded scope")
 }
 
 function isHost(value: string) {
