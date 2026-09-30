@@ -1,17 +1,7 @@
 name: fork-browser
 
 on:
-  pull_request:
-    branches: [custom]
-    paths:
-      - packages/core/src/fork-cyber/**
-      - packages/core/src/plugin/fork-cyber.ts
-      - packages/core/test/plugin/fork-cyber-browser.test.ts
-      - packages/core/test/fixture/fork-cyber-browser-smoke.ts
-      - packages/core/package.json
-      - packages/cli/script/build.ts
-      - .github/workflows/fork-browser.yml
-      - bun.lock
+  workflow_call:
   workflow_dispatch:
 
 permissions:

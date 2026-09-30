@@ -1,19 +1,7 @@
 name: fork-surfaces
 
 on:
-  pull_request:
-    branches: [custom]
-    paths:
-      - fork-kali/**
-      - packages/core/src/fork-cyber/**
-      - packages/core/src/plugin/fork-cyber.ts
-      - packages/core/test/plugin/fork-cyber-surfaces.test.ts
-      - packages/core/test/plugin/fork-cyber-integration.test.ts
-      - packages/core/test/fixture/fork-cyber-surfaces/**
-      - packages/core/test/fixture/fork-cyber-surfaces-smoke.ts
-      - packages/cli/script/fork-cyber-delivery.ts
-      - .github/workflows/fork-surfaces.yml
-      - bun.lock
+  workflow_call:
   workflow_dispatch:
 
 permissions:

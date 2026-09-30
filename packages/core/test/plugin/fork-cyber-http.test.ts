@@ -88,7 +88,7 @@ test("HTTP lab: two accounts expose the broken control but deny the healthy cont
           id: "broken-control",
           revision: 0,
           title: "Bob reads Alice's object",
-          status: "confirmed",
+          status: "candidate",
           rationale: "Two known fixture identities; anonymous denied and secure endpoint denied Bob",
           evidence: [alice.output, bob.output, anonymous.output, healthy.output],
         })

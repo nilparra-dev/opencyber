@@ -36,7 +36,7 @@ Cloud policies, APKs, binaries and PCAPs first need an explicit project file imp
 { "module": "binary", "action": "import", "file": "lab/program" }
 ```
 
-Imports require both `cyber_surface` and `read` permission, reject paths outside the project including escaping symlinks, and accept regular files of at most 16 MiB. The result includes an immutable source artifact ID and SHA-256. Subsequent analysis uses that engagement-owned artifact, rather than reading a mutable project path. Original bytes, parser reports, stdout/stderr, environment inventory, network policy and completed output IDs remain in the archive. Errors retain error evidence and never provide completed task evidence.
+Imports require both `cyber_surface` and `read` permission, reject paths outside the project including escaping symlinks, and accept regular files of at most 2 MiB. The result includes an immutable source artifact ID and SHA-256. Subsequent analysis uses that engagement-owned artifact, rather than reading a mutable project path. Original bytes, parser reports, stdout/stderr, environment inventory, network policy and completed output IDs remain in the archive. Errors retain error evidence and never provide completed task evidence.
 
 Use image version 4 for the new Docker labs:
 
@@ -45,7 +45,7 @@ docker build --tag opencyber-kali:4 fork-kali
 docker image inspect opencyber-kali:4 --format '{{.Id}}'
 ```
 
-Configure its immutable ID in `opencyber-kali.jsonc`, following [Kali setup](fork-cyber-kali.md). TLS, SSH and Modbus require `network.kind = "scoped"`. APK, ELF and PCAP analysis require `network.kind = "none"`; switch the operator configuration between those workflows. Image 4 adds OpenSSH, binutils, GCC and Android packaging tools for reproducible labs, while retaining unprivileged Nmap. Package inventory records actual versions from the rolling repository.
+Configure its immutable ID in `opencyber-kali.jsonc`, following [Kali setup](fork-cyber-kali.md). TLS, SSH and Modbus require `network.kind = "scoped"`. APK, ELF and PCAP jobs always derive `network.kind = "none"` from the configured profile, so the same scoped profile can serve network and offline work without configuration changes. Image 4 adds OpenSSH, binutils, GCC and Android packaging tools for reproducible labs, while retaining unprivileged Nmap. Package inventory records actual versions from the rolling repository.
 
 ELF `execute` explicitly enables an executable `/work` tmpfs for that job. Other jobs default to `noexec`; `/tmp` remains `noexec`. The workload stays non-root with no capabilities, a read-only container filesystem, bounded CPU/memory/files/processes and no network. Docker shares the host kernel. Run controlled reproduction artifacts on a disposable lab host when stronger isolation is needed.
 

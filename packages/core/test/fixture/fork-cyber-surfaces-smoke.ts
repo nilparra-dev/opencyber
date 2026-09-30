@@ -72,15 +72,6 @@ await Effect.runPromise(
         control.capture.report.versions.some((row) => row.version === "TLSv1" && row.accepted)
       )
         throw new Error("TLS controls failed")
-      yield* env.store.finding(root.owner, {
-        id: "legacy-tls",
-        revision: 1,
-        title: "Legacy TLS on the laboratory listener",
-        status: "confirmed",
-        rationale:
-          "Actual TLSv1 handshake succeeds; healthy control accepts only TLSv1.2/1.3. Trust and exploit impact remain untested",
-        evidence: [inventory.evidence, positive.evidence, control.evidence],
-      })
       yield* env.store.coordination.run(validation, {
         action: "complete",
         key: "tls-validation",
@@ -88,6 +79,25 @@ await Effect.runPromise(
         outcome: "supported",
         rationale: "Legacy TLS reproduced with healthy control",
         evidence: [positive.evidence, control.evidence],
+      })
+      yield* env.store.finding(root.owner, {
+        id: "legacy-tls",
+        revision: 1,
+        title: "Legacy TLS on the laboratory listener",
+        status: "confirmed",
+        rationale: "TLSv1 handshake succeeds; healthy control requires modern TLS. Trust and impact remain untested",
+        evidence: [positive.evidence, control.evidence],
+        validation: {
+          task: "tls-validation",
+          asset: "target:8444",
+          method: "dynamic",
+          identity: "unauthenticated laboratory client",
+          expected: "Reject TLSv1",
+          observed: "TLSv1 handshake succeeded",
+          controls: "target:8443 rejects TLSv1",
+          reproduction: "Probe both listeners with the same client and compare negotiated protocols",
+          remediation: "Disable legacy TLS versions",
+        },
       })
       const report = {
         findings: yield* env.store.findings(root.owner),

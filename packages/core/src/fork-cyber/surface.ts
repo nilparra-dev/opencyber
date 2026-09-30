@@ -69,10 +69,10 @@ export const importFile = Effect.fn(function* (
   yield* assessment.permission(file)
   const source = Bun.file(file)
   const stat = yield* Effect.tryPromise(() => source.stat())
-  if (!stat.isFile() || stat.size > 16 * 1024 * 1024)
-    return yield* Effect.fail(new Error("Surface import requires a regular file of at most 16 MiB"))
+  if (!stat.isFile() || stat.size > ForkCyberKali.INPUT_LIMIT)
+    return yield* Effect.fail(new Error("Surface import requires a regular file of at most 2 MiB"))
   const bytes = Buffer.from(yield* Effect.tryPromise(() => source.arrayBuffer()))
-  if (bytes.length > 16 * 1024 * 1024) return yield* Effect.fail(new Error("Surface import exceeds 16 MiB"))
+  if (bytes.length > ForkCyberKali.INPUT_LIMIT) return yield* Effect.fail(new Error("Surface import exceeds 2 MiB"))
   return yield* record(store, assessment, module, input, (id) =>
     Effect.gen(function* () {
       const artifact = yield* store.artifact(

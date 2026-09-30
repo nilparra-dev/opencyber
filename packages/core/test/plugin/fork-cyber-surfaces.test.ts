@@ -475,7 +475,16 @@ dockerTest(
           )
           const inspect = (file: string, module: "mobile" | "binary" | "wireless", action: "apk" | "elf" | "pcap") =>
             Effect.gen(function* () {
-              yield* Effect.promise(() => Bun.write(path.join(env.profile, file), Buffer.from(files[file]!, "base64")))
+              const bytes = Buffer.from(files[file]!, "base64")
+              // A padded valid ELF exercises the full advertised transfer boundary.
+              yield* Effect.promise(() =>
+                Bun.write(
+                  path.join(env.profile, file),
+                  file === "healthy"
+                    ? Buffer.concat([bytes, Buffer.alloc(ForkCyberKali.INPUT_LIMIT - bytes.length)])
+                    : bytes,
+                ),
+              )
               const imported = yield* ForkCyberSurface.importFile(
                 env.store,
                 { ...assessment, directory: env.profile, permission: () => Effect.void },
@@ -491,7 +500,7 @@ dockerTest(
               const result = yield* ForkCyberArtifactValidation.run(
                 env.store,
                 env.profile,
-                env.offline,
+                env.config,
                 assessment,
                 input,
               )
@@ -543,13 +552,13 @@ dockerTest(
           expect(yield* inspect("invalid.apk", "mobile", "apk").pipe(Effect.isFailure)).toBe(true)
           expect(yield* inspect("invalid.pcap", "wireless", "pcap").pipe(Effect.isFailure)).toBe(true)
           expect(
-            yield* ForkCyberArtifactValidation.run(env.store, env.profile, env.config, assessment, {
+            (yield* ForkCyberArtifactValidation.run(env.store, env.profile, env.config, assessment, {
               module: "binary",
               action: "execute",
               artifact: healthy.artifact,
               stdin: "X",
-            }).pipe(Effect.isFailure),
-          ).toBe(true)
+            })).capture.report,
+          ).toMatchObject({ exit_code: 0, timed_out: false })
           expect(
             yield* ForkCyberArtifactValidation.run(
               env.store,

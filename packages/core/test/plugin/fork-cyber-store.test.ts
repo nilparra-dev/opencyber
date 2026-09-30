@@ -98,7 +98,7 @@ test("restart preserves exact artifact bytes, unfinished work and finding refere
               revision: 0,
               title: "issue",
               rationale: "reproduced",
-              status: "confirmed",
+              status: "candidate",
               evidence: [id],
             })
             yield* store.start({

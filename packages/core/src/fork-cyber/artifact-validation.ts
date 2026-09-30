@@ -127,15 +127,14 @@ export const run = Effect.fn(function* (
   assessment: ForkCyberSurface.Assessment,
   input: typeof Action.Type,
 ) {
-  if (config.network.kind !== "none")
-    return yield* Effect.fail(new Error("Artifact analysis requires network-disabled Kali"))
   const source = yield* store.readArtifact(assessment.owner, input.artifact)
-  if (source.bytes.length > 16 * 1024 * 1024) return yield* Effect.fail(new Error("Artifact analysis exceeds 16 MiB"))
+  if (source.bytes.length > ForkCyberKali.INPUT_LIMIT)
+    return yield* Effect.fail(new Error("Artifact analysis exceeds 2 MiB"))
   const program = input.module === "mobile" ? APK : input.module === "wireless" ? PCAP : ELF
   return yield* ForkCyberSurface.job(
     store,
     profile,
-    input.action === "execute" ? { ...config, executable_work: true } : config,
+    { ...config, network: { kind: "none" }, ...(input.action === "execute" ? { executable_work: true } : {}) },
     assessment,
     input.module,
     {

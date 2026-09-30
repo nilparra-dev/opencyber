@@ -163,8 +163,9 @@ await Effect.runPromise(
                     id: "reachable-service",
                     revision: 1,
                     title: "Fixture legacy TLS",
-                    status: "confirmed",
-                    rationale: "Actual TLSv1 handshake succeeds; healthy control negotiates TLSv1.2",
+                    status: "candidate",
+                    rationale:
+                      "TLSv1 handshake succeeds and healthy control negotiates TLSv1.2; independent validation review remains pending",
                     evidence,
                   },
                 },
@@ -285,7 +286,7 @@ await Effect.runPromise(
       if (
         task.status !== "completed" ||
         execution.status !== "completed" ||
-        finding.status !== (surfaces ? "confirmed" : "candidate") ||
+        finding.status !== "candidate" ||
         finding.revision !== (surfaces ? 2 : 1) ||
         step !== steps.length + 1
       )
