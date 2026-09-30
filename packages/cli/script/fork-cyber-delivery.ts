@@ -250,6 +250,8 @@ await Effect.runPromise(
           cwd: project,
           env: {
             ...cyberProfile(root, process.env),
+            // CLI Location selection reads PWD; spawn's cwd does not update it.
+            PWD: project,
             OPENCODE_TEST_HOME: root,
             OPENCODE_DISABLE_AUTOUPDATE: "1",
             OPENCODE_MODELS_PATH: path.join(root, "models.json"),
