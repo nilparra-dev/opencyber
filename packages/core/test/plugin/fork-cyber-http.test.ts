@@ -100,6 +100,12 @@ test("HTTP lab: two accounts expose the broken control but deny the healthy cont
 test("scope rejects excluded hosts, CIDRs and DNS answers, including IPv4-mapped IPv6", () => {
   expect(() => ForkCyberHttp.authorize(new URL("http://outside.test"), manifest)).toThrow("outside")
   expect(() =>
+    ForkCyberHttp.authorize(new URL("http://outside.test"), {
+      ...manifest,
+      scope: { ...manifest.scope, excluded: ["outside.test"] },
+    }),
+  ).toThrow("HTTP destination is excluded")
+  expect(() =>
     ForkCyberHttp.authorize(new URL("http://127.0.0.1"), {
       ...manifest,
       scope: { ...manifest.scope, excluded: ["127.0.0.0/8"] },

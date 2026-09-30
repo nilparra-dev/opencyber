@@ -81,6 +81,11 @@ export function url(value: string) {
 export function authorize(target: URL, manifest: ForkCyberScope.Manifest, addresses: readonly string[] = []) {
   if (manifest.derived) throw ForkCyberScope.scopeFailure("Record explicit scope before making HTTP requests")
   const host = target.hostname.replace(/^\[|\]$/g, "").toLowerCase()
+  const excluded = manifest.scope.excluded.map(ForkCyberScope.normalize)
+  if (excluded.some((entry) => sameHost(host, entry) || matches(host, entry)))
+    throw ForkCyberScope.scopeFailure("HTTP destination is excluded")
+  if (addresses.some((address) => excluded.some((entry) => sameHost(address, entry) || matches(address, entry))))
+    throw ForkCyberScope.scopeFailure("Resolved HTTP address is excluded")
   if (
     ![...manifest.scope.domains, ...manifest.scope.cidrs].some((entry) => ForkCyberScope.matches(host, entry)) &&
     !manifest.scope.services?.some(
@@ -92,11 +97,6 @@ export function authorize(target: URL, manifest: ForkCyberScope.Manifest, addres
     )
   )
     throw ForkCyberScope.scopeFailure("HTTP service or scheme is outside the recorded scope")
-  const excluded = manifest.scope.excluded.map(ForkCyberScope.normalize)
-  if (excluded.some((entry) => sameHost(host, entry) || matches(host, entry)))
-    throw ForkCyberScope.scopeFailure("HTTP destination is excluded")
-  if (addresses.some((address) => excluded.some((entry) => sameHost(address, entry) || matches(address, entry))))
-    throw ForkCyberScope.scopeFailure("Resolved HTTP address is excluded")
   ForkCyberScope.authorize(
     manifest,
     host,

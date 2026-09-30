@@ -90,7 +90,7 @@ After changing the public export contract, run `bun run generate` in `packages/c
 
 Real container and browser labs need their existing explicit test environment variables (`OPENCYBER_TEST_KALI_IMAGE`, `OPENCYBER_TEST_SURFACES_IMAGE`, `OPENCYBER_TEST_BROWSER` and the network-lab variables documented in the relevant module guides). Skipped runtime tests remain pending, even when deterministic contracts and type checks pass. The loopback TLS probe additionally needs Python 3 and OpenSSL; the test records a skip when they are absent.
 
-With an explicitly configured test Chromium executable, run `bun test test/plugin/fork-cyber-web-plan.test.ts` from Core to exercise the SPA controls. The blocked branch runs without a browser and proves only that static evidence leaves runtime properties unverified.
+With an explicitly configured test Chromium executable, run `bun test test/plugin/fork-cyber-web-plan.test.ts` from Core to exercise the SPA controls. The blocked branch runs without a browser and proves only that static evidence leaves runtime properties unverified. The installed Chrome passed the five browser controls, including redirect exclusion, but the optional SPA test failed its completed-action assertion because browser background traffic reached the rejecting proxy. The UI observations were present; affected actions remain errors with no completion evidence. A clean SPA capture and other browser-version variants remain pending.
 
 ## Optional model comparison
 
