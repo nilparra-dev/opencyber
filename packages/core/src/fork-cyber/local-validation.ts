@@ -44,15 +44,17 @@ export const run = Effect.fn(function* (
   assessment: ForkCyberSurface.Assessment,
   input: typeof Action.Type,
 ) {
-  if (assessment.agent !== "cyber-validate" || !ForkCyberRoles.allowed(assessment.agent, "cyber_local_validation"))
+  const role = yield* store.coordination.role(assessment)
+  if (role !== "cyber-validate" || !ForkCyberRoles.allowed(role, "cyber_local_validation"))
     return yield* Effect.fail(
       new ForkCyberDiagnostics.Failure({
         category: "capability",
         operation: "cyber_local_validation",
-        message: "Local candidate reproduction requires cyber-validate",
+        message: "Local candidate reproduction requires a claimed cyber-validate task",
         target_started: false,
         effects: "not_started",
-        recovery: "Delegate a validation task with a reviewed minimal fixture, synthetic inputs and a healthy control.",
+        recovery:
+          "Claim a validation task in the primary session or delegate it, with a reviewed minimal fixture, synthetic inputs and a healthy control.",
       }),
     )
   yield* store.coordination.requireClaim(assessment)

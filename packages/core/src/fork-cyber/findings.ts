@@ -14,6 +14,10 @@ export const Validation = Schema.Struct({
   identity: text,
   expected: text,
   observed: text,
+  impact: Schema.optional(text).annotate({
+    description:
+      "Demonstrated security impact supported by the linked evidence. Required for confirmation; header observations and assumed access to protected data do not establish impact.",
+  }),
   controls: text,
   reproduction: text,
   remediation: text,

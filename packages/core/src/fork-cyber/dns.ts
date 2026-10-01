@@ -65,7 +65,13 @@ export const run = Effect.fn(function* (
     Effect.onInterrupt(() =>
       Effect.sync(() => resolver.cancel()).pipe(
         Effect.andThen(
-          store.finish(assessment.owner, id, "error", { message: "DNS query interrupted", effects: "unknown" }),
+          store.finish(
+            assessment.owner,
+            id,
+            "error",
+            { message: "DNS query interrupted", effects: "unknown" },
+            "interrupted",
+          ),
         ),
         Effect.asVoid,
       ),

@@ -17,13 +17,13 @@ Example inputs for `cyber_tasks`:
 {"action":"claim","key":"api-items-bob-validation","revision":1}
 ```
 
-Phases are `cyber-recon`, `cyber-enum`, `cyber-exploit-web`, `cyber-exploit-net`, `cyber-postex`, `cyber-validate` and `cyber-code-review`. Validation tasks require a hypothesis. A phase agent can claim only its own phase. The primary agent can claim work directly when delegation is unnecessary.
+Phases are `cyber-recon`, `cyber-enum`, `cyber-exploit-web`, `cyber-exploit-net`, `cyber-postex`, `cyber-validate` and `cyber-code-review`. Validation tasks require a hypothesis. A phase agent can claim only its own phase. The top-level primary agent can claim work directly when delegation is unnecessary. A general-purpose child cannot claim phase work. Direct work retains the real agent, such as `build`, in both the task and execution records.
 
 Claims are conditional SQLite writes. One task has one claimant, and one session/agent pair can hold one active task per engagement. Separate Locations and processes use the same constraints. Every transition requires the current revision; a conflict requires another read. Claims do not expire, so a slow or interrupted job cannot silently acquire a second worker.
 
 Phase agents need a claim before local file inspection, HTTP, Kali or browser work. Execution creation attaches the task in the same database transaction, and rejects phase execution if the claim has ended. Each captured HTTP hop and browser action can contribute an execution; those counts are not counts of independent security tests. Kali lifecycle status/stop checks require a claim but are not assessment evidence. Administrative reads, notes, findings and comparisons do not require a claim. Ordinary primary-agent work remains usable without tasks and does not appear in task coverage unless it has an active claim.
 
-The active task key enters normal context and compaction context. The full task, hypothesis, executions and evidence remain retrievable after compaction or plugin restart.
+The active task phase restricts the effective catalog and execution checks for both workers and the primary. A primary recon claim permits only bodyless GET, HEAD and OPTIONS requests and cannot use shell, Kali, browser, replay or subdelegation. Normal permission rules still apply. Completing or releasing a claim ends its phase restrictions. The active task key enters normal context and compaction context. The full task, hypothesis, executions and evidence remain retrievable after compaction or plugin restart.
 
 ## Results and interruption
 
@@ -55,6 +55,12 @@ The claimant can block its own task. The top-level primary session can also bloc
 
 ## Coverage
 
+Finding confirmation checks the completed supported validation task, matching asset, accepted output artifact, execution link, recorded session and authorized executor. It accepts direct top-level validation by `build` and separate validation by `cyber-validate`. Incompatible references produce an `evidence` diagnostic with task, artifact, expected and recorded agent/session, and `effects:not_started`. The finding write rolls back. Repair provenance with existing accepted references; relabeling evidence or sending repeated target requests does not repair it. New confirmations also require `validation.impact`; reviewers must assess whether the recorded evidence demonstrates that impact.
+
+An interrupted native call or Code Mode call runs the terminal audit hook, keeps error status and records `termination:interrupted` with unknown effects. Interruption remains a cancellation signal to the caller. Coverage counts interruptions separately from ordinary failures. A process crash can still leave running records requiring reconciliation; no cancellation or target-effect rollback is inferred from abandoned records.
+
+`confirmation_evidence_count` distinguishes task completion evidence from evidence eligible for finding confirmation. `cyber_report.validation_coverage` counts completed validation tasks, supported tasks, tasks with eligible evidence and supported tasks without eligible evidence. These describe current provenance eligibility and do not reconstruct historical rejected writes or prove impact or severity.
+
 Call `cyber_coverage` with `{}` or `{"offset":25}`. It returns 25 recorded task rows with asset, procedure, phase, hypothesis, state, outcome, rationale and counts of completed, failed and unresolved executions plus accepted evidence references. `cyber_tasks.list` uses the same pagination; `get` retrieves a task's evidence and 25 linked executions, with `offset` for later execution pages.
 
 This is coverage of the recorded work plan. Unlisted assets, unsupported browser traffic and procedures never added to the plan remain unknown. A completed call is evidence of execution, not proof of a correct security conclusion. Reporting should list pending, active, blocked and inconclusive work alongside completed observations and findings.
@@ -71,7 +77,7 @@ The built-in role permission lists and the tool execution hook share one allowli
 | Reporting                                      | Local inspection, archive/task/coverage reads and recorded HTTP comparison                                                                                                                                 | No network tools, shell, environments, archive mutations or claims                                                                            |
 | Local code review                              | Local inspection, explicit source snapshots and SARIF imports, notes, candidate/discarded findings and task coordination                                                                                   | Active claim required for capture; no network tools, shell, Kali, subdelegation, scope changes or confirmed findings                          |
 
-The normal primary agent is not converted into a restricted phase agent. Report-local reads still produce automatic tool audit records, as before; "read-only" concerns requested mutations and assessment effects.
+The primary retains its real agent identity while its active claim adds phase restrictions. Report-local reads still produce automatic tool audit records, as before; "read-only" concerns requested mutations and assessment effects.
 
 An HTTP method does not classify a security technique. GET can trigger side effects or carry an attack payload; the recon policy bounds tools and methods rather than claiming to understand every request. All cyber phase roles reject the host shell, including under permissive agent configuration. Command-capable roles use Kali's [CY-10 network controls](fork-cyber-network.md). The ordinary primary agent and external plugins remain outside that container boundary.
 

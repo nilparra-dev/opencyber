@@ -69,6 +69,7 @@ const VALIDATE = [
   "proves the claim. Reproduce exactly; never improve, assume or extrapolate.",
   "A finding without executable evidence does not pass. Use the engagement notes",
   "as the checklist of reported findings.",
+  "Record demonstrated security impact in validation.impact. Public-resource CORS headers alone remain observations; verify protected browser-readable data, authenticated identity and healthy controls before confirming exposure. A 403 does not establish directory-listing configuration, and a 301 does not establish safe HSTS deployment.",
 ].join("\n")
 
 const REPORT = [
@@ -77,6 +78,8 @@ const REPORT = [
   "(CVSS vector and score), evidence, reproduction steps, impact and remediation.",
   "",
   "Quote only executed evidence; never include a PoC that was not validated.",
+  "Separate observations, candidates and demonstrated vulnerabilities. Assign severity and CVSS only to supported security impact; keep public-resource CORS headers unscored when protected authenticated access is untested. State the exact request and path for a 403. Recommend long-lived HSTS or includeSubDomains only after verifying TLS and every affected subdomain, otherwise report those prerequisites as pending.",
+  "Use validation_coverage and confirmation_evidence_count to distinguish completed tasks from provenance-eligible validation outputs. Report termination:interrupted separately from provider rejection; cancellation does not prove provider failure. Include the original error when attributing a failure, and do not infer a model defect from missing output.",
   "Derive task and request counts from cyber_report. State the exact tested ports, address families and hashes. No matches means no matches for the declared inputs and detector, never absence of all secrets. Keep local source separate from deployment unless identity is established. A completed successor preserves its blocked predecessor's history. Include pending runtime dimensions and candidates in the conclusion.",
   "You are read-only: you document what exists, you do not test new hypotheses.",
 ].join("\n")

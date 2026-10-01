@@ -20,8 +20,9 @@ export type Store = Effect.Success<ReturnType<typeof ForkCyberStore.open>>
 export type Assessment = { owner: string; session: string; agent: string; manifest: ForkCyberScope.Manifest }
 
 export const requireRole = Effect.fn(function* (store: Store, assessment: Omit<Assessment, "manifest">) {
-  if (!ForkCyberRoles.allowed(assessment.agent, "cyber_surface"))
-    return yield* Effect.fail(new Error(`Role ${assessment.agent} cannot execute cyber_surface`))
+  const role = yield* store.coordination.role(assessment)
+  if (!ForkCyberRoles.allowed(role, "cyber_surface"))
+    return yield* Effect.fail(new Error(`Phase ${role} cannot execute cyber_surface`))
   if (ForkCyberRoles.worker(assessment.agent)) yield* store.coordination.requireClaim(assessment)
 })
 
@@ -44,7 +45,9 @@ export const record = Effect.fn(function* <A>(
   })
   const result = yield* operation(id).pipe(
     Effect.onInterrupt(() =>
-      store.finish(assessment.owner, id, "error", { message: "Surface execution interrupted" }).pipe(Effect.asVoid),
+      store
+        .finish(assessment.owner, id, "error", { message: "Surface execution interrupted" }, "interrupted")
+        .pipe(Effect.asVoid),
     ),
     Effect.result,
   )

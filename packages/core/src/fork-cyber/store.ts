@@ -321,11 +321,19 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
         )
       }),
     )
-  const finish = (owner: string, id: string, status: "completed" | "error", output: unknown) =>
+  const finish = (
+    owner: string,
+    id: string,
+    status: "completed" | "error",
+    output: unknown,
+    termination?: "interrupted",
+  ) =>
     sql.withTransaction(
       Effect.gen(function* () {
-        const changed =
-          yield* sql`UPDATE execution SET status = ${status}, finished_at = ${Date.now()} WHERE owner = ${owner} AND id = ${id} AND status = 'running' RETURNING id`
+        const changed = yield* sql`UPDATE execution SET status = ${status}, finished_at = ${Date.now()},
+            provenance = CASE WHEN ${termination ?? null} IS NULL THEN provenance
+              ELSE json_set(COALESCE(NULLIF(provenance, 'null'), '{}'), '$.termination', ${termination ?? null}) END
+            WHERE owner = ${owner} AND id = ${id} AND status = 'running' RETURNING id`
         if (changed.length !== 1) return yield* Effect.fail(new Error("Execution is missing or already finished"))
         return yield* artifact(
           owner,
@@ -337,7 +345,15 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
       }),
     )
   const executions = (owner: string, offset = 0) =>
-    sql`SELECT * FROM execution WHERE owner = ${owner} ORDER BY started_at, id LIMIT 25 OFFSET ${offset}`
+    sql<{
+      id: string
+      session: string
+      agent: string
+      tool: string
+      status: string
+      finished_at: number | null
+      provenance: string
+    }>`SELECT * FROM execution WHERE owner = ${owner} ORDER BY started_at, id LIMIT 25 OFFSET ${offset}`
   const executionsPage = Effect.fn(function* (
     owner: string,
     input: {
@@ -360,8 +376,10 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
       operation_class: string
       provenance: string
       completion_evidence: string
+      termination: string | null
     }>`SELECT e.*, COALESCE(json_extract(e.provenance, '$.operation_class'), 'unknown') AS operation_class,
-      (SELECT json_group_array(a.id) FROM artifact a WHERE a.owner = e.owner AND a.execution = e.id AND a.kind = 'output' AND e.status = 'completed') AS completion_evidence
+      (SELECT json_group_array(a.id) FROM artifact a WHERE a.owner = e.owner AND a.execution = e.id AND a.kind = 'output' AND e.status = 'completed') AS completion_evidence,
+      json_extract(e.provenance, '$.termination') AS termination
       FROM execution e WHERE e.owner = ${owner}
       AND (${input.task ?? null} IS NULL OR EXISTS (SELECT 1 FROM cyber_task_execution t WHERE t.owner = e.owner AND t.execution = e.id AND t.task = ${input.task ?? null}))
       AND (${input.tool ?? null} IS NULL OR e.tool = ${input.tool ?? null})
@@ -378,6 +396,7 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
         started_at: row.started_at,
         finished_at: row.finished_at,
         operation_class: row.operation_class,
+        termination: row.termination,
         completion_evidence: Schema.decodeUnknownSync(Schema.fromJsonString(Schema.Array(Schema.String)))(
           row.completion_evidence,
         ),
@@ -394,7 +413,14 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
     return { total: maximum, reserved, remaining: Math.max(0, maximum - reserved), unit: "bytes" }
   })
   const artifacts = (owner: string, execution: string) =>
-    sql`SELECT id, execution, kind, media_type, sha256, bytes FROM artifact WHERE owner = ${owner} AND execution = ${execution} ORDER BY id`
+    sql<{
+      id: string
+      execution: string
+      kind: string
+      media_type: string
+      sha256: string
+      bytes: number
+    }>`SELECT id, execution, kind, media_type, sha256, bytes FROM artifact WHERE owner = ${owner} AND execution = ${execution} ORDER BY id`
   const readArtifact = Effect.fn(function* (owner: string, id: string) {
     const rows = yield* sql<{
       data: string
@@ -436,36 +462,118 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
     sql.withTransaction(
       Effect.gen(function* () {
         if (input.status === "confirmed" && input.evidence.length === 0)
-          return yield* Effect.fail(new Error("Confirmed findings require evidence references"))
+          return yield* Effect.fail(
+            new ForkCyberDiagnostics.Failure({
+              category: "evidence",
+              operation: "findings.confirm",
+              message: "Confirmed findings require evidence references",
+              target_started: false,
+              effects: "not_started",
+              recovery: "Keep the candidate and use accepted completed outputs from its validation task.",
+              details: { finding: input.id, task: input.validation?.task ?? null },
+            }),
+          )
         if (input.status === "confirmed" && (!input.validation || input.revision === 0))
           return yield* Effect.fail(
-            new Error("Confirmation requires a prior candidate and an explicit validation record"),
+            new ForkCyberDiagnostics.Failure({
+              category: "evidence",
+              operation: "findings.confirm",
+              message: "Confirmation requires a prior candidate and an explicit validation record",
+              target_started: false,
+              effects: "not_started",
+              recovery:
+                "Create a candidate, complete its validation task, and reference the resulting evidence before confirming.",
+              details: { finding: input.id, task: input.validation?.task ?? null },
+            }),
+          )
+        if (input.status === "confirmed" && !input.validation?.impact)
+          return yield* Effect.fail(
+            new ForkCyberDiagnostics.Failure({
+              category: "evidence",
+              operation: "findings.confirm",
+              message: "Confirmation requires demonstrated security impact in validation.impact",
+              target_started: false,
+              effects: "not_started",
+              recovery:
+                "Keep the candidate while impact is unverified. Record only impact supported by the linked outputs and healthy controls; public-resource CORS headers alone do not prove protected cross-origin access.",
+              details: { finding: input.id, task: input.validation?.task ?? null },
+            }),
           )
         const changed =
           input.revision === 0
             ? yield* sql`INSERT INTO finding VALUES (${input.id}, ${owner}, 1, ${input.title}, ${input.status}, ${input.rationale}, ${Date.now()}) ON CONFLICT DO NOTHING RETURNING id`
             : yield* sql`UPDATE finding SET revision = revision + 1, title = ${input.title}, status = ${input.status}, rationale = ${input.rationale}, updated_at = ${Date.now()} WHERE owner = ${owner} AND id = ${input.id} AND revision = ${input.revision} AND (${input.status} != 'confirmed' OR status = 'candidate') RETURNING id`
         if (changed.length !== 1)
-          return yield* Effect.fail(new Error("Finding changed concurrently or does not belong to this engagement"))
+          return yield* Effect.fail(
+            new ForkCyberDiagnostics.Failure({
+              category: "revision",
+              operation: "findings.write",
+              message: "Finding changed concurrently, is not a candidate, or does not belong to this engagement",
+              target_started: false,
+              effects: "not_started",
+              recovery: "Read findings and use the current revision and state from this engagement before writing.",
+              details: { finding: input.id, revision: input.revision },
+            }),
+          )
         yield* sql`DELETE FROM finding_evidence WHERE owner = ${owner} AND finding = ${input.id}`
         yield* sql`DELETE FROM finding_validation WHERE owner = ${owner} AND finding = ${input.id}`
         if (input.status === "confirmed" && input.validation) {
-          const task = yield* sql`SELECT key FROM cyber_task WHERE owner = ${owner} AND key = ${input.validation.task}
+          const task = yield* sql<{
+            key: string
+            session: string
+            agent: string
+          }>`SELECT key, session, agent FROM cyber_task WHERE owner = ${owner} AND key = ${input.validation.task}
             AND phase = 'cyber-validate' AND status = 'completed' AND outcome = 'supported' AND asset = ${input.validation.asset}`
           if (!task.length)
             return yield* Effect.fail(
-              new Error("Confirmation requires a completed, supported validation task for this asset"),
+              new ForkCyberDiagnostics.Failure({
+                category: "evidence",
+                operation: "findings.confirm",
+                message: "Confirmation requires a completed, supported validation task for this asset",
+                target_started: false,
+                effects: "not_started",
+                recovery:
+                  "Read the named cyber_tasks task and its asset, phase and outcome. Retain the candidate until validation supports its hypothesis.",
+                details: {
+                  task: input.validation.task,
+                  asset: input.validation.asset,
+                  expected_phase: "cyber-validate",
+                },
+              }),
             )
+          const eligible = yield* coordination.validationEvidence(owner, input.validation.task)
           for (const id of new Set(input.evidence)) {
-            const linked =
-              yield* sql`SELECT a.id FROM artifact a JOIN execution e ON e.owner = a.owner AND e.id = a.execution
-              JOIN cyber_task_evidence t ON t.owner = a.owner AND t.artifact = a.id
-              WHERE a.owner = ${owner} AND a.id = ${id} AND t.task = ${input.validation.task}
-              AND e.agent = 'cyber-validate' AND e.status = 'completed' AND a.kind = 'output'`
-            if (!linked.length)
+            if (!eligible.some((artifact) => artifact.id === id)) {
+              const actual = yield* sql<{
+                agent: string
+                session: string
+                task: string | null
+              }>`SELECT e.agent, e.session, t.task FROM artifact a
+                JOIN execution e ON e.owner = a.owner AND e.id = a.execution
+                LEFT JOIN cyber_task_execution t ON t.owner = e.owner AND t.execution = e.id
+                WHERE a.owner = ${owner} AND a.id = ${id}`
               return yield* Effect.fail(
-                new Error("Confirmation evidence must come from the linked validation task and role"),
+                new ForkCyberDiagnostics.Failure({
+                  category: "evidence",
+                  operation: "findings.confirm",
+                  message: "Confirmation evidence does not match the validation task's authorized session and executor",
+                  target_started: false,
+                  effects: "not_started",
+                  recovery:
+                    "Use this task's accepted completed outputs from its recorded executor. Keep the candidate if provenance differs; do not relabel evidence or repeat target requests to repair provenance.",
+                  details: {
+                    task: input.validation.task,
+                    artifact: id,
+                    expected_agent: task[0]!.agent,
+                    registered_agent: actual[0]?.agent ?? null,
+                    expected_session: task[0]!.session,
+                    registered_session: actual[0]?.session ?? null,
+                    registered_task: actual[0]?.task ?? null,
+                    confirmation_evidence: eligible.map((artifact) => artifact.id),
+                  },
+                }),
               )
+            }
           }
           yield* sql`INSERT INTO finding_validation VALUES (${owner}, ${input.id}, ${JSON.stringify(input.validation)})`
         }
@@ -474,7 +582,16 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
             yield* sql`INSERT INTO finding_evidence SELECT ${owner}, ${input.id}, a.id FROM artifact a JOIN execution e ON e.id = a.execution AND e.owner = a.owner WHERE a.owner = ${owner} AND a.id = ${id} AND (${input.status} != 'confirmed' OR (e.status = 'completed' AND a.kind = 'output')) RETURNING artifact`
           if (inserted.length !== 1)
             return yield* Effect.fail(
-              new Error("Evidence is missing, belongs to another engagement, or is not a completed execution output"),
+              new ForkCyberDiagnostics.Failure({
+                category: "evidence",
+                operation: "findings.write",
+                message: "Evidence is missing, belongs to another engagement, or is not a completed execution output",
+                target_started: false,
+                effects: "not_started",
+                recovery:
+                  "Read evidence and reference this engagement's recorded artifacts. Confirmation requires accepted completed validation outputs.",
+                details: { finding: input.id, artifact: id, task: input.validation?.task ?? null },
+              }),
             )
         }
       }),
@@ -489,9 +606,9 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
     )
   const report = Effect.fn(function* (owner: string, offset = 0) {
     const tasks = yield* sql`SELECT status, count(*) AS count FROM cyber_task WHERE owner = ${owner} GROUP BY status`
-    const operations =
-      yield* sql`SELECT tool, status, COALESCE(json_extract(provenance, '$.operation_class'), 'unknown') AS operation_class, count(*) AS count
-      FROM execution WHERE owner = ${owner} GROUP BY tool, status, operation_class`
+    const operations = yield* sql`SELECT tool, status, json_extract(provenance, '$.termination') AS termination,
+      COALESCE(json_extract(provenance, '$.operation_class'), 'unknown') AS operation_class, count(*) AS count
+      FROM execution WHERE owner = ${owner} GROUP BY tool, status, termination, operation_class`
     const findings = yield* sql`SELECT status, count(*) AS count FROM finding WHERE owner = ${owner} GROUP BY status`
     const retries =
       yield* sql`SELECT r.predecessor, p.status AS predecessor_status, r.successor, s.status AS successor_status, r.reason
@@ -586,6 +703,26 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
       operations,
       findings,
       recovered_work: retries,
+      validation_coverage: yield* Effect.gen(function* () {
+        const tasks = yield* sql<{
+          key: string
+          status: string
+          outcome: string | null
+        }>`SELECT key, status, outcome FROM cyber_task WHERE owner = ${owner} AND phase = 'cyber-validate'`
+        const usable = yield* Effect.forEach(tasks, (task) => coordination.validationEvidence(owner, task.key))
+        return {
+          total_tasks: tasks.length,
+          completed_tasks: tasks.filter((task) => task.status === "completed").length,
+          supported_tasks: tasks.filter((task) => task.status === "completed" && task.outcome === "supported").length,
+          tasks_with_confirmation_evidence: usable.filter((evidence) => evidence.length > 0).length,
+          supported_without_confirmation_evidence: tasks.filter(
+            (task, index) => task.status === "completed" && task.outcome === "supported" && usable[index]!.length === 0,
+          ).length,
+          confirmation_evidence_count: usable.reduce((count, evidence) => count + evidence.length, 0),
+          conclusion:
+            "Evidence eligibility establishes provenance only; protected access, impact and severity require technical review.",
+        }
+      }),
       observations: { ...ForkCyberPagination.page(outputs, offset), items: observations },
       coverage: yield* coordination.coveragePage(owner, offset),
       executions: yield* executionsPage(owner, { offset }),
@@ -596,6 +733,9 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
         "Observations preserve recorded tested endpoints and controls; untested ports, families and origin servers remain unknown. Outputs above 64 KiB require evidence detail.",
         "No matches applies to recorded input hashes and detector versions only. Pending candidates remain candidates.",
         "Completed successors do not change blocked predecessor history. Report pending runtime dimensions and missing evidence.",
+        "Completed validation tasks and confirmation-eligible evidence are distinct counts. Eligibility checks provenance, not impact or severity.",
+        "Interrupted executions are errors with termination:interrupted and unknown effects. They do not establish provider failure.",
+        "CORS headers on public resources do not establish authenticated protected-data exposure. A 403 does not establish directory-listing configuration. A 301 does not establish safe HSTS deployment across subdomains.",
       ],
     }
   })

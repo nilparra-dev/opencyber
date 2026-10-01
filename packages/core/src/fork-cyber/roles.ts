@@ -14,6 +14,11 @@ export const Phase = Schema.Literals([
 export type Phase = typeof Phase.Type
 export const worker = Schema.is(Phase)
 
+export function canClaim(actor: { owner: string; session: string; agent: string }, phase: string) {
+  if (worker(actor.agent)) return actor.agent === phase
+  return actor.session === actor.owner && tools(actor.agent) === undefined
+}
+
 const read = [
   "execute",
   "read",

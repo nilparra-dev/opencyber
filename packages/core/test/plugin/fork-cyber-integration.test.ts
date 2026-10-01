@@ -8,6 +8,7 @@ import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
 import { Watcher } from "@opencode/core/filesystem/watcher"
 import { LocationServiceMap } from "@opencode/core/location-service-map"
 import { KV } from "@opencode/core/kv"
+import { Job } from "@opencode/core/job"
 import { Plugin } from "@opencode/core/plugin"
 import { ForkCyberPlugin } from "@opencode/core/plugin/fork-cyber"
 import { ForkCyberCoordination } from "@opencode/core/fork-cyber/coordination"
@@ -41,6 +42,7 @@ const it = testEffect(
       Database.node,
       Bus.node,
       KV.node,
+      Job.node,
       SessionProjector.node,
       Session.node,
       LocationServiceMap.node,
@@ -102,6 +104,107 @@ const context = Effect.fn(function* (
   })
   return event.system.map((part) => part.text).join("\n")
 })
+
+it.live("interrupted native subagent calls close evidence without attributing failure to the provider", () =>
+  Effect.gen(function* () {
+    const env = yield* project
+    yield* Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const jobs = yield* Job.Service
+      const plugins = yield* Plugin.Service
+      yield* plugins.awaitActivation
+      const tools = yield* Tool.Service
+      const snapshot = yield* tools.snapshot()
+      for (const label of ["first", "second"]) {
+        const child = yield* sessions.create({ parentID: env.root.id, agent: Agent.ID.make("cyber-validate") })
+        const started = yield* Deferred.make<void>()
+        yield* jobs.start({ id: child.id, type: "subagent", run: Effect.never })
+        const fiber = yield* snapshot
+          .execute({
+            sessionID: env.root.id,
+            agent: Agent.ID.make("build"),
+            messageID: SessionMessage.ID.make("msg_cyber_test"),
+            call: {
+              type: "tool-call",
+              id: `subagent-${label}`,
+              name: "subagent",
+              input: {
+                agent: "cyber-validate",
+                sessionID: child.id,
+                description: "Wait for fixture validation",
+                prompt: "Inspect only the assigned fixture",
+              },
+            },
+            progress: () => Deferred.succeed(started, undefined).pipe(Effect.asVoid),
+          })
+          .pipe(Effect.forkChild)
+        yield* Deferred.await(started)
+        yield* Fiber.interrupt(fiber)
+        expect(Exit.hasInterrupts(yield* Fiber.await(fiber))).toBe(true)
+        yield* jobs.cancel(child.id)
+      }
+      const global = yield* Global.Service
+      const store = yield* ForkCyberStore.open(path.join(global.data, "opencyber", "evidence.sqlite"))
+      const report = yield* store.report(env.root.id)
+      expect(report.operations).toMatchObject([
+        { tool: "subagent", status: "error", termination: "interrupted", count: 2 },
+      ])
+      expect(
+        report.executions.items.every(
+          (execution) => execution.status === "error" && execution.termination === "interrupted",
+        ),
+      ).toBe(true)
+      for (const execution of report.executions.items) {
+        const artifacts = yield* store.artifacts(env.root.id, execution.id)
+        const error = artifacts.find((artifact) => artifact.kind === "error")!
+        expect((yield* store.readArtifact(env.root.id, error.id)).bytes.toString()).toContain(
+          "does not establish provider failure",
+        )
+      }
+    }).pipe(env.provide)
+  }),
+)
+
+it.live("primary task phase restricts the effective catalog and direct execution while retaining build", () =>
+  Effect.gen(function* () {
+    const env = yield* project
+    yield* Effect.gen(function* () {
+      yield* call(env.root.id, "cyber_tasks", {
+        action: "create",
+        key: "primary-recon",
+        asset: "fixture",
+        procedure: "Observe local fixture",
+        phase: "cyber-recon",
+      })
+      yield* call(env.root.id, "cyber_tasks", { action: "claim", key: "primary-recon", revision: 1 })
+      const capabilities = yield* call(env.root.id, "cyber_capabilities", {})
+      const decoded = Schema.decodeUnknownSync(
+        Schema.fromJsonString(
+          Schema.Struct({
+            roles: Schema.Array(
+              Schema.Struct({
+                role: Schema.String,
+                effective_phase: Schema.String,
+                prohibited: Schema.Array(Schema.String),
+              }),
+            ),
+          }),
+        ),
+      )(capabilities)
+      expect(decoded.roles.find((role) => role.role === "build")).toMatchObject({
+        effective_phase: "cyber-recon",
+        prohibited: expect.arrayContaining(["shell", "kali_run", "http_replay", "subagent"]),
+      })
+      for (const tool of ["shell", "kali_run", "http_replay", "subagent"])
+        expect((yield* call(env.root.id, tool, {}).pipe(Effect.flip)).message).toContain("in claimed phase cyber-recon")
+      expect(yield* call(env.root.id, "cyber_tasks", { action: "get", key: "primary-recon" })).toContain(
+        '"agent":"build"',
+      )
+      expect(yield* call(env.root.id, "evidence", {})).toContain('"items":[]')
+      yield* call(env.root.id, "cyber_tasks", { action: "release", key: "primary-recon", revision: 2 })
+    }).pipe(env.provide)
+  }),
+)
 
 it.live("repairs string revisions before claiming and releasing durable cyber tasks", () =>
   Effect.gen(function* () {
@@ -262,9 +365,22 @@ it.live("preserves nested call identities and unresolved effects when Code Mode 
       const store = yield* ForkCyberStore.open(path.join(global.data, "opencyber", "evidence.sqlite"))
       const executions = yield* store.executions(env.root.id)
       expect(executions).toHaveLength(2)
-      expect(executions.every((execution) => execution.status === "running")).toBe(true)
+      expect(executions.every((execution) => execution.status === "error" && execution.finished_at !== null)).toBe(true)
       expect(executions.map((execution) => execution.tool).toSorted()).toEqual(["execute", "fixture_wait"])
       expect(new Set(executions.map((execution) => execution.id)).size).toBe(2)
+      expect(
+        (yield* store.executionsPage(env.root.id)).items.every((execution) => execution.termination === "interrupted"),
+      ).toBe(true)
+      const report = yield* store.report(env.root.id)
+      expect(report.operations.every((operation) => operation.termination === "interrupted")).toBe(true)
+      expect(report.executions.items.some((execution) => execution.status === "running")).toBe(false)
+      for (const execution of executions) {
+        const artifacts = yield* store.artifacts(env.root.id, execution.id)
+        const error = artifacts.find((artifact) => artifact.kind === "error")!
+        expect((yield* store.readArtifact(env.root.id, error.id)).bytes.toString()).toContain(
+          '"category":"interruption"',
+        )
+      }
     }).pipe(env.provide)
   }),
 )

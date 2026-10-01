@@ -105,8 +105,9 @@ export const run = Effect.fn("ForkCyberCodeReview.run")(function* (
   assessment: Assessment,
   input: Action,
 ) {
-  if (!ForkCyberRoles.allowed(assessment.agent, "cyber_code_review"))
-    return yield* Effect.fail(new Error(`Role ${assessment.agent} cannot execute cyber_code_review`))
+  const role = yield* store.coordination.role(assessment)
+  if (!ForkCyberRoles.allowed(role, "cyber_code_review"))
+    return yield* Effect.fail(new Error(`Phase ${role} cannot execute cyber_code_review`))
   if (input.action === "procedures") return procedures
   if (ForkCyberRoles.worker(assessment.agent)) yield* store.coordination.requireClaim(assessment)
   const root = yield* Effect.tryPromise(() => realpath(assessment.directory))

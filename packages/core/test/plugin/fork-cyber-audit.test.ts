@@ -5,7 +5,142 @@ import path from "node:path"
 import { ForkCyberStore } from "@opencode/core/fork-cyber/store"
 import { ForkCyberSurface } from "@opencode/core/fork-cyber/surface"
 import { ForkCyberNotes } from "@opencode/core/fork-cyber/notes"
+import { ForkCyberDiagnostics } from "@opencode/core/fork-cyber/diagnostics"
 import { tmpdirScoped } from "../fixture/tmpdir"
+
+test("primary validation retains its executor and checks task/session provenance and impact before confirmation", async () => {
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const tmp = yield* tmpdirScoped()
+        const file = path.join(tmp.path, "evidence.sqlite")
+        const store = yield* ForkCyberStore.open(file)
+        for (const actor of [
+          { owner: "owner", session: "owner", agent: "build" },
+          { owner: "owner", session: "validator", agent: "cyber-validate" },
+        ]) {
+          const key = actor.agent
+          yield* store.coordination.run(actor, {
+            action: "create",
+            key,
+            asset: "fixture",
+            phase: "cyber-validate",
+            procedure: "Compare protected fixture access with a healthy control",
+            hypothesis: "A second fixture identity can read a protected object",
+          })
+          for (const unauthorized of [
+            { ...actor, session: "other-child", agent: "build" },
+            { ...actor, session: "other-child", agent: "cyber-recon" },
+          ])
+            expect(
+              yield* store.coordination.run(unauthorized, { action: "claim", key, revision: 1 }).pipe(Effect.isFailure),
+            ).toBe(true)
+          yield* store.coordination.run(actor, { action: "claim", key, revision: 1 })
+          yield* store.start({ ...actor, id: key, tool: "http_request", input: {} })
+          const output = (yield* store.finish("owner", key, "completed", {
+            private_data: "synthetic object",
+            healthy_control: 403,
+          }))[0]!.id
+          yield* store.coordination.run(actor, {
+            action: "complete",
+            key,
+            revision: 2,
+            outcome: "supported",
+            rationale: "The second identity retrieved the fixture object; the healthy control denied access",
+            evidence: [output],
+          })
+          const candidate = {
+            id: key,
+            revision: 0,
+            title: "Fixture access control",
+            status: "candidate" as const,
+            rationale: "Validate protected fixture access",
+            evidence: [output],
+          }
+          yield* store.finding("owner", candidate)
+          const confirmation = {
+            ...candidate,
+            revision: 1,
+            status: "confirmed" as const,
+            validation: {
+              task: key,
+              asset: "fixture",
+              method: "dynamic" as const,
+              identity: "second fixture account",
+              expected: "Access denied",
+              observed: "Protected fixture object returned",
+              controls: "Healthy route denied access",
+              reproduction: "Read the same object with the second identity",
+              remediation: "Check object ownership",
+              impact: "The second account can read another account's synthetic protected object",
+            },
+          }
+          const missingImpact = yield* store
+            .finding("owner", { ...confirmation, validation: { ...confirmation.validation, impact: undefined } })
+            .pipe(Effect.flip)
+          expect(ForkCyberDiagnostics.toolError(missingImpact, "findings").metadata?.diagnostic).toMatchObject({
+            category: "evidence",
+            effects: "not_started",
+          })
+          expect((yield* store.findings("owner")).find((finding) => finding.id === key)?.revision).toBe(1)
+          if (actor.agent === "build") {
+            using database = new Database(file)
+            for (const actual of [
+              { agent: "cyber-recon", session: actor.session },
+              { agent: actor.agent, session: "other-child" },
+            ]) {
+              database.run("UPDATE execution SET agent = ?, session = ? WHERE owner = ? AND id = ?", [
+                actual.agent,
+                actual.session,
+                actor.owner,
+                key,
+              ])
+              const error = yield* store.finding("owner", confirmation).pipe(Effect.flip)
+              expect(ForkCyberDiagnostics.toolError(error, "findings").metadata?.diagnostic).toMatchObject({
+                category: "evidence",
+                operation: "findings.confirm",
+                target_started: false,
+                effects: "not_started",
+                details: {
+                  task: key,
+                  artifact: output,
+                  expected_agent: "build",
+                  registered_agent: actual.agent,
+                  expected_session: "owner",
+                  registered_session: actual.session,
+                },
+              })
+              expect(yield* store.coordination.coverage("owner")).toMatchObject([
+                { evidence_count: 1, confirmation_evidence_count: 0 },
+              ])
+              expect((yield* store.report("owner")).validation_coverage).toMatchObject({
+                completed_tasks: 1,
+                supported_tasks: 1,
+                tasks_with_confirmation_evidence: 0,
+                supported_without_confirmation_evidence: 1,
+              })
+            }
+            database.run("UPDATE execution SET agent = ?, session = ? WHERE owner = ? AND id = ?", [
+              actor.agent,
+              actor.session,
+              actor.owner,
+              key,
+            ])
+          }
+          yield* store.finding("owner", confirmation)
+          expect((yield* store.executions("owner")).find((execution) => execution.id === key)?.agent).toBe(actor.agent)
+          expect((yield* store.coordination.get("owner", key)).confirmation_evidence).toEqual([output])
+        }
+        expect((yield* store.report("owner")).validation_coverage).toMatchObject({
+          completed_tasks: 2,
+          tasks_with_confirmation_evidence: 2,
+          confirmation_evidence_count: 2,
+          supported_without_confirmation_evidence: 0,
+        })
+      }),
+    ),
+  )
+})
 
 test("checkpoint previews redact every value before slicing, including JSON escapes and arbitrary names", () => {
   const state = JSON.stringify({
@@ -135,6 +270,8 @@ test("confirmation requires a candidate, a supported validation task, matching a
           identity: "local source reviewer",
           expected: "Parameter binding",
           observed: "Input interpolated into SQL",
+          impact:
+            "Untrusted input changes the query structure in the inspected source; remote deployment remains unverified",
           controls: "Parameterized healthy route",
           reproduction: "Trace input to query construction",
           remediation: "Bind parameters",

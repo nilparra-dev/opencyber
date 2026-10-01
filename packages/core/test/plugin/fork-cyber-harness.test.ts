@@ -307,6 +307,7 @@ it.live("reports seven completed tasks and a blocked predecessor without extendi
       status: "completed",
       operation_class: "acquisition",
       count: 6,
+      termination: null,
     })
     expect(report.observations.items.find((item) => item.tool === "cyber_services")?.properties).toMatchObject({
       scanned_ports: [80, 443],

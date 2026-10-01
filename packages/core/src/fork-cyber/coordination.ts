@@ -106,6 +106,7 @@ export function make(sql: SqlClient.SqlClient) {
         completion_evidence_page: ForkCyberPagination.page(completion, offset),
         evidence:
           yield* sql`SELECT artifact FROM cyber_task_evidence WHERE owner = ${owner} AND task = ${key} ORDER BY artifact`,
+        confirmation_evidence: (yield* validationEvidence(owner, key)).map((artifact) => artifact.id),
         retries:
           yield* sql`SELECT * FROM cyber_task_retry WHERE owner = ${owner} AND (predecessor = ${key} OR successor = ${key})`,
         handoffs:
@@ -116,6 +117,11 @@ export function make(sql: SqlClient.SqlClient) {
     sql<{
       key: string
     }>`SELECT key FROM cyber_task WHERE owner = ${actor.owner} AND session = ${actor.session} AND agent = ${actor.agent} AND status = 'active'`
+  const role = Effect.fn(function* (actor: Actor) {
+    const tasks = yield* sql<{ phase: ForkCyberRoles.Phase }>`SELECT phase FROM cyber_task
+      WHERE owner = ${actor.owner} AND session = ${actor.session} AND agent = ${actor.agent} AND status = 'active'`
+    return tasks[0]?.phase ?? actor.agent
+  })
   const requireClaim = Effect.fn(function* (actor: Actor) {
     const tasks = yield* active(actor)
     if (!tasks[0])
@@ -183,11 +189,32 @@ export function make(sql: SqlClient.SqlClient) {
       return yield* get(actor.owner, input.key)
     }
     if (input.action === "claim") {
+      const task = yield* sql<{
+        phase: string
+      }>`SELECT phase FROM cyber_task WHERE owner = ${actor.owner} AND key = ${input.key}`
+      if (task[0] && !ForkCyberRoles.canClaim(actor, task[0].phase))
+        return yield* Effect.fail(
+          new ForkCyberDiagnostics.Failure({
+            category: "claim",
+            operation: "cyber_tasks.claim",
+            message: "Only the assigned phase agent or the top-level primary may claim this task",
+            target_started: false,
+            effects: "not_started",
+            recovery:
+              "Claim with the assigned phase agent in its session, or validate directly in the primary session without changing its agent identity.",
+            details: {
+              task: input.key,
+              expected_phase: task[0].phase,
+              registered_agent: actor.agent,
+              session: actor.session,
+            },
+          }),
+        )
       const rows =
         yield* sql`UPDATE cyber_task SET status = 'active', session = ${actor.session}, agent = ${actor.agent}, revision = revision + 1, updated_at = ${Date.now()}
         WHERE owner = ${actor.owner} AND key = ${input.key} AND revision = ${input.revision} AND status = 'pending'
         AND (${!ForkCyberRoles.worker(actor.agent)} OR phase = ${actor.agent})
-        AND (${actor.agent !== "cyber-validate"} OR hypothesis IS NOT NULL)
+        AND (phase != 'cyber-validate' OR hypothesis IS NOT NULL)
         RETURNING key`
       if (rows.length !== 1)
         return yield* Effect.fail(
@@ -388,15 +415,53 @@ export function make(sql: SqlClient.SqlClient) {
       }),
     )
   })
-  const coverage = (
-    owner: string,
-    offset = 0,
-  ) => sql`SELECT t.key, t.asset, t.procedure, t.phase, t.hypothesis, t.status, t.outcome, t.rationale,
+  const validationEvidence = (owner: string, key: string) =>
+    sql<{
+      id: string
+      phase: string
+      session: string
+      agent: string
+    }>`SELECT a.id, t.phase, t.session, t.agent FROM cyber_task t
+    JOIN cyber_task_evidence r ON r.owner = t.owner AND r.task = t.key
+    JOIN artifact a ON a.owner = r.owner AND a.id = r.artifact
+    JOIN execution e ON e.owner = a.owner AND e.id = a.execution
+    JOIN cyber_task_execution x ON x.owner = t.owner AND x.task = t.key AND x.execution = e.id
+    WHERE t.owner = ${owner} AND t.key = ${key} AND t.phase = 'cyber-validate'
+    AND t.status = 'completed' AND t.outcome = 'supported' AND t.hypothesis IS NOT NULL
+    AND e.session = t.session AND e.agent = t.agent AND e.status = 'completed' AND a.kind = 'output' ORDER BY e.started_at, a.id`.pipe(
+      Effect.map((rows) =>
+        rows.filter((row) => ForkCyberRoles.canClaim({ owner, session: row.session, agent: row.agent }, row.phase)),
+      ),
+    )
+  const coverage = Effect.fn(function* (owner: string, offset = 0) {
+    const rows = yield* sql<{
+      key: string
+      asset: string
+      procedure: string
+      phase: string
+      hypothesis: string | null
+      status: string
+      outcome: string | null
+      rationale: string | null
+      completed_executions: number
+      failed_executions: number
+      interrupted_executions: number
+      unresolved_executions: number
+      evidence_count: number
+    }>`SELECT t.key, t.asset, t.procedure, t.phase, t.hypothesis, t.status, t.outcome, t.rationale,
     (SELECT count(*) FROM cyber_task_execution x JOIN execution e ON e.owner = x.owner AND e.id = x.execution WHERE x.owner = t.owner AND x.task = t.key AND e.status = 'completed') AS completed_executions,
-    (SELECT count(*) FROM cyber_task_execution x JOIN execution e ON e.owner = x.owner AND e.id = x.execution WHERE x.owner = t.owner AND x.task = t.key AND e.status = 'error') AS failed_executions,
+    (SELECT count(*) FROM cyber_task_execution x JOIN execution e ON e.owner = x.owner AND e.id = x.execution WHERE x.owner = t.owner AND x.task = t.key AND e.status = 'error' AND COALESCE(json_extract(e.provenance, '$.termination'), '') != 'interrupted') AS failed_executions,
+    (SELECT count(*) FROM cyber_task_execution x JOIN execution e ON e.owner = x.owner AND e.id = x.execution WHERE x.owner = t.owner AND x.task = t.key AND json_extract(e.provenance, '$.termination') = 'interrupted') AS interrupted_executions,
     (SELECT count(*) FROM cyber_task_execution x JOIN execution e ON e.owner = x.owner AND e.id = x.execution WHERE x.owner = t.owner AND x.task = t.key AND e.status = 'running') AS unresolved_executions,
     (SELECT count(*) FROM cyber_task_evidence x WHERE x.owner = t.owner AND x.task = t.key) AS evidence_count
     FROM cyber_task t WHERE t.owner = ${owner} ORDER BY t.created_at, t.key LIMIT 25 OFFSET ${offset}`
+    return yield* Effect.forEach(rows, (row) =>
+      Effect.gen(function* () {
+        if (row.phase !== "cyber-validate") return { ...row, confirmation_evidence_count: 0 }
+        return { ...row, confirmation_evidence_count: (yield* validationEvidence(owner, row.key)).length }
+      }),
+    )
+  })
   const eligible = (owner: string, key: string, offset = 0, limit = Number.MAX_SAFE_INTEGER) => sql<{
     id: string
     execution: string
@@ -417,5 +482,19 @@ export function make(sql: SqlClient.SqlClient) {
     const next = rows.length === 25 ? yield* coverage(owner, offset + 25) : []
     return ForkCyberPagination.page([...rows, ...next.slice(0, 1)], offset)
   })
-  return { initialize, run, list, listPage, get, active, requireClaim, attach, coverage, coveragePage, eligible }
+  return {
+    initialize,
+    run,
+    list,
+    listPage,
+    get,
+    active,
+    role,
+    requireClaim,
+    attach,
+    coverage,
+    coveragePage,
+    eligible,
+    validationEvidence,
+  }
 }
