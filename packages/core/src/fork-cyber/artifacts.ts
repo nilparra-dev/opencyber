@@ -34,8 +34,9 @@ export const run = Effect.fn(function* (
   actor: { owner: string; session: string; agent: string },
   input: typeof Action.Type,
 ) {
-  if (!ForkCyberRoles.allowed(actor.agent, "cyber_artifacts"))
-    return yield* Effect.fail(new Error(`Role ${actor.agent} cannot execute cyber_artifacts`))
+  const role = yield* store.coordination.role(actor)
+  if (!ForkCyberRoles.allowed(role, "cyber_artifacts"))
+    return yield* Effect.fail(new Error(`Phase ${role} cannot execute cyber_artifacts`))
   if (ForkCyberRoles.worker(actor.agent)) yield* store.coordination.requireClaim(actor)
   const id = crypto.randomUUID()
   yield* store.start({
@@ -137,7 +138,9 @@ export const run = Effect.fn(function* (
   }).pipe(
     Effect.timeout(10000),
     Effect.onInterrupt(() =>
-      store.finish(actor.owner, id, "error", { message: "Artifact analysis interrupted" }).pipe(Effect.asVoid),
+      store
+        .finish(actor.owner, id, "error", { message: "Artifact analysis interrupted" }, "interrupted")
+        .pipe(Effect.asVoid),
     ),
     Effect.result,
   )

@@ -378,6 +378,7 @@ export const make = Effect.fn(function* (store: ForkCyberHttp.Store) {
               id,
               Exit.isSuccess(result) && window.issues.length === 0 ? "completed" : "error",
               output,
+              Exit.hasInterrupts(result) ? "interrupted" : undefined,
             )
             if (Exit.isFailure(result))
               return yield* Effect.fail(

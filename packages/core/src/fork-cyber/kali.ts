@@ -358,6 +358,7 @@ export function manager(store: Store, profile: string, configuration: Config) {
               ? "completed"
               : "error",
             summary,
+            Exit.hasInterrupts(result) ? "interrupted" : undefined,
           )
           if (Exit.isFailure(result))
             return yield* Effect.fail(

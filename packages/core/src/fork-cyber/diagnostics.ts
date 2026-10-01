@@ -15,6 +15,7 @@ export const Diagnostic = Schema.Struct({
     "evidence",
     "transport",
     "capture",
+    "interruption",
     "internal",
   ]),
   operation: Schema.String,

@@ -116,10 +116,6 @@ const layer = Layer.effect(
       input: unknown,
       context: Tool.Context,
     ) {
-      const execution = yield* execute(tool, input, context).pipe(
-        Effect.map((value) => ({ value })),
-        Effect.catchTag("Tool.Error", (failure) => Effect.succeed({ failure })),
-      )
       const base = {
         tool: name,
         sessionID: context.sessionID,
@@ -128,6 +124,21 @@ const layer = Layer.effect(
         id: context.id,
         input,
       }
+      const execution = yield* execute(tool, input, context).pipe(
+        // fork: finalize interrupted calls without converting cancellation into a tool failure (F-026).
+        Effect.onInterrupt(() =>
+          hooks.trigger("tool", "execute.after", {
+            ...base,
+            status: "error",
+            error: new Tool.Error({
+              message: "Tool execution interrupted; effects remain unknown",
+              metadata: { interrupted: true },
+            }),
+          }),
+        ),
+        Effect.map((value) => ({ value })),
+        Effect.catchTag("Tool.Error", (failure) => Effect.succeed({ failure })),
+      )
       if ("failure" in execution) {
         const afterEvent: PluginHooks.Domains["tool"]["execute.after"] = {
           ...base,

@@ -97,6 +97,7 @@ await Effect.runPromise(
           controls: "target:8443 rejects TLSv1",
           reproduction: "Probe both listeners with the same client and compare negotiated protocols",
           remediation: "Disable legacy TLS versions",
+          impact: "The local TLS service accepts the deprecated protocol in the recorded negotiation",
         },
       })
       const report = {

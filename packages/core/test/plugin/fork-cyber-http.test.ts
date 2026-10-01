@@ -37,6 +37,138 @@ const lab = (handler: http.RequestListener) =>
       ),
   )
 
+test("a primary recon claim blocks body requests before traffic and a validation claim preserves build provenance", async () => {
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const tmp = yield* tmpdirScoped()
+        const store = yield* ForkCyberStore.open(path.join(tmp.path, "http.sqlite"))
+        const requests: string[] = []
+        const server = yield* lab((request, response) => {
+          requests.push(request.method!)
+          response.end("fixture")
+        })
+        const actor = { owner: "owner", session: "owner", agent: "build", manifest }
+        const resolve = () => Effect.succeed(actor)
+        yield* store.coordination.run(actor, {
+          action: "create",
+          key: "recon",
+          asset: server.url,
+          procedure: "Observe fixture",
+          phase: "cyber-recon",
+        })
+        yield* store.coordination.run(actor, { action: "claim", key: "recon", revision: 1 })
+        for (const request of [
+          { url: server.url, method: "POST" as const, body: "<methodCall/>" },
+          { url: server.url, method: "GET" as const, body: "fixture" },
+        ]) {
+          const error = yield* ForkCyberHttp.run(store, resolve, request).pipe(Effect.flip)
+          expect(String(error)).toContain("observation requires GET, HEAD or OPTIONS without a body")
+        }
+        expect(requests).toEqual([])
+        expect(yield* store.executions("owner")).toEqual([])
+        const observed = (yield* ForkCyberHttp.run(store, resolve, { url: server.url }))[0]!
+        yield* store.coordination.run(actor, {
+          action: "complete",
+          key: "recon",
+          revision: 2,
+          outcome: "observed",
+          rationale: "Fixture returned",
+          evidence: [observed.output],
+        })
+        yield* store.coordination.run(actor, {
+          action: "create",
+          key: "validate",
+          asset: server.url,
+          procedure: "Send synthetic fixture body",
+          phase: "cyber-validate",
+          hypothesis: "The fixture accepts the synthetic request",
+        })
+        yield* store.coordination.run(actor, { action: "claim", key: "validate", revision: 1 })
+        const validated = (yield* ForkCyberHttp.run(store, resolve, {
+          url: server.url,
+          method: "POST",
+          body: "fixture",
+        }))[0]!
+        expect(requests).toEqual(["GET", "POST"])
+        expect((yield* store.coordination.get("owner", "validate")).executions).toMatchObject([
+          { id: validated.capture.execution, agent: "build", session: "owner" },
+        ])
+      }),
+    ),
+  )
+})
+
+test("public CORS header observations do not confirm a finding without a demonstrated impact record", async () => {
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const tmp = yield* tmpdirScoped()
+        const store = yield* ForkCyberStore.open(path.join(tmp.path, "http.sqlite"))
+        const server = yield* lab((request, response) => {
+          response.setHeader("Access-Control-Allow-Origin", request.headers.origin ?? "null")
+          response.setHeader("Access-Control-Allow-Credentials", "true")
+          response.end('{"public":"fixture"}')
+        })
+        const actor = { owner: "owner", session: "owner", agent: "build", manifest }
+        yield* store.coordination.run(actor, {
+          action: "create",
+          key: "cors",
+          asset: server.url,
+          phase: "cyber-validate",
+          procedure: "Observe public response CORS headers",
+          hypothesis: "The public fixture reflects Origin with credentials",
+        })
+        yield* store.coordination.run(actor, { action: "claim", key: "cors", revision: 1 })
+        const outputs = yield* Effect.forEach(["https://fixture-origin.test", "null"], (origin) =>
+          ForkCyberHttp.run(store, () => Effect.succeed(actor), { url: server.url, headers: { Origin: origin } }),
+        )
+        const evidence = outputs.flatMap((hops) => hops.map((hop) => hop.output))
+        yield* store.coordination.run(actor, {
+          action: "complete",
+          key: "cors",
+          revision: 2,
+          outcome: "supported",
+          rationale: "Headers reflect Origin; protected authenticated access remains untested",
+          evidence,
+        })
+        const candidate = {
+          id: "cors",
+          revision: 0,
+          title: "Public resource CORS observation",
+          status: "candidate" as const,
+          rationale: "Impact remains unverified",
+          evidence,
+        }
+        yield* store.finding("owner", candidate)
+        const error = yield* store
+          .finding("owner", {
+            ...candidate,
+            revision: 1,
+            status: "confirmed",
+            validation: {
+              task: "cors",
+              asset: server.url,
+              method: "dynamic",
+              identity: "anonymous",
+              expected: "Origin reflected",
+              observed: "Credentials header and reflected Origin on a public body",
+              controls: "Literal null Origin",
+              reproduction: "GET the public fixture with Origin",
+              remediation: "Review protected endpoint behavior before proposing changes",
+            },
+          })
+          .pipe(Effect.flip)
+        expect(String(error)).toContain("demonstrated security impact")
+        const report = yield* store.report("owner")
+        expect(report.findings).toEqual([{ status: "candidate", count: 1 }])
+        expect(report.validation_coverage).toMatchObject({ completed_tasks: 1, tasks_with_confirmation_evidence: 1 })
+        expect(report.limitations.join(" ")).toContain("do not establish authenticated protected-data exposure")
+      }),
+    ),
+  )
+})
+
 test("HTTP lab: two accounts expose the broken control but deny the healthy control and anonymous access", async () => {
   await Effect.runPromise(
     Effect.scoped(
@@ -367,13 +499,14 @@ test("interruption aborts the socket and never records a completed exchange", as
         )!
         expect(JSON.parse((yield* store.readArtifact("owner", String(output.id))).bytes.toString())).toMatchObject({
           diagnostic: {
-            category: "transport",
+            category: "interruption",
             operation: "http_request",
             target_started: true,
             effects: "unknown",
             recovery: "Reconcile this execution before repeating a request.",
           },
         })
+        expect((yield* store.executionsPage("owner")).items[0]?.termination).toBe("interrupted")
       }),
     ),
   )

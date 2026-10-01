@@ -8,6 +8,7 @@ import { BlockList, isIP } from "node:net"
 import { ForkCyberScope } from "./scope.js"
 import { ForkCyberStore } from "./store.js"
 import { ForkCyberDiagnostics } from "./diagnostics.js"
+import { ForkCyberRoles } from "./roles.js"
 
 const Method = Schema.Literals(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
 export const Request = Schema.Struct({
@@ -112,6 +113,24 @@ export const run = (store: Store, resolve: () => Effect.Effect<Assessment, Error
     const hops: { output: string; capture: Capture }[] = []
     for (let hop = 0; ; hop++) {
       const assessment = yield* resolve()
+      const role = yield* store.coordination.role(assessment)
+      if (
+        !ForkCyberRoles.allowed(role, "http_request") ||
+        (ForkCyberRoles.observeOnly(role) &&
+          (!["GET", "HEAD", "OPTIONS"].includes(current.method ?? "GET") || current.body !== undefined))
+      )
+        return yield* Effect.fail(
+          new ForkCyberDiagnostics.Failure({
+            category: "capability",
+            operation: "http_request",
+            message: `Phase ${role} permits only its allowed HTTP operations; observation requires GET, HEAD or OPTIONS without a body`,
+            target_started: false,
+            effects: "not_started",
+            recovery:
+              "Use a bodyless observation request, or create and claim an authorized assessment task for the required phase before sending it.",
+            details: { phase: role, registered_agent: assessment.agent },
+          }),
+        )
       const id = crypto.randomUUID()
       const progress = { target_started: false, response_received: false }
       const requestArtifact = yield* store.start({
@@ -205,17 +224,23 @@ export const run = (store: Store, resolve: () => Effect.Effect<Assessment, Error
       }).pipe(
         Effect.onInterrupt(() =>
           store
-            .finish(assessment.owner, id, "error", {
-              diagnostic: {
-                category: "transport",
-                operation: "http_request",
-                message: "HTTP execution interrupted",
-                target_started: progress.target_started,
-                effects: progress.target_started ? "unknown" : "not_started",
-                recovery: "Reconcile this execution before repeating a request.",
-                details: { execution: id },
+            .finish(
+              assessment.owner,
+              id,
+              "error",
+              {
+                diagnostic: {
+                  category: "interruption",
+                  operation: "http_request",
+                  message: "HTTP execution interrupted",
+                  target_started: progress.target_started,
+                  effects: progress.target_started ? "unknown" : "not_started",
+                  recovery: "Reconcile this execution before repeating a request.",
+                  details: { execution: id },
+                },
               },
-            })
+              "interrupted",
+            )
             .pipe(Effect.asVoid),
         ),
         Effect.result,
