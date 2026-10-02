@@ -11,8 +11,9 @@ test("the update notice and dialog show the human-facing release version", async
   const notice = { type: "available" as const, version: "2.0.19-cyber.2", display: "2.0.19 (Cyber)" }
   const updater: UpdateSource = {
     remote: false,
-    subscribe: async (notify) => {
+    subscribe: (notify) => {
       notify(notice)
+      return () => {}
     },
     check: async () => notice,
     apply: (version) => {
@@ -58,7 +59,7 @@ test("no update notice appears when no release exists", async () => {
   await using state = await tmpdir()
   const updater: UpdateSource = {
     remote: false,
-    subscribe: async () => {},
+    subscribe: () => () => {},
     check: async () => undefined,
     apply: async () => {},
   }

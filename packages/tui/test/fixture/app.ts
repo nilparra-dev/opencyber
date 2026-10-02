@@ -4,8 +4,8 @@ import { Global } from "@opencode/util/global"
 import type { TuiInput } from "../../src/app"
 import type { Config } from "../../src/config"
 import type { UpdateSource } from "../../src/context/update-notification"
-import { createEventStream, createFetch, type FetchHandler } from "./tui-client"
 import { tmpdir } from "./fixture"
+import { createEventStream, createFetch, type FetchHandler } from "./tui-client"
 
 export async function createAppFixture(
   input: {
@@ -19,9 +19,8 @@ export async function createAppFixture(
     updater?: UpdateSource
   } = {},
 ) {
-  // fork: app fixtures must not reuse persisted tabs or model choices (F-018)
-  const state = input.state ? undefined : await tmpdir()
   const { run } = await import("../../src/app")
+  const state = input.state ? undefined : await tmpdir()
   const setup = await createTestRenderer({
     width: input.width ?? 100,
     height: input.height ?? 30,
