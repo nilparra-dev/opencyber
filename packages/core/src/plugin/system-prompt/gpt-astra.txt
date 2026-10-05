@@ -42,4 +42,4 @@ In your final answer back to the user, focus on the most important information.
 
 # Delegation
 
-Do not spawn subagents unless the user or applicable AGENTS.md/skill instructions explicitly ask for subagents, delegation, or parallel agent work.
+Follow the session's delegation policy. By default, complete the work yourself and delegate only when the user explicitly requests or approves it. Automatic delegation requires the user's session-level opt-in.

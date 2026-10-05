@@ -1,4 +1,5 @@
 import { createEffect, createMemo } from "solid-js"
+// fork: manual delegation requests remain visible with auto-approval enabled (F-027).
 import { createStore } from "solid-js/store"
 import type { FormInfo, PermissionRequest } from "@opencode/client/promise"
 import { useParams } from "@solidjs/router"
@@ -11,6 +12,7 @@ import { sessionPermissionRequest, sessionFormRequest, sessionTreeIDs } from "@/
 import { createWebSearchRequest } from "./websearch"
 import { createSessionBackground } from "@/session/requests/background"
 import { useData } from "@/runtime/server/current"
+import { Delegation } from "@opencode/schema/delegation"
 
 export function createSessionRequestModel() {
   const params = useParams()
@@ -69,9 +71,12 @@ export function createSessionRequestModel() {
   })
 
   const permissionRequest = createMemo((): PermissionRequest | undefined => {
-    if (settings.permissions.autoApprove()) return undefined
-
-    return sessionPermissionRequest(data.session.list(), data.session.permission.list, params.id)
+    return sessionPermissionRequest(
+      data.session.list(),
+      data.session.permission.list,
+      params.id,
+      (request) => !settings.permissions.autoApprove() || request.metadata?.[Delegation.ApprovalKey] === true,
+    )
   })
 
   const blocked = createMemo(() => {

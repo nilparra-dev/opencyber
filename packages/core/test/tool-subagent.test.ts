@@ -1,4 +1,5 @@
 import { describe, expect } from "bun:test"
+// fork: opt existing delegation fixtures into automatic mode; test manual admission separately (F-027).
 import { Deferred, Effect, Fiber, Layer, Schema, Stream } from "effect"
 import { LanguageModel } from "@opencode/ai"
 import { OpenAIChat } from "@opencode/ai/protocols"
@@ -33,6 +34,7 @@ import { Plugin } from "@opencode/core/plugin"
 import { PluginHooks } from "@opencode/core/plugin/hooks"
 import { PluginSupervisor } from "@opencode/core/plugin/supervisor"
 import { Permission } from "@opencode/core/permission"
+import { Delegation } from "@opencode/schema/delegation"
 import { SubagentTool } from "@opencode/core/tool/plugin/subagent"
 import { Tool } from "@opencode/core/tool"
 import { tmpdir } from "./fixture/tmpdir"
@@ -165,6 +167,15 @@ const completionIt = testEffect(
 
 const withSubagent = (location: Location.Ref) =>
   Effect.gen(function* () {
+    const sessions = yield* Session.Service
+    yield* Effect.forEach(
+      (yield* sessions.list()).data.filter((session) => session.location.directory === location.directory),
+      (session) =>
+        sessions.setMetadata({
+          sessionID: session.id,
+          metadata: { ...session.metadata, [Delegation.MetadataKey]: "automatic" },
+        }),
+    )
     const locations = yield* LocationServiceMap.Service
     yield* Plugin.Service.use((plugins) => plugins.awaitActivation).pipe(Effect.provide(locations.get(location)))
     yield* Provider.Service.use((providers) =>
@@ -197,6 +208,61 @@ const withSubagent = (location: Location.Ref) =>
   })
 
 describe("SubagentTool", () => {
+  it.live("waits for explicit approval before creating a child in on-demand mode", () =>
+    Effect.acquireRelease(
+      Effect.promise(() => tmpdir()),
+      (dir) => Effect.promise(() => dir[Symbol.asyncDispose]()),
+    ).pipe(
+      Effect.flatMap((dir) =>
+        Effect.gen(function* () {
+          const sessions = yield* Session.Service
+          const parent = yield* sessions.create({
+            location: Location.Ref.make({ directory: AbsolutePath.make(dir.path) }),
+            model: parentModel,
+          })
+          yield* withSubagent(parent.location)
+          yield* sessions.setMetadata({ sessionID: parent.id, metadata: { [Delegation.MetadataKey]: "manual" } })
+          const locations = yield* LocationServiceMap.Service
+          yield* Effect.gen(function* () {
+            const registry = yield* Tool.Service
+            const permissions = yield* Permission.Service
+            const bus = yield* Bus.Service
+            const asked = yield* Deferred.make<Permission.Request>()
+            yield* bus.subscribe(Permission.Event.Asked).pipe(
+              Stream.take(1),
+              Stream.runForEach((event) => Deferred.succeed(asked, event.data)),
+              Effect.forkScoped({ startImmediately: true }),
+            )
+            const fiber = yield* executeTool(registry, {
+              sessionID: parent.id,
+              ...toolIdentity,
+              call: {
+                type: "tool-call",
+                id: "manual-review",
+                name: SubagentTool.name,
+                input: { agent: "reviewer", description: "Review this change", prompt: "Review the fixture only" },
+              },
+            }).pipe(Effect.forkScoped)
+            const request = yield* Effect.raceFirst(
+              Deferred.await(asked),
+              Fiber.join(fiber).pipe(
+                Effect.flatMap((result) => Effect.die(`Tool completed before approval: ${JSON.stringify(result)}`)),
+              ),
+            )
+            expect(request.metadata).toMatchObject({
+              [Delegation.ApprovalKey]: true,
+              prompt: "Review the fixture only",
+            })
+            expect((yield* sessions.list({ parentID: parent.id })).data).toEqual([])
+            yield* permissions.reply({ requestID: request.id, reply: "once" })
+            expect(yield* Fiber.join(fiber)).toMatchObject({ status: "completed" })
+            expect((yield* sessions.list({ parentID: parent.id })).data).toHaveLength(1)
+          }).pipe(Effect.provide(locations.get(parent.location)))
+        }),
+      ),
+    ),
+  )
+
   completionIt.live("admits one durable completion across live delivery and restart replay", () =>
     Effect.acquireRelease(
       Effect.promise(() => tmpdir()),

@@ -1,8 +1,10 @@
 import { createEffect, onCleanup } from "solid-js"
+// fork: generic auto-approval does not authorize manual delegations (F-027).
 import type { PermissionRequest } from "@opencode/client/promise"
 import type { Data } from "@opencode/client/solid"
 import type { ServerSDK } from "@/runtime/server/client"
 import { useSettings } from "@/settings/model"
+import { Delegation } from "@opencode/schema/delegation"
 
 const respondedLimit = 1000
 const retryLimit = 2
@@ -110,6 +112,7 @@ export function createPermissionAutoApprover(input: { sdk: ServerSDK; data: Data
   }
 
   function approve(permission: PermissionRequest, attempt = 0) {
+    if (permission.metadata?.[Delegation.ApprovalKey] === true) return
     // enabled() guards the retry timer path: the user may disable the setting
     // between a failed reply and its scheduled retry.
     if (state.disposed || !enabled() || state.responded.has(permission.id)) return

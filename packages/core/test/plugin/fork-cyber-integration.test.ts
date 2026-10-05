@@ -67,7 +67,10 @@ const manifest = {
 const project = Effect.gen(function* () {
   const tmp = yield* tmpdirScoped()
   const sessions = yield* Session.Service
-  const root = yield* sessions.create({ location: { directory: AbsolutePath.make(tmp.path) } })
+  const root = yield* sessions.create({
+    location: { directory: AbsolutePath.make(tmp.path) },
+    metadata: { "opencyber.delegation": "automatic" },
+  })
   const child = yield* sessions.create({ parentID: root.id })
   const locations = yield* LocationServiceMap.Service
   return { root, child, directory: tmp.path, provide: Effect.provide(locations.get(root.location)) }
@@ -104,6 +107,34 @@ const context = Effect.fn(function* (
   })
   return event.system.map((part) => part.text).join("\n")
 })
+
+it.live("stores the chosen delegation mode and applies it to context, compaction and generation", () =>
+  Effect.gen(function* () {
+    const env = yield* project
+    const sessions = yield* Session.Service
+    yield* sessions.setMetadata({ sessionID: env.root.id, metadata: { operator: "fixture" } })
+    yield* Effect.gen(function* () {
+      const plugins = yield* Plugin.Service
+      yield* plugins.awaitActivation
+      for (const kind of ["context", "compaction", "generate"] as const) {
+        expect(yield* context(env.root.id, kind)).toContain("Delegation is on demand")
+      }
+      yield* sessions.command({ sessionID: env.root.id, command: "subagents", text: "automatic" })
+      expect((yield* sessions.get(env.root.id)).metadata).toEqual({
+        operator: "fixture",
+        "opencyber.delegation": "automatic",
+      })
+      const child = yield* sessions.create({ parentID: env.root.id })
+      expect(child.metadata).toEqual((yield* sessions.get(env.root.id)).metadata)
+      for (const kind of ["context", "compaction", "generate"] as const) {
+        expect(yield* context(env.root.id, kind)).toContain("user enabled automatic delegation")
+      }
+      yield* sessions.command({ sessionID: env.root.id, command: "subagents", text: "manual" })
+      expect(yield* context(env.root.id)).toContain("Delegation is on demand")
+      expect((yield* sessions.get(env.root.id)).metadata?.operator).toBe("fixture")
+    }).pipe(env.provide)
+  }),
+)
 
 it.live("interrupted native subagent calls close evidence without attributing failure to the provider", () =>
   Effect.gen(function* () {

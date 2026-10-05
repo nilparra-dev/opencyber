@@ -1,4 +1,5 @@
 export * as AgentPlugin from "./agent.js"
+// fork: describe optional workers without encouraging unsolicited delegation (F-027).
 
 import { define } from "@opencode/plugin/effect/plugin"
 import { Effect } from "effect"
@@ -94,7 +95,7 @@ export const Plugin = define({
       editor.update(Agent.ID.make("general"), (item) => {
         item.name = Agent.Name.make("General")
         item.description =
-          "General-purpose agent for researching complex questions and executing multi-step tasks. Use this agent to execute multiple units of work in parallel."
+          "Optional general-purpose worker for a delegated research or implementation task. Use only when requested or authorized by the session's delegation policy."
         item.mode = "subagent"
         item.permissions.push(
           { action: "question", resource: "*", effect: "deny" },
@@ -108,7 +109,7 @@ export const Plugin = define({
         )
         item.name = Agent.Name.make("Explore")
         item.description =
-          'Fast agent specialized for exploring codebases. Use this when you need to quickly find files by patterns (eg. "src/components/**/*.tsx"), search code for keywords (eg. "API endpoints"), or answer questions about the codebase (eg. "how do API endpoints work?"). When calling this agent, specify the desired thoroughness level: "quick" for basic searches, "medium" for moderate exploration, or "very thorough" for comprehensive analysis across multiple locations and naming conventions.'
+          'Optional worker for delegated codebase exploration. Ordinary file and keyword searches belong to the primary agent. Use only when requested or authorized by the session policy. Specify thoroughness: "quick", "medium", or "very thorough".'
         item.system = PROMPT_EXPLORE
         item.mode = "subagent"
         item.permissions.push(

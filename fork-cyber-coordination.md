@@ -4,6 +4,16 @@
 
 ## Work contract
 
+The primary agent can investigate, validate and report in the same session. A phase records the kind of work and its permissions; it does not require a separate agent. Specialized workers remain optional, and validation by the primary is not an independent review.
+
+Delegation defaults to **On demand**. The primary works alone unless the user requests delegation or accepts a concrete proposal. Each model-owned delegation requires approval for that invocation, including when generic tool auto-approval is enabled. Approval does not enable later delegations or create a project-wide grant. Explicit user commands can launch a worker while still respecting configured agent permissions.
+
+Noninteractive `run --auto` cannot supply manual delegation approval. It rejects those requests with feedback so the primary can continue the work directly. ACP offers only approval for the current delegation, without an "Always allow" option.
+
+Use `/subagents` in the TUI to choose **On demand** or **Automatic** for the current session. The command API also accepts `subagents` with text `manual` or `automatic`. The choice is stored in session metadata, survives reopening and is inherited by new child sessions. Automatic mode permits useful independent tasks and reviews, while ordinary searches and sequential phases stay with the primary. It preserves tool permissions and the configured subagent depth limit.
+
+Zen free models can reject restricted tool configurations with `FreeTierError`. OpenCyber reports this as request incompatibility, retains the response and stops identical retries. Selecting another model requires the user's choice; the rejection does not justify adding shell access to a restricted role.
+
 Create one stable key per intended unit of work. Include the asset, procedure and assessment identity in the naming convention used by the coordinating session. Read existing tasks before creating more work. A repeated create with the same key and fields returns the existing task; conflicting fields fail. Keys are exact and case-sensitive. The system does not recognize equivalent prose or prevent someone from describing the same work under two different keys.
 
 The primary session creates tasks and delegates their keys. The executing child claims its task itself. Creating a task does not launch a subagent or send traffic. Task asset descriptions do not add targets to the engagement scope.

@@ -1,4 +1,5 @@
 export * as SessionRunnerRetry from "./retry.js"
+// fork: incompatible free-tier requests must not repeat unchanged (F-028).
 
 import { AIError, isRetryable } from "@opencode/ai"
 import { Agent } from "@opencode/schema/agent"
@@ -68,6 +69,7 @@ export const policy = (sessionID: SessionSchema.ID) =>
     let timeouts = 0
     return (input: Input) =>
       Effect.gen(function* () {
+        if (input.error.type === "provider.incompatible-request") return { retry: false as const }
         const now = yield* Clock.currentTimeMillis
         const next = yield* step(now, input).pipe(Pull.catchDone(() => Effect.succeed(undefined)))
         if (!next) return { retry: false as const }

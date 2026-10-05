@@ -1,4 +1,5 @@
 export * as Permission from "./permission.js"
+// fork: session delegation approval is independent of saved tool grants (F-027).
 
 import { makeLocationNode } from "@opencode/util/effect/app-node"
 import { Context, Deferred, Effect, Layer, Schema } from "effect"
@@ -12,6 +13,8 @@ import { SessionStore } from "./session/store.js"
 import { Wildcard } from "./util/wildcard.js"
 import { PermissionSaved } from "./permission/saved.js"
 import { PluginHooks } from "./plugin/hooks.js"
+import { Delegation } from "@opencode/schema/delegation"
+import { ForkCyberDelegation } from "./fork-cyber/delegation.js"
 
 const PermissionEffect = Permission.Effect
 export { PermissionEffect as Effect }
@@ -185,17 +188,31 @@ const layer = Layer.effect(
         source: input.source,
         effect,
       })
-      return { effect: event.effect, message: event.message, rules: all }
+      // A tool invocation is model-owned; a slash command is an explicit user action.
+      // Saved grants and generic auto-approval must not enable delegation for a session.
+      const manual =
+        process.env.OPENCYBER_VANILLA !== "1" &&
+        input.action === "subagent" &&
+        input.source?.type === "tool" &&
+        ForkCyberDelegation.mode((yield* sessions.get(input.sessionID))?.metadata) === "manual"
+      return {
+        effect: manual && event.effect !== "deny" ? ("ask" as const) : event.effect,
+        message: manual
+          ? "Approve this delegation only, or enable automatic subagents for this session."
+          : event.message,
+        rules: all,
+        manual,
+      }
     })
 
-    function request(input: AssertInput, message?: string): Request {
+    function request(input: AssertInput, message?: string, manual = false): Request {
       return {
         id: input.id ?? ID.create(),
         sessionID: input.sessionID,
         action: input.action,
         resources: input.resources,
-        save: input.save,
-        metadata: input.metadata,
+        save: manual ? undefined : input.save,
+        metadata: manual ? { ...input.metadata, [Delegation.ApprovalKey]: true } : input.metadata,
         source: input.source,
         message,
       }
@@ -223,7 +240,7 @@ const layer = Layer.effect(
     const ask = Effect.fn("Permission.ask")(function* (input: AssertInput) {
       if (closed) return { id: input.id ?? ID.create(), effect: "deny" as const }
       const result = yield* evaluateInput(input)
-      const value = request(input, result.message)
+      const value = request(input, result.message, result.manual)
       if (result.effect === "ask") yield* create(value, input.agent)
       return { id: value.id, effect: result.effect }
     })
@@ -243,7 +260,7 @@ const layer = Layer.effect(
               })
             }
             if (result.effect === "allow") return
-            const item = yield* create(request(input, result.message), input.agent)
+            const item = yield* create(request(input, result.message, result.manual), input.agent)
             return yield* restore(Deferred.await(item.deferred)).pipe(
               // Deliberate defect tunnel: leaves wrap execution in blanket `mapError`, which
               // must not convert a user's decline into model-facing tool output. The decline

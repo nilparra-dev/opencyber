@@ -1,4 +1,5 @@
 import { Locale } from "./locale"
+// fork: display the concrete task before a manual delegation is approved (F-027).
 import { canonicalToolName, finiteNumber, webSearchProviderLabel } from "./tool-display"
 
 type Dict = Record<string, unknown>
@@ -73,12 +74,15 @@ export function permissionPresentation(
   }
 
   if (action === "subagent") {
-    const agent = text(input.agent) || "general"
-    const description = text(input.description)
+    const agent = text(input.agent) || text(metadata.agent) || "general"
+    const description = text(input.description) || text(metadata.description)
     return {
       icon: "#",
       title: `${Locale.titlecase(agent)} Subagent`,
-      lines: description ? [`◉ ${description}`] : [],
+      lines: [
+        ...(description ? [`◉ ${description}`] : []),
+        ...(text(input.prompt) || text(metadata.prompt) ? [text(input.prompt) || text(metadata.prompt)] : []),
+      ],
     }
   }
 

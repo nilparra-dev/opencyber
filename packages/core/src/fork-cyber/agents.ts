@@ -153,7 +153,7 @@ export function register(editor: AgentEditor) {
   editor.update(Agent.ID.make("cyber-validate"), (agent) => {
     agent.name = Agent.Name.make("Cyber Validate")
     agent.description =
-      "Validation phase of the engagement. Reproduces a reported finding from scratch and confirms or rejects it with raw evidence. Use before a finding is considered reportable."
+      "Optional independent validation of a reported finding with raw evidence. Delegate when requested or authorized by the session policy; the primary can perform validation directly."
     agent.mode = "subagent"
     agent.system = VALIDATE + COORDINATION + "\nRun commands only through kali_run. Host shell access is unavailable."
     agent.permissions.push(...ForkCyberRoles.permissions("cyber-validate"))
