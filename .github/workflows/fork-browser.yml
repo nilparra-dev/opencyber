@@ -40,6 +40,6 @@ jobs:
       - name: Test real Chromium and a compiled capture client
         run: |
           export OPENCYBER_TEST_BROWSER="$(bun -e 'import { chromium } from "playwright-core"; console.log(chromium.executablePath())')"
-          bun test test/plugin/fork-cyber-browser.test.ts
+          bun test test/plugin/fork-cyber-browser.test.ts test/plugin/fork-cyber-web-plan.test.ts
           bun build --compile --format=esm --minify --bytecode --external 'chromium-bidi/*' test/fixture/fork-cyber-browser-smoke.ts --outfile /tmp/opencyber-browser-smoke
           /tmp/opencyber-browser-smoke

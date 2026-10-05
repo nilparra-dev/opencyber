@@ -58,6 +58,7 @@ type Window = {
   requests: string[]
   issues: string[]
   admitted: number
+  blockedConnections: number
 }
 type IdentityState = { context: BrowserContext; page: Page; window?: Window; blocked: number }
 const Paused = Schema.Struct({
@@ -122,6 +123,7 @@ export const make = Effect.fn(function* (store: ForkCyberHttp.Store) {
           requests: [],
           issues: [],
           admitted: 0,
+          blockedConnections: 0,
         }
         const artifacts: { kind: string; artifact: string }[] = []
         const perform = async (signal: AbortSignal) => {
@@ -149,9 +151,12 @@ export const make = Effect.fn(function* (store: ForkCyberHttp.Store) {
                 proxy ??= Bun.serve({
                   hostname: "127.0.0.1",
                   port: 0,
-                  fetch: () => {
+                  fetch: (request) => {
                     const active = [...identities.values()].find((identity) => identity.window)?.window
-                    if (active && active.issues.length < 64)
+                    // CONNECT also carries speculative browser preconnections, without an HTTP request.
+                    // Reject every tunnel; context request failures below still invalidate real requests.
+                    if (active && request.method === "CONNECT") active.blockedConnections++
+                    if (active && request.method !== "CONNECT" && active.issues.length < 64)
                       active.issues.push("Uncaptured HTTP reached the rejecting proxy")
                     return new Response("Uncaptured browser traffic is blocked", { status: 403 })
                   },
@@ -248,7 +253,7 @@ export const make = Effect.fn(function* (store: ForkCyberHttp.Store) {
               page.on("dialog", (dialog) => {
                 void dialog.dismiss().catch(() => {})
               })
-              page.on("requestfailed", (request) => {
+              context.on("requestfailed", (request) => {
                 if (identity.window && identity.window.issues.length < 64)
                   identity.window.issues.push(
                     `Browser request failed: ${request.failure()?.errorText ?? "unknown failure"}`,
@@ -371,6 +376,7 @@ export const make = Effect.fn(function* (store: ForkCyberHttp.Store) {
                 "streaming",
               ],
               issues: window.issues,
+              blocked_uncaptured_connections: window.blockedConnections,
               result: Exit.isSuccess(result) ? result.value : { error: Cause.pretty(result.cause) },
             }
             const rows = yield* store.finish(

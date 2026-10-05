@@ -133,6 +133,7 @@ browserTest(
           expect(JSON.stringify(healthy.result)).toContain("csp: executed")
           for (const observation of [allowed, denied, persisted, isolated, blocked, healthy]) {
             expect(observation.action_status).toBe("completed")
+            expect(observation.issues).toEqual([])
             expect(observation.completion_evidence).toHaveLength(1)
             expect((yield* env.store.readArtifact(env.actor.owner, observation.completion_evidence[0]!)).status).toBe(
               "completed",
