@@ -74,6 +74,8 @@ import { useEpilogue } from "../../context/epilogue"
 import { normalizePath } from "../../util/path"
 import { PermissionPrompt } from "./permission"
 import { FormPrompt } from "./form"
+import { Delegation } from "@opencode/schema/delegation"
+// fork: persist delegation mode and keep manual approvals outside generic autoaccept (F-027).
 import { DialogExportOptions } from "../../ui/dialog-export-options"
 // fork: one formatter preserves privacy and analysis metadata in both formats (F-023).
 import { formatTranscript } from "../../fork-cyber-export"
@@ -197,7 +199,11 @@ export function Session(props: {
       (sessionID) => data.session.permission.list(sessionID) ?? [],
     )
   })
-  const promptedPermissions = createMemo(() => (local.permission.mode === "autoaccept" ? [] : permissions()))
+  const promptedPermissions = createMemo(() =>
+    permissions().filter(
+      (request) => local.permission.mode !== "autoaccept" || request.metadata?.[Delegation.ApprovalKey] === true,
+    ),
+  )
   const forms = createMemo(() => {
     const global = data.session.form.list("global", location()) ?? []
     if (session()?.parentID) return global
@@ -254,6 +260,7 @@ export function Session(props: {
   createEffect(() => {
     if (local.permission.mode !== "autoaccept") return
     permissions().forEach((request) => {
+      if (request.metadata?.[Delegation.ApprovalKey] === true) return
       if (autoApproved.has(request.id)) return
       autoApproved.add(request.id)
       void data.session.permission
@@ -887,6 +894,37 @@ export function Session(props: {
   ]
 
   const baseCommands = createMemo(() => [
+    {
+      title: `Subagents: ${session()?.metadata?.[Delegation.MetadataKey] === "automatic" ? "automatic" : "on demand"}`,
+      id: "session.subagents",
+      group: "Session",
+      slash: { name: "subagents" },
+      run: () => {
+        dialog.replace(() => (
+          <DialogSelect
+            title="Subagents for this session"
+            current={session()?.metadata?.[Delegation.MetadataKey] === "automatic" ? "automatic" : "manual"}
+            options={[
+              {
+                title: "On demand",
+                value: "manual",
+                description: "Primary agent by default. Approve each delegation.",
+              },
+              { title: "Automatic", value: "automatic", description: "Allow useful independent tasks and reviews." },
+            ]}
+            onSelect={(option) => {
+              void client.api.session
+                .update({
+                  sessionID: route.sessionID,
+                  metadata: { ...session()?.metadata, [Delegation.MetadataKey]: option.value },
+                })
+                .then(() => dialog.clear())
+                .catch((error) => toast.error(error))
+            }}
+          />
+        ))
+      },
+    },
     {
       title: "Share session",
       id: "session.share",
@@ -2584,8 +2622,8 @@ function useToolPermission(part: () => SessionMessageAssistantTool | undefined) 
   const data = useData()
   const local = useLocal()
   return createMemo(() => {
-    if (local.permission.mode === "autoaccept") return false
     const request = data.session.permission.list(ctx.sessionID)?.[0]
+    if (local.permission.mode === "autoaccept" && request?.metadata?.[Delegation.ApprovalKey] !== true) return false
     return request?.source?.type === "tool" && request.source.id === part()?.id
   })
 }

@@ -6,6 +6,8 @@ import {
   type SessionMessageInfo,
 } from "@opencode/client/promise"
 import { runNonInteractivePrompt } from "../../src/run/noninteractive"
+import { Delegation } from "@opencode/schema/delegation"
+// fork: auto mode still rejects manual delegation requests without aborting the work (F-027).
 
 type V2Event = EventSubscribeOutput
 type FormInfo = Extract<V2Event, { type: "form.created" }>["data"]["form"]
@@ -218,6 +220,8 @@ async function run(input: {
   messages?: (inboxID: string) => SessionMessageInfo[]
   wait?: () => Promise<void>
   terminalDelay?: number
+  auto?: boolean
+  reply?: (input: { sessionID: string; requestID: string; decision: string; message?: string }) => Promise<void>
 }) {
   const sdk = OpenCode.make({ baseUrl: "https://opencode.test" })
   const values: V2Event[] = [{ id: "evt_connected", type: "server.connected", data: {} }]
@@ -241,6 +245,7 @@ async function run(input: {
   })()
   spyOn(sdk.event, "subscribe").mockImplementation(() => stream)
   spyOn(sdk.permission, "list").mockImplementation(() => ok([]) as never)
+  spyOn(sdk.permission, "reply").mockImplementation((request) => input.reply?.(request) ?? ok(undefined))
   spyOn(sdk.session.form, "list").mockImplementation(
     (request) => ok(input.pendingForms?.filter((item) => item.sessionID === request.sessionID) ?? []) as never,
   )
@@ -276,7 +281,7 @@ async function run(input: {
     files: [],
     thinking: false,
     format: input.format ?? "default",
-    auto: false,
+    auto: input.auto ?? false,
     attached: input.attached ?? false,
     compatibility: input.compatibility,
     renderTool: input.renderTool ?? (() => Promise.resolve()),
@@ -313,6 +318,39 @@ afterEach(() => {
 })
 
 describe("runNonInteractivePrompt", () => {
+  test("--auto rejects manual delegation while continuing to approve ordinary tools", async () => {
+    const replies: { requestID: string; decision: string; message?: string }[] = []
+    await capture({
+      auto: true,
+      reply: async (request) => {
+        replies.push(request)
+      },
+      turn: (messageID) => [
+        prompted(messageID),
+        ...["subagent", "shell"].map(
+          (action): V2Event => ({
+            id: `evt_${action}`,
+            created: 1,
+            type: "permission.asked",
+            location,
+            data: {
+              id: `per_${action}`,
+              sessionID: "ses_1",
+              action,
+              resources: ["*"],
+              ...(action === "subagent" ? { metadata: { [Delegation.ApprovalKey]: true } } : {}),
+            },
+          }),
+        ),
+        settled(),
+      ],
+    })
+    expect(replies).toMatchObject([
+      { requestID: "per_subagent", decision: "reject", message: expect.any(String) },
+      { requestID: "per_shell", decision: "once" },
+    ])
+  })
+
   test("keeps formatted tool output and compact tool metadata in JSON", async () => {
     const output = await capture({ format: "json", turn: successfulGrep })
     const events = output.stdout
@@ -430,7 +468,10 @@ describe("runNonInteractivePrompt", () => {
     }
     expect(sdk.session.form.cancel).toHaveBeenCalledWith({ sessionID: "global", formID: "frm_live" }, globalOptions)
     expect(sdk.session.form.cancel).toHaveBeenCalledWith({ sessionID: "ses_1", formID: "frm_pending" })
-    expect(sdk.session.form.cancel).toHaveBeenCalledWith({ sessionID: "global", formID: "frm_pending_global" }, globalOptions)
+    expect(sdk.session.form.cancel).toHaveBeenCalledWith(
+      { sessionID: "global", formID: "frm_pending_global" },
+      globalOptions,
+    )
     expect(sdk.form.list).toHaveBeenCalledWith({
       location: { directory: "/work tree" },
     })
@@ -445,7 +486,10 @@ describe("runNonInteractivePrompt", () => {
     })
     expect(sdk.session.form.cancel).toHaveBeenCalledWith({ sessionID: "ses_1", formID: "frm_pending" })
     expect(sdk.form.list).not.toHaveBeenCalled()
-    expect(sdk.session.form.cancel).not.toHaveBeenCalledWith({ sessionID: "global", formID: "frm_live" }, expect.anything())
+    expect(sdk.session.form.cancel).not.toHaveBeenCalledWith(
+      { sessionID: "global", formID: "frm_live" },
+      expect.anything(),
+    )
     expect(sdk.session.form.cancel).not.toHaveBeenCalledWith(
       { sessionID: "global", formID: "frm_pending_global" },
       expect.anything(),

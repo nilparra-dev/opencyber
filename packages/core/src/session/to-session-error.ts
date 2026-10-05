@@ -1,4 +1,5 @@
 import { AIError, ToolFailure, type FinishReasonDetails } from "@opencode/ai"
+// fork: distinguish Zen free-tier request incompatibility from invalid credentials (F-028).
 import { Tool } from "@opencode/schema/tool"
 import { SessionError } from "@opencode/schema/session-error"
 import { Permission } from "../permission.js"
@@ -6,6 +7,7 @@ import { Integration } from "../integration.js"
 import { AgentNotFoundError, StepFailedError } from "./error.js"
 import { ModelResolver } from "../model-resolver.js"
 import { SessionRunnerModel } from "./runner/model.js"
+import { ForkCyberProviderError } from "../fork-cyber/provider-error.js"
 
 const tokenSharingMessages = {
   subscription_sharing_user_not_eligible:
@@ -27,6 +29,8 @@ const tokenSharingMessages = {
 
 export function toSessionError(cause: unknown): SessionError.Error {
   if (cause instanceof AIError) {
+    const incompatible = ForkCyberProviderError.incompatibility(cause.reason)
+    if (incompatible) return incompatible
     switch (cause.reason._tag) {
       case "RateLimit":
         return providerError("provider.rate-limit", cause.reason)

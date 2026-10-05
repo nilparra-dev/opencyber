@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+// fork: verify session opt-in and one-invocation delegation approvals (F-027).
 import { Cause, Deferred, Effect, Fiber, Layer } from "effect"
 import { Agent } from "@opencode/core/agent"
 import { Database } from "@opencode/core/database/database"
@@ -19,6 +20,7 @@ import { ShellParse } from "@opencode/core/shell/parse"
 import { eq } from "drizzle-orm"
 import { location } from "./fixture/location"
 import { testEffect } from "./lib/effect"
+import { Delegation } from "@opencode/schema/delegation"
 
 const current = Layer.succeed(
   Location.Service,
@@ -98,6 +100,61 @@ function waitForRequest(input: Partial<Permission.AssertInput> = {}) {
 }
 
 describe("Permission", () => {
+  it.effect("requires a fresh manual delegation approval despite allowed and saved rules", () =>
+    Effect.gen(function* () {
+      yield* setup([{ action: "*", resource: "*", effect: "allow" }])
+      const saved = yield* PermissionSaved.Service
+      yield* saved.add({ projectID: Project.ID.global, action: "subagent", resources: ["reviewer"] })
+      const service = yield* Permission.Service
+      const input = assertion({
+        action: "subagent",
+        resources: ["reviewer"],
+        save: ["reviewer"],
+        source: { type: "tool", messageID: "msg_request", id: "call_delegate" },
+        metadata: { description: "Review the change" },
+      })
+      expect(yield* service.ask(input)).toMatchObject({ effect: "ask" })
+      expect(yield* service.get(input.id)).toMatchObject({
+        metadata: { description: "Review the change", [Delegation.ApprovalKey]: true },
+      })
+      expect((yield* service.get(input.id))?.save).toBeUndefined()
+      yield* service.reply({ requestID: input.id, reply: "always" })
+      expect(yield* service.ask({ ...input, id: Permission.ID.create() })).toMatchObject({ effect: "ask" })
+      expect(
+        (yield* saved.list({ projectID: Project.ID.global })).filter((item) => item.action === "subagent"),
+      ).toHaveLength(1)
+    }),
+  )
+
+  it.effect("persists automatic delegation per session while preserving denials and explicit commands", () =>
+    Effect.gen(function* () {
+      yield* setup([{ action: "*", resource: "*", effect: "allow" }])
+      const service = yield* Permission.Service
+      const input = assertion({
+        action: "subagent",
+        resources: ["reviewer"],
+        source: { type: "tool", messageID: "msg_request", id: "call_delegate" },
+      })
+      const db = (yield* Database.Service).db
+      yield* db
+        .update(SessionTable)
+        .set({ metadata: { [Delegation.MetadataKey]: "automatic" } })
+        .where(eq(SessionTable.id, input.sessionID))
+        .run()
+      expect(yield* service.ask(input)).toMatchObject({ effect: "allow" })
+      yield* setRules([{ action: "subagent", resource: "*", effect: "deny" }])
+      expect(yield* service.ask(input)).toMatchObject({ effect: "deny" })
+      yield* setRules([{ action: "*", resource: "*", effect: "allow" }])
+      yield* db
+        .update(SessionTable)
+        .set({ metadata: { [Delegation.MetadataKey]: "manual" } })
+        .where(eq(SessionTable.id, input.sessionID))
+        .run()
+      expect(yield* service.ask({ ...input, source: undefined })).toMatchObject({ effect: "allow" })
+      expect(yield* service.ask(input)).toMatchObject({ effect: "ask" })
+    }),
+  )
+
   it.effect("returns the evaluated effect and only queues prompts", () =>
     Effect.gen(function* () {
       yield* setup([{ action: "read", resource: "*", effect: "allow" }])

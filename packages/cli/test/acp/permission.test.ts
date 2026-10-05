@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test"
 import type { AnyRequest, CreateElicitationResponse, RequestPermissionResponse } from "@agentclientprotocol/sdk"
 import type { OpenCodeEventEncoded } from "@opencode/protocol/groups/event"
 import { createTwoFilesPatch } from "diff"
+import { Delegation } from "@opencode/schema/delegation"
+// fork: manual delegation approvals do not offer a persistent grant (F-027).
 import fs from "node:fs/promises"
 import path from "node:path"
 import { tmpdir } from "../fixture/tmpdir"
@@ -22,6 +24,24 @@ import {
 const allowOnce = () => ({ outcome: { outcome: "selected", optionId: "once" } }) as const
 
 describe("acp permissions over the wire", () => {
+  test.each(["once", "always"])("limits manual delegation approval when the client selects %s", async (selected) => {
+    await using acp = await startSession({
+      onPrompt: ({ sessionID, id }) =>
+        turn(
+          sessionID,
+          id,
+          permissionAsked(sessionID, "perm_delegate", {
+            action: "subagent",
+            metadata: { [Delegation.ApprovalKey]: true, agent: "general", description: "Review the change" },
+          }),
+        ),
+      permission: () => ({ outcome: { outcome: "selected", optionId: selected } }),
+    })
+    await acp.prompt(acp.sessionId, "hello")
+    expect(acp.permissions[0]?.options.map((option) => option.optionId)).toEqual(["once", "reject"])
+    expect(decisions(acp)).toEqual([["perm_delegate", selected === "once" ? "once" : "reject"]])
+  })
+
   test("forwards allow-once and allow-always selections to the server", async () => {
     const selections: Record<string, () => RequestPermissionResponse> = {
       call_once: allowOnce,

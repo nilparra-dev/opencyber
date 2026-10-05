@@ -8,6 +8,8 @@ import type {
   ToolContent,
 } from "@opencode/client/promise"
 import { SessionMessage } from "@opencode/schema/session-message"
+import { Delegation } from "@opencode/schema/delegation"
+// fork: --auto cannot approve model-owned delegations in manual mode (F-027).
 import { EOL } from "node:os"
 import { readFile } from "node:fs/promises"
 import { nonEmptyToolContent, toolOutputText, type MiniToolPart } from "@opencode/tui/mini/tool"
@@ -160,11 +162,13 @@ export async function runNonInteractivePrompt(input: Input) {
     sessionID: string
     action: string
     resources: ReadonlyArray<string>
+    metadata?: Record<string, unknown>
   }) => {
     // Nobody can approve here. Outside V1 compatibility, reject with feedback so the tool fails
     // as ordinary model-visible output and the model continues without the action.
-    const continuing = !input.auto && input.compatibility !== "v1"
-    if (!input.auto) {
+    const approved = input.auto && request.metadata?.[Delegation.ApprovalKey] !== true
+    const continuing = !approved && input.compatibility !== "v1"
+    if (!approved) {
       if (!continuing) permissionRejected = true
       UI.println(
         UI.Style.TEXT_WARNING_BOLD + "!",
@@ -176,11 +180,11 @@ export async function runNonInteractivePrompt(input: Input) {
       .reply({
         sessionID: request.sessionID,
         requestID: request.id,
-        decision: input.auto ? "once" : "reject",
+        decision: approved ? "once" : "reject",
         ...(continuing ? { message: PERMISSION_REJECTED_FEEDBACK } : {}),
       })
       .catch(() => {})
-    if (!input.auto && !continuing) {
+    if (!approved && !continuing) {
       await input.client.session.interrupt({ sessionID: input.sessionID }).catch(() => {})
     }
   }

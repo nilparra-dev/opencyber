@@ -1,4 +1,5 @@
 export * as ConfigCommandPlugin from "./command.js"
+// fork: explicit child commands still respect the caller's agent permissions (F-027).
 
 import { define } from "@opencode/plugin/effect/plugin"
 import { Info, type Entry } from "@opencode/schema/config"
@@ -13,6 +14,7 @@ import { Agent } from "../../agent.js"
 import { Config } from "../../config.js"
 import { Location } from "../../location.js"
 import { Session } from "../../session.js"
+import { Permission } from "../../permission.js"
 import { SubagentJob } from "../../session/subagent-job.js"
 import { ShellSelect } from "../../shell/select.js"
 import { FSUtil } from "@opencode/util/fs-util"
@@ -36,6 +38,7 @@ export const Plugin = define({
     const shell = yield* ShellSelect.Service
     const sessions = yield* Session.Service
     const agents = yield* Agent.Service
+    const permission = yield* Permission.Service
     const subagents = yield* SubagentJob.make
     const load = Effect.fn("ConfigCommandPlugin.load")(function* () {
       return yield* Effect.forEach(yield* config.entries(), loadEntry).pipe(Effect.map((documents) => documents.flat()))
@@ -98,6 +101,13 @@ export const Plugin = define({
                 if (subagent ?? commandAgent?.mode === "subagent") {
                   const parent = yield* sessions.get(input.sessionID)
                   const selected = yield* agents.select(agent ?? parent.agent)
+                  // This path is invoked by a user command, but agent permissions still apply.
+                  yield* permission.assert({
+                    action: "subagent",
+                    resources: [selected.id],
+                    sessionID: parent.id,
+                    agent: parent.agent,
+                  })
                   const child = yield* sessions.create({
                     parentID: parent.id,
                     title: command.description ?? name,

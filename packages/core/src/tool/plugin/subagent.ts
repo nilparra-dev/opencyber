@@ -1,4 +1,5 @@
 export * as SubagentTool from "./subagent.js"
+// fork: expose the concrete delegation task for manual approval (F-027).
 
 import { ToolFailure } from "@opencode/ai"
 import type { Context } from "@opencode/plugin/effect/plugin"
@@ -140,6 +141,7 @@ export const Plugin = {
                   action: name,
                   resources: [agent.id],
                   save: [agent.id],
+                  metadata: { description: input.description, prompt: input.prompt, agent: agent.id },
                   sessionID: context.sessionID,
                   agent: context.agent,
                   source: {

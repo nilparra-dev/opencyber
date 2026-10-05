@@ -1,4 +1,6 @@
 import type { PermissionOption } from "@agentclientprotocol/sdk"
+import { Delegation } from "@opencode/schema/delegation"
+// fork: manual delegation approval applies only to this invocation (F-027).
 import type { OpenCodeClient, OpenCodeEvent } from "@opencode/client/effect"
 import { FileDiff } from "@opencode/schema/file-diff"
 import type { Permission } from "@opencode/schema/permission"
@@ -65,6 +67,10 @@ const ask = Effect.fnUntraced(function* (input: Input) {
     state: { input: toolInput, title: title ? ACPChild.prefixTitle(input.child, title) : input.child?.title },
     cwd: input.cwd,
   })
+  const available =
+    input.event.data.metadata?.[Delegation.ApprovalKey] === true
+      ? options.filter((option) => option.optionId !== "always")
+      : options
   const result = yield* input.connection.requestPermission({
     sessionId: input.clientSessionID,
     toolCall: {
@@ -74,10 +80,12 @@ const ask = Effect.fnUntraced(function* (input: Input) {
       ...(previews.length > 0 ? { content: previews } : {}),
       ...(input.child ? { _meta: ACPChild.meta(input.child) } : {}),
     },
-    options,
+    options: available,
   })
   const selected = result.outcome.outcome === "selected" ? result.outcome.optionId : undefined
-  return selected === "once" || selected === "always" ? selected : "reject"
+  return selected === "once" || (selected === "always" && available.some((option) => option.optionId === "always"))
+    ? selected
+    : "reject"
 })
 
 function respond(input: Input, decision: Permission.Reply | "settled") {

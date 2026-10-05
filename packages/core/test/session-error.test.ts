@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+// fork: preserve Zen rejection evidence and prevent unchanged retries (F-028).
 import {
   AuthenticationError,
   ContentPolicyError,
@@ -24,10 +25,56 @@ import { Provider } from "@opencode/core/provider"
 import { Tool } from "@opencode/schema/tool"
 import { toSessionError } from "@opencode/core/session/to-session-error"
 import { SessionRunnerRetry } from "@opencode/core/session/runner/retry"
+import { Effect } from "effect"
+import { Session } from "@opencode/schema/session"
+import { Agent } from "@opencode/schema/agent"
+import { Model } from "@opencode/schema/model"
 
 const llm = (reason: AIError["reason"]) => new AIError({ reason })
 
 describe("toSessionError", () => {
+  test("does not retry a recognized free-tier rejection even when a gateway labels it unknown", async () => {
+    const cause = llm(
+      new UnknownProviderError({ message: "OpenCode's free tier can only be used from within OpenCode" }),
+    )
+    const decide = await Effect.runPromise(SessionRunnerRetry.policy(Session.ID.make("ses_free_tier")))
+    const result = await Effect.runPromise(
+      decide({
+        cause,
+        error: toSessionError(cause),
+        agent: Agent.ID.make("build"),
+        model: Model.Ref.make({ providerID: Provider.ID.make("opencode"), id: ID.make("free") }),
+        retry: true,
+        hook: () => Effect.die("An incompatible request must not reach retry hooks"),
+      }),
+    )
+    expect(result).toEqual({ retry: false })
+  })
+
+  test("explains the Zen free-tier rejection without losing the original response", () => {
+    const body = JSON.stringify({
+      error: { type: "FreeTierError", message: "OpenCode's free tier can only be used from within OpenCode" },
+    })
+    const error = llm(
+      new AuthenticationError({
+        message: "Forbidden",
+        body,
+        http: new HttpContext({ url: "https://opencode.ai/zen/v1/chat/completions", status: 403, headers: {} }),
+      }),
+    )
+    expect(toSessionError(error)).toMatchObject({
+      type: "provider.incompatible-request",
+      status: 403,
+      response: { body },
+      message: expect.stringContaining("Choose a compatible model explicitly"),
+    })
+    expect(SessionRunnerRetry.isRetryable(error)).toBe(false)
+    expect(toSessionError(llm(new AuthenticationError({ message: "Invalid API key" })))).toEqual({
+      type: "provider.auth",
+      message: "Invalid API key",
+    })
+  })
+
   test("maps every AI error reason to the open wire type", () => {
     expect(toSessionError(llm(new RateLimitError({ message: "rate", retryAfterMs: 123 })))).toEqual({
       type: "provider.rate-limit",

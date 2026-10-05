@@ -1,4 +1,5 @@
 import fs from "fs/promises"
+// fork: child command execution now includes the real permission service (F-027).
 import path from "path"
 import { describe, expect } from "bun:test"
 import { DateTime, Deferred, Effect, Fiber, Layer, Option, PubSub, Schema, Stream } from "effect"
@@ -34,6 +35,7 @@ import { tempGlobalLayer } from "../fixture/global"
 import { offlineModels } from "../fixture/models"
 import { testEffect } from "../lib/effect"
 import { host } from "../plugin/host"
+import { Permission } from "@opencode/core/permission"
 
 const shellLayer = Layer.succeed(
   ShellSelect.Service,
@@ -56,6 +58,7 @@ const it = testEffect(
       Session.node,
       Job.node,
       Agent.node,
+      Permission.node,
     ]),
     [
       Mcp.node.replace(emptyMcpLayer),
