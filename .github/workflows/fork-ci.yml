@@ -208,11 +208,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install --yes --no-install-recommends ripgrep
-      # The PowerShell shell tests run whenever pwsh is installed, as it is on
-      # ubuntu-latest. The first pwsh start on a fresh runner can take longer
-      # than their 5 s limit, so pay that cost before the tests.
-      - name: Warm up PowerShell
-        run: pwsh -NoLogo -NoProfile -NonInteractive -Command exit
+      # PowerShell cmdlets warm up in the tests' isolated HOME/cache, not this job's HOME.
       - name: Unit tests (packages/core shard)
         run: GITHUB_ACTIONS=false bun turbo test --filter=./packages/core -- --shard=${{ matrix.shard }}/${{ strategy.job-total }}
 

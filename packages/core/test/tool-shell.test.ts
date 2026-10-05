@@ -2,7 +2,7 @@ import fs from "fs/promises"
 import { realpathSync, watch } from "node:fs"
 import os from "os"
 import path from "path"
-import { describe, expect } from "bun:test"
+import { beforeAll, describe, expect } from "bun:test"
 import { Cause, Deferred, Duration, Effect, Exit, Fiber, Layer, Queue, Scope, Stream } from "effect"
 import { Money } from "@opencode/schema/money"
 import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
@@ -771,6 +771,18 @@ describe("ShellTool ordinary shell syntax", () => {
 
   const pwsh = process.env.SHELL_SCAN_PWSH ?? Bun.which("pwsh") ?? Bun.which("powershell")
   const test = pwsh ? permissionIt.live : permissionIt.live.skip
+  // fork: Warm cmdlets in the runner's isolated HOME/cache, before command deadlines start (F-029).
+  beforeAll(async () => {
+    if (!pwsh) return
+    const warmup = Bun.spawn({
+      cmd: [pwsh, ...ShellSelect.args(pwsh, 'Write-Output "$(Write-Output hello)"')],
+      stdin: "ignore",
+      stdout: "ignore",
+      stderr: "inherit",
+      timeout: 30_000,
+    })
+    expect(await warmup.exited).toBe(0)
+  }, 40_000)
   // fork: Allow fixture setup and cleanup around the unchanged 5 s command deadline (F-029).
   for (const portable of [false, true]) {
     for (const command of [
