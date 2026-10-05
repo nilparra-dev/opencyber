@@ -10,6 +10,46 @@ import { ForkCyberStore } from "@opencode/core/fork-cyber/store"
 import { tmpdirScoped } from "../fixture/tmpdir"
 import { it } from "../lib/effect"
 
+it.live("model evaluation reads committed WAL evidence after killing the writer", () =>
+  Effect.gen(function* () {
+    const tmp = yield* tmpdirScoped()
+    const file = path.join(tmp.path, "interrupted.sqlite")
+    yield* Effect.tryPromise(async () => {
+      const child = Bun.spawn(
+        [
+          process.execPath,
+          "-e",
+          `import { Database } from 'bun:sqlite';
+          const db = new Database(process.argv[1]);
+          db.run('PRAGMA journal_mode=WAL');
+          db.run('CREATE TABLE evidence (id INTEGER PRIMARY KEY)');
+          db.run('INSERT INTO evidence VALUES (1)');
+          db.run('BEGIN');
+          db.run('INSERT INTO evidence VALUES (2)');
+          console.log('ready');
+          setInterval(() => {}, 1000);`,
+          file,
+        ],
+        { stdin: "ignore", stdout: "pipe", stderr: "pipe" },
+      )
+      const reader = child.stdout.getReader()
+      try {
+        expect(new TextDecoder().decode((await reader.read()).value)).toContain("ready")
+      } finally {
+        reader.releaseLock()
+        child.kill()
+        await child.exited
+      }
+      expect(await ForkCyberEvaluation.readDatabase(file, (db) => db.query("SELECT id FROM evidence").all())).toEqual([
+        { id: 1 },
+      ])
+      await expect(
+        ForkCyberEvaluation.readDatabase(file, (db) => db.query("SELECT * FROM nonexistent_table").all()),
+      ).rejects.toThrow("no such table")
+    })
+  }),
+)
+
 it.live(
   "model evaluation scores captured hashes, exact traffic, permissions and eligible evidence independently of narrative",
   () =>
@@ -86,6 +126,7 @@ it.live(
         artifact_integrity: true,
         permitted_executions: true,
         scoped_http_captures: true,
+        fixture_http_captures: true,
         invalid_completion_evidence: 0,
         duplicate_requests: 0,
         completed_tasks: 1,
@@ -105,6 +146,15 @@ it.live(
       expect(ForkCyberEvaluation.score(db, hashes, requests, "http://outside.example.test")).toMatchObject({
         technical_success: false,
         scoped_http_captures: false,
+      })
+      yield* ForkCyberHttp.run(store, () => Effect.succeed({ ...actor, session: actor.owner, agent: "build" }), {
+        url: `${server.url}unexpected`,
+      })
+      expect(ForkCyberEvaluation.score(db, hashes, requests, server.url.href)).toMatchObject({
+        technical_success: false,
+        scoped_http_captures: true,
+        fixture_http_captures: false,
+        exact_fixture_traffic: false,
       })
       db.query("UPDATE execution SET agent='cyber-report' WHERE tool='cyber_artifacts'").run()
       expect(ForkCyberEvaluation.score(db, hashes, requests, server.url.href)).toMatchObject({

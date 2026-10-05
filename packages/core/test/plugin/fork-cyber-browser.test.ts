@@ -64,6 +64,13 @@ const fixture = Effect.gen(function* () {
             '/ws")</script></body>',
           { headers: { "content-type": "text/html" } },
         )
+      if (url.pathname === "/worker")
+        return new Response(
+          `<script>const worker = new Worker(URL.createObjectURL(new Blob([${JSON.stringify(
+            `fetch('https://127.0.0.2:${server.port}/worker-data').catch(() => postMessage('blocked'))`,
+          )}], { type: 'application/javascript' }))); worker.onmessage = event => document.body.append(event.data)</script>worker`,
+          { headers: { "content-type": "text/html" } },
+        )
       if (url.pathname === "/many")
         return new Response('<script>for(let i=0;i<70;i++)fetch("/data?i="+i).catch(()=>{})</script>many', {
           headers: { "content-type": "text/html" },
@@ -96,6 +103,42 @@ const fixture = Effect.gen(function* () {
     manager.run({ executable: executable! }, () => Effect.succeed(assessment), input)
   return { store, manager, run, assessment, url: server.url.origin, hits }
 })
+
+browserTest(
+  "an uncaptured HTTPS worker request remains a failed action while its CONNECT tunnel is rejected",
+  async () => {
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const env = yield* fixture
+          const connections: string[] = []
+          const outside = Bun.listen({
+            hostname: "127.0.0.2",
+            port: Number(new URL(env.url).port),
+            socket: {
+              open(socket) {
+                connections.push(socket.remoteAddress)
+                socket.end()
+              },
+              data() {},
+            },
+          })
+          yield* Effect.addFinalizer(() => Effect.sync(() => outside.stop(true)))
+          yield* env.run({ action: "open", identity: "alice" })
+          const result = yield* env.run({ action: "navigate", identity: "alice", url: `${env.url}/worker` })
+          expect(result.action_status).toBe("error")
+          expect(result.completion_evidence).toEqual([])
+          expect(result.blocked_uncaptured_connections).toBeGreaterThan(0)
+          expect(result.issues.some((issue) => issue.startsWith("Browser request failed:"))).toBe(true)
+          expect(env.hits).not.toContain("/worker-data")
+          expect(connections).toEqual([])
+          expect((yield* env.store.readArtifact(env.assessment.owner, result.evidence)).status).toBe("error")
+        }),
+      ),
+    )
+  },
+  30000,
+)
 
 browserTest(
   "two real browser identities distinguish broken access control from a healthy control and replay captured requests",

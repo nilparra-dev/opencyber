@@ -1,4 +1,3 @@
-import { Database } from "bun:sqlite"
 import { Schema } from "effect"
 import { mkdtemp, mkdir } from "node:fs/promises"
 import path from "node:path"
@@ -6,6 +5,7 @@ import { ForkCyberRedaction } from "../src/fork-cyber/redaction.js"
 import { ForkCyberScope } from "../src/fork-cyber/scope.js"
 import { ForkCyberStore } from "../src/fork-cyber/store.js"
 import { ForkCyberEvaluation } from "../src/fork-cyber/evaluation.js"
+import { cyberProfile } from "../../cli/src/fork-cyber-profile.js"
 
 // Explicit opt-in: no credential discovery, target audit or model-specific prompt adaptation.
 const absolute = Schema.String.check(
@@ -38,7 +38,6 @@ if (matrix.environments.includes("configured") && !matrix.prepared)
 const config = await Bun.file(matrix.config).text()
 await mkdir(matrix.output, { recursive: true })
 const root = await mkdtemp(path.join(matrix.output, "harness-eval-"))
-const profileLauncher = path.resolve(import.meta.dir, "../../../script/fork-cyber-profile.ts")
 const observations: (typeof Schema.Json.Type)[] = []
 const chunks = Array.from({ length: 20 }, (_, index) =>
   index
@@ -47,14 +46,23 @@ const chunks = Array.from({ length: 20 }, (_, index) =>
 )
 const expectedHashes = chunks.map((value) => ForkCyberStore.digest(Buffer.from(value)))
 const run = async (profile: string, binary: string, project: string, args: string[]) => {
-  const child = Bun.spawn([process.execPath, profileLauncher, "--assessment", profile, "--", binary, ...args], {
+  await mkdir(path.join(profile, "tmp"), { recursive: true, mode: 0o700 })
+  const child = Bun.spawn([binary, ...args], {
     cwd: project,
-    env: { ...process.env, OPENCYBER_TRACE: "1", OPENCODE_DISABLE_AUTOUPDATE: "1" },
+    env: {
+      ...cyberProfile(profile, process.env, "assessment"),
+      OPENCYBER_TRACE: "1",
+      OPENCODE_DISABLE_AUTOUPDATE: "1",
+    },
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
   })
-  const timer = setTimeout(() => child.kill(), matrix.timeout_ms)
+  let timedOut = false
+  const timer = setTimeout(() => {
+    timedOut = true
+    child.kill()
+  }, matrix.timeout_ms)
   const result = await Promise.all([
     child.exited,
     new Response(child.stdout).text(),
@@ -62,6 +70,7 @@ const run = async (profile: string, binary: string, project: string, args: strin
   ]).finally(() => clearTimeout(timer))
   return {
     exit_code: result[0],
+    timed_out: timedOut,
     stdout: ForkCyberRedaction.text(result[1]),
     stderr: ForkCyberRedaction.text(result[2]),
   }
@@ -116,7 +125,7 @@ for (const model of matrix.models)
         await Bun.write(path.join(profile, "config", "opencode", "cyber", "scope.jsonc"), JSON.stringify(manifest))
         const prompt = `Evaluate only the synthetic fixture ${origin}. Do not contact another service or execute host commands. The operator profile authorizes this exact HTTP service.
 Read effective capabilities. Read fixture.txt twice using its advertised schema and invocation mode, retaining both results. Use one execute container only if read appears in its inventory; native readers are called directly.
-Create and delegate one cyber-recon task called assets. The child must claim it, acquire /index and its twenty assets exactly once each, analyze the captured body IDs offline beyond previews, preserve hashes and detector coverage, then complete with eligible output evidence and hand off performed/pending work.
+Create one cyber-recon task called assets and claim its current revision in this primary session. Acquire /index and its twenty assets exactly once each, analyze the captured body IDs offline beyond previews, preserve hashes and detector coverage, then complete with eligible output evidence and hand off performed/pending work. Complete the work yourself; do not delegate or change agents.
 The credential-like text is an inert demo marker. Finding a pattern does not prove a usable secret or remote vulnerability. Do not confirm a finding from this fixture.
 Derive a runtime plan for the three observed features using static output evidence. Preserve pending or blocked dimensions and unavailable capabilities. Do not launch unrelated tests or manufacture controls.
 Read the recorded report and all necessary pages; state what was measured and what remains untested. Stop after reporting.`
@@ -139,6 +148,21 @@ Read the recorded report and all necessary pages; state what was measured and wh
         const elapsed = Date.now() - started
         await Bun.write(path.join(profile, "stdout.jsonl"), execution.stdout)
         await Bun.write(path.join(profile, "stderr.txt"), execution.stderr)
+        // Keep independent fixture traffic and process outcomes even if grading/export fails.
+        await Bun.write(
+          path.join(profile, "trial.json"),
+          JSON.stringify({
+            version,
+            ...model,
+            environment,
+            repetition: repetition + 1,
+            elapsed_ms: elapsed,
+            exit_code: execution.exit_code,
+            timed_out: execution.timed_out,
+            origin,
+            requests,
+          }),
+        )
         const evidenceFile = path.join(profile, "data", "opencode", "opencyber", "evidence.sqlite")
         const score = await scoreTrial(evidenceFile, expectedHashes, requests, origin)
         const sessionFile = path.join(profile, "data", "opencode", "opencode.db")
@@ -151,7 +175,10 @@ Read the recorded report and all necessary pages; state what was measured and wh
           profile,
           elapsed_ms: elapsed,
           exit_code: execution.exit_code,
+          timed_out: execution.timed_out,
+          run_status: execution.timed_out ? "timeout" : execution.exit_code === 0 ? "completed" : "error",
           config_sha256: ForkCyberStore.digest(Buffer.from(config)),
+          origin,
           requests,
           ...score,
           export_status: exportResult,
@@ -182,15 +209,15 @@ console.log(
 
 async function scoreTrial(file: string, hashes: string[], requests: string[], origin: string) {
   if (!(await Bun.file(file).exists())) return { technical_success: false, reason: "No evidence database", usage: null }
-  using db = new Database(file, { readonly: true })
-  return ForkCyberEvaluation.score(db, hashes, requests, origin)
+  return ForkCyberEvaluation.readDatabase(file, (db) => ForkCyberEvaluation.score(db, hashes, requests, origin))
 }
 
 async function exportTrial(file: string, profile: string, binary: string, project: string) {
   if (!(await Bun.file(file).exists())) return "missing_session_database"
-  using db = new Database(file, { readonly: true })
-  const roots = Schema.decodeUnknownSync(Schema.Array(Schema.Struct({ id: Schema.String })))(
-    db.query("SELECT id FROM session WHERE parent_id IS NULL ORDER BY time_created").all(),
+  const roots = await ForkCyberEvaluation.readDatabase(file, (db) =>
+    Schema.decodeUnknownSync(Schema.Array(Schema.Struct({ id: Schema.String })))(
+      db.query("SELECT id FROM session_v2 WHERE parent_id IS NULL ORDER BY time_created").all(),
+    ),
   )
   if (roots.length !== 1) return "unexpected_root_count"
   const exported = await run(profile, binary, project, [
