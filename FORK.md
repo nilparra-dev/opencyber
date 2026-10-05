@@ -255,6 +255,7 @@ All of these files are **fork-only**: upstream does not have them, so they never
 | `.github/workflows/fork-ci.yml`                             | Fork CI on standard GitHub runners (4.2)                                       |
 | `.github/workflows/fork-resolve.yml`                        | (Optional) Conflict resolution by an agent (4.3)                               |
 | `.github/workflows/fork-release.yml`                        | Builds and publishes `opencyber` releases (4.5)                                |
+| `.github/workflows/fork-runner-recovery.yml`                | Retries release and sync runs that never acquired a hosted runner (4.6)        |
 | `.github/actions/fork-setup-bun/action.yml`                 | Bun setup for fork workflows, caching `node_modules` by lockfile (4.4)         |
 | `script/fork-install.ps1`, `script/fork-install.sh`         | Install or update `opencyber` from this repository's releases (section 10)     |
 | `script/fork-ledger-check.ts`                               | Verifies the section 7 ledger against the tree in fork CI (4.2)                |
@@ -340,6 +341,16 @@ Builds `opencyber` with upstream's own `packages/cli/script/build.ts` and publis
 - **Updates:** the fork build replaces upstream's updater with `ForkUpdater` (ledger F-003). It asks this repository's GitHub Releases for the latest `-cyber.N` release and installs it by running `script/fork-install.*` from `custom` with `OPENCYBER_VERSION` set. Only the binary in `~/.opencyber/bin` updates itself; `bun run dev` and other copies do not. Every start logs one `opencyber update check` line, and when a newer release exists the TUI announces it with its `/update` notice as `2.0.19 (Cyber)` (F-017) while nothing appears when there is none. Installing is on demand: `/update` → Update in the dialog, or `opencyber upgrade`. The shared config can still ask for `"update": "auto"` (install on start) or `"disable"`, and `OPENCODE_DISABLE_AUTOUPDATE=1` skips the check; the default is `notify`, the same as upstream, so a start never installs on its own.
 - **Notes:** the upstream release with a link to its notes, the ledger table from section 7, and the fork-only commits since the previous fork release.
 - The build job runs repository code with a read-only token; a separate `publish` job creates the release.
+
+### 4.6 `fork-runner-recovery.yml`
+
+On October 5, 2026, the release after PR #47 and two scheduled syncs failed before executing any steps. Their check annotations said `The job was not acquired by Runner of type hosted even after multiple attempts`. GitHub reported an [Actions runner assignment incident](https://stspg.io/c11dc9nb1zdq) at the same time. The PR's typechecks, tests and Cyber labs had passed; these failures were in runner provisioning.
+
+Recovery runs after a failed `fork-release` or `fork-sync` on `custom`, every half hour, or on demand. It inspects only the newest run of each workflow and reloads its current state. A run is eligible only when it failed on the current `custom` commit, every job was cancelled or skipped, no job executed a step, and every cancelled job has the exact runner-acquisition failure annotation. Successful, active and superseded runs, test failures and partially executed publications are left alone.
+
+The workflow reruns the original run on the same commit, with at most three total attempts. Exhaustion produces a warning with the run URL; the original failure stays visible. The scheduled sweep also covers a completion listener that could not obtain a runner. It cannot prevent or recover during a continuing GitHub outage without runner capacity.
+
+Only the trusted inline GitHub API script receives `actions: write`; it checks out no code and downloads no artifacts. Concurrent recovery runs are serialized. `packages/cli/test/fork-runner-recovery.test.ts` exercises the shipped script against the observed failure and refusal cases without changing live Actions runs.
 
 ---
 
@@ -586,4 +597,5 @@ cd packages/cli && OPENCODE_CHANNEL=cyber bun run build --single   # current pla
 | Claude Pro/Max requests fail with 401/429 after moving from V1                       | The V1 login was imported without refresh                                 | Log in again and pick "Claude Pro/Max" (section 1)                                                                                                                                                  |
 | GitHub says "N commits ahead/behind anomalyco/opencode:dev" and offers **Sync fork** | GitHub compares with upstream's default branch, which is still `dev` (V1) | Ignore the counter and **never press Sync fork**: it would merge V1 into `custom`. Compare with the release instead: `https://github.com/nilparra-dev/opencyber/compare/<latest v2 tag>...custom`   |
 | `fork-release` did not publish after a push                                          | That upstream release already has a fork release                          | Expected; run `fork-release` by hand to publish the next `-cyber.N`                                                                                                                                 |
+| Release or sync failed with no steps and a runner-acquisition annotation             | GitHub could not assign a hosted runner                                   | `fork-runner-recovery` retries up to three total attempts. Check GitHub Actions status after exhaustion, then rerun the failed workflow when capacity returns                                      |
 | `opencyber` does not see the sessions or logins of `opencode`                        | A build older than F-004, or `OPENCODE_DB` / `OPENCODE_TUI_CHANNEL` set   | Update (`opencyber upgrade`) or unset those variables                                                                                                                                               |
