@@ -5,7 +5,6 @@ import { isDeepStrictEqual } from "node:util"
 import { ForkCyberDiagnostics } from "./diagnostics.js"
 import { ForkCyberKali } from "./kali.js"
 import { ForkCyberRoles } from "./roles.js"
-import { ForkCyberStore } from "./store.js"
 import { ForkCyberSurface } from "./surface.js"
 
 const Expected = Schema.Union([
