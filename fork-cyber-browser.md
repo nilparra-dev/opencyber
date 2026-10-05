@@ -19,7 +19,7 @@ Create `opencyber-browser.jsonc` in the service's operator configuration directo
 
 ```jsonc
 {
-  "executable": "C:/Users/operator/AppData/Local/ms-playwright/chromium-1217/chrome-win64/chrome.exe"
+  "executable": "C:/Users/operator/AppData/Local/ms-playwright/chromium-1217/chrome-win64/chrome.exe",
 }
 ```
 
@@ -79,6 +79,8 @@ The manager requests identity encoding. If a server still compresses a response,
 Each action admits at most 64 HTTP requests, with a 15-second per-request deadline and a 1 MiB response limit. It observes 250 ms after the action plus pending captured requests, within the action deadline. Use `wait` to observe later application work. Requests arriving outside an active action are blocked. Correlation identifies the capture window; it does not prove that the user action caused every timer-driven request in that window.
 
 Unintercepted proxy-aware traffic reaches a local rejecting proxy, which never forwards it. Service workers are disabled. WebSockets, downloads and popups are blocked. Worker and out-of-process iframe traffic, WebRTC and streaming are unsupported; this is not a complete browser network trace or a general OS network sandbox. The result always lists these limitations and reports observed failures. Do not use it as evidence of complete coverage for applications that depend on unsupported paths.
+
+The proxy rejects every CONNECT tunnel and records its attempts in `blocked_uncaptured_connections`. Chromium can create speculative search preconnections without issuing an HTTP request, so a rejected tunnel alone does not invalidate a page action. Failed actual requests are observed across the browser context, including workers, and still mark the action as an error without completion evidence. Uncaptured plain HTTP requests also invalidate the action. The worker regression verifies that excluding a HTTPS destination remains effective.
 
 Request bodies that Chromium does not expose completely are blocked. Browser input files are not supported. Screenshots are limited to a 1280-by-800 viewport and 4 MiB. Page text is capped at 16,000 characters and the depth-five accessibility tree at 8,000. State capture is capped at 1 MiB. These are application-level capture bounds, not hard process CPU or memory quotas.
 

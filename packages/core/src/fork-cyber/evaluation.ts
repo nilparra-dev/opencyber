@@ -13,8 +13,8 @@ export async function readDatabase<T>(file: string, read: (db: Database) => T): 
       return read(db)
     } catch (error) {
       if (!(error instanceof SQLiteError) || error.code !== "SQLITE_IOERR_TRUNCATE" || attempt === 2) throw error
-      // Recovery can fail once while the killed process's mapped handles close.
-      await Bun.sleep(250)
+      // The CLI's standalone server releases its lease and mapped handles asynchronously.
+      await Bun.sleep(2000)
     }
   }
   throw new Error("Trial database recovery exhausted")
