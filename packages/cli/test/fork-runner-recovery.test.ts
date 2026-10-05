@@ -72,7 +72,10 @@ async function recover(
           }),
           getWorkflowRun: async () => ({ data: data.run }),
           listJobsForWorkflowRunAttempt: () => data.jobs,
-          reRunWorkflow: async (request: (typeof reruns)[number]) => reruns.push(request),
+          reRunWorkflowFailedJobs: async (request: (typeof reruns)[number]) => reruns.push(request),
+          reRunWorkflow: async () => {
+            throw new Error("A whole-workflow retry would repeat completed jobs")
+          },
         },
         checks: { listAnnotations: () => data.annotations },
       },
@@ -114,6 +117,28 @@ test("uses the current run attempt and stops after two automatic retries", async
   const exhausted = await recover({ run: { ...snapshot.run, run_attempt: 3 } })
   expect(exhausted.reruns).toEqual([])
   expect(exhausted.warnings[0]).toContain(snapshot.run.html_url)
+})
+
+test("recovers an unstarted build after release planning has succeeded without repeating the plan", async () => {
+  const result = await recover({
+    run: { ...snapshot.run, run_attempt: 2 },
+    jobs: [
+      { conclusion: "success", steps: [{ name: "Plan release", conclusion: "success" }], check_run_url: "" },
+      {
+        ...snapshot.jobs[0],
+        check_run_url: "https://api.github.com/repos/nilparra-dev/opencyber/check-runs/111974302818",
+      },
+      snapshot.jobs[1],
+    ],
+  })
+  expect(result.reruns).toEqual([{ owner: "nilparra-dev", repo: "opencyber", run_id: snapshot.run.id }])
+  expect(result.reads).toContainEqual({
+    owner: "nilparra-dev",
+    repo: "opencyber",
+    check_run_id: 111974302818,
+    per_page: 100,
+  })
+  expect(result.notices[0]).toContain("attempt 3/3")
 })
 
 test.each([

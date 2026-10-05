@@ -42,9 +42,9 @@ jobs:
               const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRunAttempt, {
                 ...repo, run_id: run.id, attempt_number: run.run_attempt, per_page: 100
               });
-              // Do not repeat any executed step, including a partially completed publication.
-              if (!jobs.length || jobs.some(job => job.steps.length || !["cancelled", "skipped"].includes(job.conclusion))) continue;
-              const cancelled = jobs.filter(job => job.conclusion === "cancelled");
+              // Preserve successful jobs. Retry only runner failures before any step executed.
+              const cancelled = jobs.filter(job => !["success", "skipped"].includes(job.conclusion));
+              if (cancelled.some(job => job.conclusion !== "cancelled" || job.steps.length)) continue;
               if (!cancelled.length) continue;
               const annotations = await Promise.all(cancelled.map(job => github.paginate(github.rest.checks.listAnnotations, {
                 ...repo, check_run_id: Number(new URL(job.check_run_url).pathname.split("/").pop()), per_page: 100
@@ -55,6 +55,6 @@ jobs:
                 core.warning(`Runner recovery exhausted for ${run.html_url}; inspect GitHub Actions status and rerun manually.`);
                 continue;
               }
-              await github.rest.actions.reRunWorkflow({ ...repo, run_id: run.id });
-              core.notice(`Recovered ${run.html_url}: attempt ${run.run_attempt + 1}/3 on the same commit.`);
+              await github.rest.actions.reRunWorkflowFailedJobs({ ...repo, run_id: run.id });
+              core.notice(`Requested recovery for ${run.html_url}: attempt ${run.run_attempt + 1}/3 on the same commit.`);
             }
