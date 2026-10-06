@@ -39,3 +39,4 @@ research_notes/
 logs/
 *.bun-build
 tsconfig.tsbuildinfo
+/artifacts/
