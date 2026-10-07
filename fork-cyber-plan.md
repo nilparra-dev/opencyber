@@ -118,6 +118,8 @@ An empty `engagement` call only reads. A top-level session can supply `manifest`
 
 Legacy `derived: true` manifests remain explicitly unverified until replaced with an explicit manifest without that flag. Invalid legacy records produce a configuration error; they are not discarded or treated as an empty scope.
 
+Every governed cyber action has a risk class in `packages/core/src/fork-cyber/decision.ts`: R0 makes no target traffic (local or offline analysis, governance), R1 makes bounded traffic inside scope, R2 is intrusive validation, and R3 (impact) is never declared. `cyber_surface` and `cyber_services` declare each variant separately, and an undeclared variant is denied. Development and assessment allow R0 and R1; review allows R0. R2 is denied in every mode until the approval flow (OC-401) exists, so `cyber_local_validation` and `cyber_surface` `binary.execute` are withheld from the catalog and refused at execution. Tools outside the cyber set (`read`, `glob`, `grep`, `execute`, `subagent`) keep the role and mode rules.
+
 Custom `.opencode/cyber/adapters.jsonc` suffixes remain opt-in and operator-controlled. Provider defaults that asserted blanket authorization are removed. Title and generic generation requests do not receive cyber instructions.
 
 In phase 1, `notes` held at most 50 bounded, normalized entries. Phase 2 replaces that storage with durable, paginated rows and captures tool evidence separately. See [fork-cyber-storage.md](fork-cyber-storage.md) for storage contracts, migration, retrieval, export/purge and the optional independent profile. Reporting agents can read the archive but cannot mutate scope, notes or findings.

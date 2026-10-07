@@ -30,6 +30,7 @@ import { ForkCyberArtifactValidation } from "../fork-cyber/artifact-validation.j
 import { ForkCyberOt } from "../fork-cyber/ot.js"
 import { Permission } from "../permission.js"
 import { ForkCyberPolicy } from "../fork-cyber/policy.js"
+import { ForkCyberDecision } from "../fork-cyber/decision.js"
 import { ForkCyberFindings } from "../fork-cyber/findings.js"
 import { ForkCyberEnvironment } from "../fork-cyber/environment.js"
 import { ForkCyberDiagnostics } from "../fork-cyber/diagnostics.js"
@@ -177,8 +178,7 @@ export const Plugin = define({
         // Capability follows the registered agent: a claimed phase is bookkeeping, and phase
         // lanes bind delegated workers only.
         for (const name of Object.keys(event.tools)) {
-          if (!ForkCyberPolicy.allowed(cyberMode, event.agent, name) || !ForkCyberRoles.allowed(event.agent, name))
-            delete event.tools[name]
+          if (!ForkCyberDecision.available(cyberMode, event.agent, name)) delete event.tools[name]
         }
       }).pipe(Effect.orDie)
 
@@ -235,10 +235,7 @@ export const Plugin = define({
                     const rule = rules.findLast((rule) => Wildcard.match(action, rule.action))
                     return rule?.resource !== "*" || rule.effect !== "deny"
                   }
-                  const codeMode =
-                    ForkCyberPolicy.allowed(cyberMode, role, "execute") &&
-                    ForkCyberRoles.allowed(effective, "execute") &&
-                    permitted("execute")
+                  const codeMode = ForkCyberDecision.available(cyberMode, role, "execute") && permitted("execute")
                   const catalog = inventory.map((tool) => ({
                     name: tool.id,
                     invocation: tool.options?.codemode === false ? "direct" : "execute",
@@ -247,8 +244,7 @@ export const Plugin = define({
                         ? tool.id
                         : `tools.${tool.options?.namespace ? `${tool.options.namespace}.` : ""}${normalizedName(tool)}`,
                     permitted:
-                      ForkCyberPolicy.allowed(cyberMode, role, tool.id) &&
-                      ForkCyberRoles.allowed(effective, tool.id) &&
+                      ForkCyberDecision.available(cyberMode, role, tool.id) &&
                       permitted(tool.options?.permission ?? tool.id) &&
                       (tool.options?.codemode === false || codeMode),
                     availability: ["kali_run", "kali_environment", "cyber_services", "cyber_local_validation"].includes(
@@ -528,8 +524,8 @@ export const Plugin = define({
         // Capability follows the registered agent (see the catalog filter); the claim below is
         // only required for delegated workers so their executions attach to a durable task.
         if (
-          !ForkCyberPolicy.allowed(cyberMode, event.agent, event.tool) ||
-          !ForkCyberRoles.allowed(event.agent, event.tool)
+          ForkCyberDecision.decide({ mode: cyberMode, agent: event.agent, tool: event.tool, input: event.input }) ===
+          "deny"
         )
           return yield* Effect.fail(
             new ForkCyberDiagnostics.Failure({
