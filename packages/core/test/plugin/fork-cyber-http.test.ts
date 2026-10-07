@@ -37,7 +37,7 @@ const lab = (handler: http.RequestListener) =>
       ),
   )
 
-test("a primary recon claim blocks body requests before traffic and a validation claim preserves build provenance", async () => {
+test("a primary claim never restricts HTTP methods while a recon worker stays observation-only", async () => {
   await Effect.runPromise(
     Effect.scoped(
       Effect.gen(function* () {
@@ -48,27 +48,40 @@ test("a primary recon claim blocks body requests before traffic and a validation
           requests.push(request.method!)
           response.end("fixture")
         })
-        const actor = { owner: "owner", session: "owner", agent: "build", manifest }
+        const primary = { owner: "owner", session: "owner", agent: "build", manifest }
+        const worker = { owner: "owner", session: "child", agent: "cyber-recon", manifest }
+        let actor = primary
         const resolve = () => Effect.succeed(actor)
-        yield* store.coordination.run(actor, {
+        yield* store.coordination.run(primary, {
           action: "create",
           key: "recon",
           asset: server.url,
           procedure: "Observe fixture",
           phase: "cyber-recon",
         })
-        yield* store.coordination.run(actor, { action: "claim", key: "recon", revision: 1 })
-        for (const request of [
-          { url: server.url, method: "POST" as const, body: "<methodCall/>" },
-          { url: server.url, method: "GET" as const, body: "fixture" },
-        ]) {
-          const error = yield* ForkCyberHttp.run(store, resolve, request).pipe(Effect.flip)
-          expect(String(error)).toContain("observation requires GET, HEAD or OPTIONS without a body")
-        }
-        expect(requests).toEqual([])
-        expect(yield* store.executions("owner")).toEqual([])
+        yield* store.coordination.run(primary, { action: "claim", key: "recon", revision: 1 })
+        // The primary's claim is bookkeeping: a body request reaches the target immediately.
+        const posted = (yield* ForkCyberHttp.run(store, resolve, {
+          url: server.url,
+          method: "POST",
+          body: "<methodCall/>",
+        }))[0]!
+        expect(requests).toEqual(["POST"])
+        expect((yield* store.coordination.get("owner", "recon")).executions).toMatchObject([
+          { id: posted.capture.execution, agent: "build", session: "owner" },
+        ])
+        // A delegated recon worker keeps its observation-only lane and never reaches the target.
+        actor = worker
+        const denied = yield* ForkCyberHttp.run(store, resolve, {
+          url: server.url,
+          method: "POST",
+          body: "x",
+        }).pipe(Effect.flip)
+        expect(String(denied)).toContain("observation requires GET, HEAD or OPTIONS without a body")
+        expect(requests).toEqual(["POST"])
+        actor = primary
         const observed = (yield* ForkCyberHttp.run(store, resolve, { url: server.url }))[0]!
-        yield* store.coordination.run(actor, {
+        yield* store.coordination.run(primary, {
           action: "complete",
           key: "recon",
           revision: 2,
@@ -76,7 +89,7 @@ test("a primary recon claim blocks body requests before traffic and a validation
           rationale: "Fixture returned",
           evidence: [observed.output],
         })
-        yield* store.coordination.run(actor, {
+        yield* store.coordination.run(primary, {
           action: "create",
           key: "validate",
           asset: server.url,
@@ -84,13 +97,13 @@ test("a primary recon claim blocks body requests before traffic and a validation
           phase: "cyber-validate",
           hypothesis: "The fixture accepts the synthetic request",
         })
-        yield* store.coordination.run(actor, { action: "claim", key: "validate", revision: 1 })
+        yield* store.coordination.run(primary, { action: "claim", key: "validate", revision: 1 })
         const validated = (yield* ForkCyberHttp.run(store, resolve, {
           url: server.url,
           method: "POST",
           body: "fixture",
         }))[0]!
-        expect(requests).toEqual(["GET", "POST"])
+        expect(requests).toEqual(["POST", "GET", "POST"])
         expect((yield* store.coordination.get("owner", "validate")).executions).toMatchObject([
           { id: validated.capture.execution, agent: "build", session: "owner" },
         ])

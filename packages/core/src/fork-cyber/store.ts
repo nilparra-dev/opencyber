@@ -725,10 +725,24 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
       }),
       observations: { ...ForkCyberPagination.page(outputs, offset), items: observations },
       coverage: yield* coordination.coveragePage(owner, offset),
+      // Completed executions whose work never entered a task still count as tested work;
+      // coverage stays the plan, and this keeps unplanned probing visible instead of lost.
+      unattached_executions: yield* Effect.gen(function* () {
+        const rows = yield* sql<{ tool: string; count: number }>`SELECT e.tool AS tool, COUNT(*) AS count
+          FROM execution e
+          LEFT JOIN cyber_task_execution t ON t.owner = e.owner AND t.execution = e.id
+          WHERE e.owner = ${owner} AND t.execution IS NULL AND e.status = 'completed'
+          GROUP BY e.tool ORDER BY e.tool`
+        return {
+          total: rows.reduce((total, row) => total + Number(row.count), 0),
+          by_tool: Object.fromEntries(rows.map((row) => [row.tool, Number(row.count)])),
+        }
+      }),
       executions: yield* executionsPage(owner, { offset }),
       finding_records: yield* findingsPage(owner, offset),
       limitations: [
         "Counts derive from recorded executions and tasks, not security-test counts or complete application coverage.",
+        "Executions without a task link appear in unattached_executions and never in planned coverage; together they describe the recorded work.",
         "Unknown operation classes remain unknown. Preparation and source reads are not network validation.",
         "Observations preserve recorded tested endpoints and controls; untested ports, families and origin servers remain unknown. Outputs above 64 KiB require evidence detail.",
         "No matches applies to recorded input hashes and detector versions only. Pending candidates remain candidates.",

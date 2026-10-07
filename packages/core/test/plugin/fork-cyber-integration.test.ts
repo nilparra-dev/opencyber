@@ -196,7 +196,7 @@ it.live("interrupted native subagent calls close evidence without attributing fa
   }),
 )
 
-it.live("primary task phase restricts the effective catalog and direct execution while retaining build", () =>
+it.live("a primary claim keeps its build catalog and execution while retaining provenance", () =>
   Effect.gen(function* () {
     const env = yield* project
     yield* Effect.gen(function* () {
@@ -222,17 +222,19 @@ it.live("primary task phase restricts the effective catalog and direct execution
           }),
         ),
       )(capabilities)
-      expect(decoded.roles.find((role) => role.role === "build")).toMatchObject({
-        effective_phase: "cyber-recon",
-        prohibited: expect.arrayContaining(["shell", "kali_run", "http_replay", "subagent"]),
-      })
-      for (const tool of ["shell", "kali_run", "http_replay", "subagent"])
-        expect((yield* call(env.root.id, tool, {}).pipe(Effect.flip)).message).toContain("in claimed phase cyber-recon")
+      const build = decoded.roles.find((role) => role.role === "build")
+      // Capability follows the registered agent: the claim is bookkeeping, not a downgrade.
+      expect(build).toMatchObject({ effective_phase: "build" })
+      for (const tool of ["kali_run", "http_replay", "subagent"]) expect(build?.prohibited).not.toContain(tool)
       expect(yield* call(env.root.id, "cyber_tasks", { action: "get", key: "primary-recon" })).toContain(
         '"agent":"build"',
       )
       expect(yield* call(env.root.id, "evidence", {})).toContain('"items":[]')
       yield* call(env.root.id, "cyber_tasks", { action: "release", key: "primary-recon", revision: 2 })
+      // Execution reaches schema validation instead of a claimed-phase role denial.
+      const error = yield* call(env.root.id, "kali_run", {}).pipe(Effect.flip)
+      expect(error.message).toContain("Invalid arguments")
+      expect(error.message).not.toContain("cannot execute")
     }).pipe(env.provide)
   }),
 )

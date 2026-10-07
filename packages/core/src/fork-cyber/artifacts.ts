@@ -34,7 +34,7 @@ export const run = Effect.fn(function* (
   actor: { owner: string; session: string; agent: string },
   input: typeof Action.Type,
 ) {
-  const role = yield* store.coordination.role(actor)
+  const role = actor.agent
   if (!ForkCyberRoles.allowed(role, "cyber_artifacts"))
     return yield* Effect.fail(new Error(`Phase ${role} cannot execute cyber_artifacts`))
   if (ForkCyberRoles.worker(actor.agent)) yield* store.coordination.requireClaim(actor)

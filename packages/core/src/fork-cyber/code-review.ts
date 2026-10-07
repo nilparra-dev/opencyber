@@ -105,7 +105,7 @@ export const run = Effect.fn("ForkCyberCodeReview.run")(function* (
   assessment: Assessment,
   input: Action,
 ) {
-  const role = yield* store.coordination.role(assessment)
+  const role = assessment.agent
   if (!ForkCyberRoles.allowed(role, "cyber_code_review"))
     return yield* Effect.fail(new Error(`Phase ${role} cannot execute cyber_code_review`))
   if (input.action === "procedures") return procedures
