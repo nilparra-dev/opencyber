@@ -246,6 +246,11 @@ it.live("repairs string revisions before claiming and releasing durable cyber ta
       const decode = Schema.decodeUnknownSync(
         Schema.fromJsonString(Schema.Struct({ status: Schema.String, revision: Schema.Number })),
       )
+      // An action-less call lists instead of failing; other payloads keep the schema's error.
+      expect(yield* call(env.root.id, "cyber_tasks", {})).toContain('"items"')
+      expect((yield* call(env.root.id, "cyber_tasks", { key: "orphan" }).pipe(Effect.flip)).message).toContain(
+        "Invalid arguments",
+      )
       yield* call(env.root.id, "cyber_tasks", {
         action: "create",
         key: "fixture-recon",
