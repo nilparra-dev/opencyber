@@ -30,7 +30,7 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
   )
   yield* sql`PRAGMA foreign_keys = ON`
   const version = yield* sql<{ user_version: number }>`PRAGMA user_version`
-  if (![0, 1, 2, 3, 4, 5, 6].includes(version[0]?.user_version ?? -1))
+  if (![0, 1, 2, 3, 4, 5, 6, 7].includes(version[0]?.user_version ?? -1))
     return yield* Effect.fail(new Error("Unsupported OpenCyber evidence database version"))
   if (version[0]?.user_version === 0)
     yield* sql
@@ -161,6 +161,29 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
         request_sha256 TEXT NOT NULL REFERENCES harness_request(sha256), result TEXT)`
           yield* sql`CREATE INDEX IF NOT EXISTS harness_attempt_session ON harness_attempt(session, started_at, id)`
           yield* sql`PRAGMA user_version = 6`
+        }),
+      )
+      .pipe(
+        Effect.retry({
+          while: (error) => error.reason._tag === "LockTimeoutError",
+          times: 3,
+          schedule: Schedule.spaced(25),
+        }),
+      )
+
+  // Decisions are append-only. The application has no update or delete path, and the trigger refuses updates.
+  if ((version[0]?.user_version ?? 0) < 7)
+    yield* sql
+      .withTransaction(
+        Effect.gen(function* () {
+          yield* sql`CREATE TABLE IF NOT EXISTS cyber_decision (
+        seq INTEGER PRIMARY KEY AUTOINCREMENT, owner TEXT NOT NULL, session TEXT NOT NULL, agent TEXT NOT NULL,
+        tool TEXT NOT NULL, mode TEXT NOT NULL, risk TEXT, decision TEXT NOT NULL CHECK (decision IN ('allow', 'deny')),
+        reason TEXT NOT NULL, target TEXT, created_at INTEGER NOT NULL)`
+          yield* sql`CREATE INDEX IF NOT EXISTS cyber_decision_owner ON cyber_decision(owner, seq)`
+          yield* sql`CREATE TRIGGER IF NOT EXISTS cyber_decision_append_only BEFORE UPDATE ON cyber_decision
+        BEGIN SELECT RAISE(ABORT, 'cyber decisions are append-only'); END`
+          yield* sql`PRAGMA user_version = 7`
         }),
       )
       .pipe(
@@ -830,10 +853,40 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
         }
       }),
     )
+  const decision = (input: {
+    owner: string
+    session: string
+    agent: string
+    tool: string
+    mode: string
+    risk?: string
+    decision: "allow" | "deny"
+    reason: string
+    target?: string
+  }) =>
+    sql`INSERT INTO cyber_decision (owner, session, agent, tool, mode, risk, decision, reason, target, created_at)
+      VALUES (${input.owner}, ${input.session}, ${input.agent}, ${input.tool}, ${input.mode}, ${input.risk ?? null},
+        ${input.decision}, ${input.reason}, ${input.target ?? null}, ${Date.now()})`
+
+  const decisions = (owner: string, offset = 0) =>
+    sql<{
+      seq: number
+      session: string
+      agent: string
+      tool: string
+      mode: string
+      risk: string | null
+      decision: string
+      reason: string
+      target: string | null
+    }>`SELECT seq, session, agent, tool, mode, risk, decision, reason, target FROM cyber_decision
+      WHERE owner = ${owner} ORDER BY seq LIMIT 100 OFFSET ${offset}`
+
   const purge = (owner: string) =>
     sql.withTransaction(
       Effect.gen(function* () {
         yield* sql`INSERT INTO legacy_tombstone VALUES (${owner}) ON CONFLICT DO NOTHING`
+        yield* sql`DELETE FROM cyber_decision WHERE owner = ${owner}`
         yield* sql`DELETE FROM finding_evidence WHERE owner = ${owner}`
         yield* sql`DELETE FROM finding_validation WHERE owner = ${owner}`
         yield* sql`DELETE FROM finding WHERE owner = ${owner}`
@@ -853,6 +906,8 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
       }),
     )
   return {
+    decision,
+    decisions,
     manifest,
     saveManifest,
     approvedManifest,

@@ -116,7 +116,7 @@ test("schema 3 migration retains evidence and installs an empty persistent netwo
         const migrated = yield* ForkCyberStore.open(file)
         expect((yield* migrated.notes("owner"))[0]?.content).toBe("existing phase 6 evidence")
         expect(yield* migrated.reserveNetwork("owner", 100, 100)).toBe(100)
-        expect(database.query("PRAGMA user_version").get()).toEqual({ user_version: 6 })
+        expect(database.query("PRAGMA user_version").get()).toEqual({ user_version: 7 })
       }),
     ),
   )
