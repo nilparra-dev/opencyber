@@ -229,7 +229,7 @@ export const run = (store: Store, resolve: () => Effect.Effect<Assessment, Error
               id,
               "error",
               {
-                diagnostic: {
+                diagnostic: new ForkCyberDiagnostics.Failure({
                   category: "interruption",
                   operation: "http_request",
                   message: "HTTP execution interrupted",
@@ -237,7 +237,7 @@ export const run = (store: Store, resolve: () => Effect.Effect<Assessment, Error
                   effects: progress.target_started ? "unknown" : "not_started",
                   recovery: "Reconcile this execution before repeating a request.",
                   details: { execution: id },
-                },
+                }).diagnostic,
               },
               "interrupted",
             )
@@ -254,22 +254,22 @@ export const run = (store: Store, resolve: () => Effect.Effect<Assessment, Error
           result.failure instanceof Error && result.failure.cause instanceof Error
             ? result.failure.cause.message
             : String(result.failure)
-        const diagnostic =
+        const failure =
           cause instanceof ForkCyberDiagnostics.Failure
-            ? cause.diagnostic
-            : {
-                category: progress.response_received ? ("capture" as const) : ("transport" as const),
+            ? cause
+            : new ForkCyberDiagnostics.Failure({
+                category: progress.response_received ? "capture" : "transport",
                 operation: "http_request",
                 message: `HTTP execution ${id} failed: ${message}`,
                 target_started: progress.target_started,
-                effects: progress.target_started ? ("unknown" as const) : ("not_started" as const),
+                effects: progress.target_started ? "unknown" : "not_started",
                 recovery: progress.target_started
                   ? "Read evidence for this execution and reconcile possible effects before retrying."
                   : "Inspect the destination, scope, resolver and transport configuration before retrying.",
                 details: { execution: id },
-              }
-        yield* store.finish(assessment.owner, id, "error", { diagnostic })
-        return yield* Effect.fail(new ForkCyberDiagnostics.Failure(diagnostic))
+              })
+        yield* store.finish(assessment.owner, id, "error", { diagnostic: failure.diagnostic })
+        return yield* Effect.fail(failure)
       }
       hops.push({ output: result.success.output, capture: result.success.capture })
       if (
