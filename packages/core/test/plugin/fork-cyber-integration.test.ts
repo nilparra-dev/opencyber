@@ -416,7 +416,7 @@ it.live("preserves nested call identities and unresolved effects when Code Mode 
         const artifacts = yield* store.artifacts(env.root.id, execution.id)
         const error = artifacts.find((artifact) => artifact.kind === "error")!
         expect((yield* store.readArtifact(env.root.id, error.id)).bytes.toString()).toContain(
-          '"category":"interruption"',
+          '"kind":"interruption"',
         )
       }
     }).pipe(env.provide)

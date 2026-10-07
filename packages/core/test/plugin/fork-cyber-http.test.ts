@@ -512,7 +512,8 @@ test("interruption aborts the socket and never records a completed exchange", as
         )!
         expect(JSON.parse((yield* store.readArtifact("owner", String(output.id))).bytes.toString())).toMatchObject({
           diagnostic: {
-            category: "interruption",
+            category: "tool_failure",
+            kind: "interruption",
             operation: "http_request",
             target_started: true,
             effects: "unknown",

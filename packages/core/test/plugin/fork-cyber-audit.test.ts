@@ -79,7 +79,7 @@ test("primary validation retains its executor and checks task/session provenance
             .finding("owner", { ...confirmation, validation: { ...confirmation.validation, impact: undefined } })
             .pipe(Effect.flip)
           expect(ForkCyberDiagnostics.toolError(missingImpact, "findings").metadata?.diagnostic).toMatchObject({
-            category: "evidence",
+            category: "invalid_input",
             effects: "not_started",
           })
           expect((yield* store.findings("owner")).find((finding) => finding.id === key)?.revision).toBe(1)
@@ -97,7 +97,7 @@ test("primary validation retains its executor and checks task/session provenance
               ])
               const error = yield* store.finding("owner", confirmation).pipe(Effect.flip)
               expect(ForkCyberDiagnostics.toolError(error, "findings").metadata?.diagnostic).toMatchObject({
-                category: "evidence",
+                category: "invalid_input",
                 operation: "findings.confirm",
                 target_started: false,
                 effects: "not_started",

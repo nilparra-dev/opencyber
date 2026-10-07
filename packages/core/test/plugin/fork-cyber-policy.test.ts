@@ -140,7 +140,7 @@ it.live("review ignores target plugins, MCP, agents and nested instructions whil
       expect(yield* call(root.id, "read", { path: "nested/source.txt" })).toContain("source data")
       for (const file of [privateFile, "private-link.txt"]) {
         const rejected = String(yield* call(root.id, "read", { path: file }).pipe(Effect.flip))
-        expect(rejected).toContain('"category":"scope"')
+        expect(rejected).toContain('"category":"outside_scope"')
         expect(rejected).toContain('"target_started":false')
         expect(rejected).not.toContain("synthetic-host-file-secret")
       }

@@ -172,7 +172,7 @@ it.live(
         expect(rejected.failure).toBeInstanceOf(ForkCyberDiagnostics.Failure)
         expect(ForkCyberDiagnostics.toolError(rejected.failure, "complete").metadata).toMatchObject({
           diagnostic: {
-            category: "evidence",
+            category: "invalid_input",
             details: { rejected: [{ artifact: auxiliary[0]!.id, reason: "auxiliary_artifact" }] },
           },
         })
