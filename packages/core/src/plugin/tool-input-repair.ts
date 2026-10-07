@@ -31,6 +31,8 @@ export const Plugin = define({
         const tool = (yield* ctx.tool.list()).find((tool) => tool.id === event.tool)
         if (!tool) return
         const schema = definition(tool).inputSchema
+        // fork: default action-less read payloads before validation (F-025).
+        event.input = ForkToolInputRepair.normalize(event.tool, event.input)
         const selected = ForkToolInputRepair.select(event.input, schema)
         if (schema.type !== "object" && !selected) return
         event.input = repair(selected?.value ?? event.input, selected?.schema ?? schema, schema, 0)

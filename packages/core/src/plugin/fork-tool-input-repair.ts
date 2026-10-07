@@ -4,6 +4,24 @@ import { JsonSchema, Option, Predicate, Schema } from "effect"
 
 const decodeJson = Schema.decodeUnknownOption(Schema.fromJsonString(Schema.Unknown))
 
+// Action-union tools whose read needs no arguments accept an action-less payload by defaulting
+// it to the read action before validation. The schemas keep `action` required on purpose: a
+// lenient read branch would swallow partial payloads, while this only fires when the payload
+// carries read-shaped keys (or none), so every other mistake keeps the schema's own error.
+const READ_DEFAULTS: Record<string, { action: string; keep: string[] }> = {
+  cyber_tasks: { action: "list", keep: ["offset"] },
+  kali_environment: { action: "status", keep: [] },
+}
+
+export function normalize(tool: string, value: unknown) {
+  const fallback = READ_DEFAULTS[tool]
+  if (!fallback) return value
+  const parsed = typeof value === "string" ? Option.getOrUndefined(decodeJson(value)) : value
+  if (!Predicate.isObject(parsed) || Object.hasOwn(parsed, "action")) return value
+  if (Object.keys(parsed).some((key) => !fallback.keep.includes(key))) return value
+  return { ...parsed, action: fallback.action }
+}
+
 export function select(value: unknown, schema: JsonSchema.JsonSchema) {
   if (schema.type !== undefined || Array.isArray(schema.allOf)) return
   if (Array.isArray(schema.anyOf) && Array.isArray(schema.oneOf)) return
