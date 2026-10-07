@@ -20,7 +20,7 @@ export type Store = Effect.Success<ReturnType<typeof ForkCyberStore.open>>
 export type Assessment = { owner: string; session: string; agent: string; manifest: ForkCyberScope.Manifest }
 
 export const requireRole = Effect.fn(function* (store: Store, assessment: Omit<Assessment, "manifest">) {
-  const role = yield* store.coordination.role(assessment)
+  const role = assessment.agent
   if (!ForkCyberRoles.allowed(role, "cyber_surface"))
     return yield* Effect.fail(new Error(`Phase ${role} cannot execute cyber_surface`))
   if (ForkCyberRoles.worker(assessment.agent)) yield* store.coordination.requireClaim(assessment)

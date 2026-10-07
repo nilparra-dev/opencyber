@@ -113,7 +113,7 @@ export const run = (store: Store, resolve: () => Effect.Effect<Assessment, Error
     const hops: { output: string; capture: Capture }[] = []
     for (let hop = 0; ; hop++) {
       const assessment = yield* resolve()
-      const role = yield* store.coordination.role(assessment)
+      const role = assessment.agent
       if (
         !ForkCyberRoles.allowed(role, "http_request") ||
         (ForkCyberRoles.observeOnly(role) &&
