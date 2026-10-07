@@ -58,6 +58,16 @@ function Assert-Release([string]$Exe, [string]$Expected) {
   if (-not $text.Contains($Expected)) { throw "$Exe does not embed the build version $Expected" }
 }
 
+function Use-FreeServicePort([string]$Exe) {
+  # The default service port is fixed per channel, so a runner that already listens on it fails
+  # the start. The verifier takes a port the OS reports free instead.
+  $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
+  $listener.Start()
+  $port = $listener.LocalEndpoint.Port
+  $listener.Stop()
+  $null = Invoke-Opencyber $Exe @("service", "set", "port", "$port")
+}
+
 function Start-OpencyberService([string]$Exe) {
   $output = Invoke-Opencyber $Exe @("service", "start")
   $url = ($output -split "`r?`n" | Where-Object { $_ -match "^http://" } | Select-Object -Last 1)
@@ -129,6 +139,7 @@ if (@(($userPath -split ";") | Where-Object { $_ }) -notcontains (Split-Path $in
 }
 
 Write-Host "[3/4] Running the background service"
+Use-FreeServicePort $installed
 $url = Start-OpencyberService $installed
 $status = Get-ServiceStatus $installed
 if ($status -notmatch "^http://") { throw "service status after start: $status" }
