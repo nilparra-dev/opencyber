@@ -2,6 +2,7 @@ export * as ForkCyberDecision from "./decision.js"
 
 import { Option, Schema } from "effect"
 import { ForkCyberPolicy } from "./policy.js"
+import { ForkCyberScope } from "./scope.js"
 
 // Risk classes from fork-cyber-toolset.md (R-2). R3 is never declared. R2 is above every ceiling until the
 // approval flow (OC-401) can return `ask`, so R2 actions are denied in every mode.
@@ -74,13 +75,32 @@ export function available(mode: ForkCyberPolicy.Mode, agent: string, tool: strin
   return risks.some((risk) => ceilings[mode].includes(risk))
 }
 
+export const Reason = Schema.Literals(["allowed", "outside_role_or_mode", "undeclared_action", "above_ceiling"])
+export type Verdict = { decision: "allow" | "deny"; reason: typeof Reason.Type; risk?: Risk }
+
 // Action-level check for each execution. An undeclared variant of a governed tool is denied.
-export function decide(request: { mode: ForkCyberPolicy.Mode; agent: string; tool: string; input: unknown }) {
-  if (!ForkCyberPolicy.allowed(request.mode, request.agent, request.tool)) return "deny"
+export function decide(request: { mode: ForkCyberPolicy.Mode; agent: string; tool: string; input: unknown }): Verdict {
+  if (!ForkCyberPolicy.allowed(request.mode, request.agent, request.tool))
+    return { decision: "deny", reason: "outside_role_or_mode" }
   const governed = declaration(request.tool)
-  if (governed === undefined) return "allow"
+  if (governed === undefined) return { decision: "allow", reason: "allowed" }
   const risk = riskOf(governed, request.input)
-  return risk !== undefined && ceilings[request.mode].includes(risk) ? "allow" : "deny"
+  if (risk === undefined) return { decision: "deny", reason: "undeclared_action" }
+  if (!ceilings[request.mode].includes(risk)) return { decision: "deny", reason: "above_ceiling", risk }
+  return { decision: "allow", reason: "allowed", risk }
+}
+
+// Only scope vocabulary is recorded: a valid host, or the origin of a URL. Paths, query strings and
+// credentials can carry secrets, and the scope rules never match on them, so they are not recorded.
+const Target = Schema.Struct({ host: Schema.optional(ForkCyberScope.Host), url: Schema.optional(Schema.String) })
+
+export function target(input: unknown) {
+  const value = Option.getOrUndefined(Schema.decodeUnknownOption(Target)(input))
+  if (value === undefined) return undefined
+  if (value.url === undefined) return value.host
+  if (!URL.canParse(value.url)) return undefined
+  const origin = new URL(value.url).origin
+  return origin === "null" ? undefined : origin
 }
 
 function riskOf(governed: Declaration, input: unknown): Risk | undefined {

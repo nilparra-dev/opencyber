@@ -523,10 +523,24 @@ export const Plugin = define({
         const owner = yield* topLevel(event.sessionID)
         // Capability follows the registered agent (see the catalog filter); the claim below is
         // only required for delegated workers so their executions attach to a durable task.
-        if (
-          ForkCyberDecision.decide({ mode: cyberMode, agent: event.agent, tool: event.tool, input: event.input }) ===
-          "deny"
-        )
+        const verdict = ForkCyberDecision.decide({
+          mode: cyberMode,
+          agent: event.agent,
+          tool: event.tool,
+          input: event.input,
+        })
+        yield* store.decision({
+          owner,
+          session: event.sessionID,
+          agent: event.agent,
+          tool: event.tool,
+          mode: cyberMode,
+          risk: verdict.risk,
+          decision: verdict.decision,
+          reason: verdict.reason,
+          target: ForkCyberDecision.target(event.input),
+        })
+        if (verdict.decision === "deny")
           return yield* Effect.fail(
             new ForkCyberDiagnostics.Failure({
               category: "capability",
