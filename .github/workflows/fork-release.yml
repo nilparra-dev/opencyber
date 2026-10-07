@@ -6,13 +6,21 @@ name: fork-release
 # - A push to custom that changes what goes into the binary (packages/, patches/,
 #   the lockfile or the root package.json) since the last fork release publishes
 #   the next <upstream>-cyber.N, so installed builds pick up fork changes too.
-# - A manual run publishes the next <upstream>-cyber.N from the current custom.
+# - A manual run publishes the next <upstream>-cyber.N from the current custom,
+#   or, with publish=false, only builds and runs the verify jobs.
 # Other pushes to custom (docs, workflows, install scripts) do nothing.
+# Every publication is gated on verify-windows, which runs the packaged Windows
+# executable and its install/service/update paths (script/fork-verify-release.ps1).
 
 on:
   push:
     branches: [custom]
   workflow_dispatch:
+    inputs:
+      publish:
+        description: "Publish the release after building and verifying it"
+        type: boolean
+        default: true
 
 concurrency:
   group: fork-release
@@ -34,6 +42,7 @@ jobs:
     timeout-minutes: 5
     outputs:
       publish: ${{ steps.plan.outputs.publish }}
+      build: ${{ steps.plan.outputs.build }}
       base: ${{ steps.plan.outputs.base }}
       version: ${{ steps.plan.outputs.version }}
       previous: ${{ steps.plan.outputs.previous }}
@@ -48,6 +57,7 @@ jobs:
         id: plan
         env:
           GH_TOKEN: ${{ github.token }}
+          PUBLISH_INPUT: ${{ inputs.publish }}
         run: |
           git fetch --no-tags "https://github.com/$UPSTREAM_REPO.git" '+refs/tags/v2.*:refs/tags/v2.*'
           base=$(git tag -l 'v2.*' --merged HEAD | grep -E "$UPSTREAM_TAG_PATTERN" | sort -V | tail -1)
@@ -55,26 +65,39 @@ jobs:
           releases=$(gh release list --limit 200 --json tagName,createdAt --jq 'sort_by(.createdAt) | reverse | .[].tagName')
           last=$(grep -E "^${base//./\\.}-cyber\.[0-9]+$" <<< "$releases" | sed 's/.*-cyber\.//' | sort -n | tail -1 || true)
           previous=$(grep -E -- '-cyber\.[0-9]+$' <<< "$releases" | head -1 || true)
-          if [ "$GITHUB_EVENT_NAME" = push ] && [ -n "$last" ] &&
-            [ -z "$(git diff --name-only "$base-cyber.$last" HEAD -- packages patches bun.lock package.json)" ]; then
-            echo "publish=false" >> "$GITHUB_OUTPUT"
-            echo "nothing in the binary changed since fork release $base-cyber.$last"
-            exit 0
-          fi
           version="${base#v}-cyber.$(( ${last:-0} + 1 ))"
+          publish=true
+          build=true
+          # A manual run without publish builds and verifies the would-be release without
+          # creating it, so the verify job can be exercised before a real publication.
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$PUBLISH_INPUT" = "false" ]; then
+            publish=false
+          elif [ "$GITHUB_EVENT_NAME" = push ] && [ -n "$last" ] &&
+            [ -z "$(git diff --name-only "$base-cyber.$last" HEAD -- packages patches bun.lock package.json)" ]; then
+            publish=false
+            build=false
+            echo "nothing in the binary changed since fork release $base-cyber.$last"
+          fi
           {
-            echo "publish=true"
+            echo "publish=$publish"
+            echo "build=$build"
             echo "base=$base"
             echo "version=$version"
             echo "previous=$previous"
           } >> "$GITHUB_OUTPUT"
-          echo "publishing $version (upstream $base, previous fork release: ${previous:-none})"
+          if [ "$publish" = true ]; then
+            echo "publishing $version (upstream $base, previous fork release: ${previous:-none})"
+          elif [ "$build" = true ]; then
+            echo "building $version (upstream $base) without publishing"
+          else
+            echo "nothing to build; the planned version would be $version"
+          fi
 
   # Runs repository code, so it has no write access. Upstream builds every
   # platform from one Linux runner the same way.
   build:
     needs: plan
-    if: needs.plan.outputs.publish == 'true'
+    if: needs.plan.outputs.build == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -121,8 +144,35 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  publish:
+  # The Linux smoke test never executes the Windows zip, so this job runs the packaged
+  # executable itself: versions, install through fork-install.ps1, the background service
+  # including recovery from an abrupt kill, and the updater chain. It gates publish.
+  verify-windows:
     needs: [plan, build]
+    if: needs.plan.outputs.build == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: fork-release
+          path: release
+
+      # powershell (5.1) is the shell fork-updater.ts runs the installer in.
+      - name: Verify the packaged Windows executable
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+          PREVIOUS: ${{ needs.plan.outputs.previous }}
+        run: powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File script/fork-verify-release.ps1 -Version "$env:VERSION" -Zip "release/opencyber-windows-x64.zip" -Previous "$env:PREVIOUS"
+
+  publish:
+    needs: [plan, build, verify-windows]
+    # verify-only runs keep every dependency green, so the input gates this explicitly.
+    if: needs.plan.outputs.publish == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
