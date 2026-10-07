@@ -29,6 +29,7 @@ export const Kind = Schema.Literals([
   "capture",
   "interruption",
   "internal",
+  "input",
 ])
 export type Kind = typeof Kind.Type
 
@@ -38,6 +39,7 @@ export const categories = {
   claim: "refused_by_policy",
   scope: "outside_scope",
   budget: "budget_exceeded",
+  input: "invalid_input",
   revision: "invalid_input",
   evidence: "invalid_input",
   transport: "target_unreachable",

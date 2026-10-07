@@ -54,6 +54,18 @@ It verifies both stored bodies, then returns status pairs, body equality, length
 
 Reporting agents may compare and retrieve evidence, but cannot request or replay. OpenCode permissions also apply to each destination: replay requires both `http_request` and `http_replay`; comparison checks `http_compare` against its artifact IDs. Permission questions use the existing application lifecycle and are outside the network deadline. Raw archives can contain assessment credentials. Model-visible previews mask common credential keys and raw header pairs; the filter is not an exhaustive secret detector. Exported artifacts retain raw bytes.
 
+## Discovery
+
+`http_discover` checks a fixed, read-only list of paths under one HTTP(S) base URL. The model chooses a profile, and only `basic` exists, so paths cannot be supplied:
+
+```json
+{ "url": "https://app.example.test", "profile": "basic", "offset": 0, "limit": 25 }
+```
+
+Each candidate is one `GET` without redirects, sent through the same scope check, shared `max_rps` pacing and evidence capture as `http_request`. Requests are sent one at a time. Results report `found` (2xx), `protected` (401 and 403) and `redirect` (3xx), each with its evidence ID, length and body hash. Bodies are not returned.
+
+Before the candidates, a random path establishes how the target answers a missing page. If the baseline is not a 404, a candidate with the same status and body hash is listed under `suppressed` and is not reported as exposure, so an application that serves one page for every path produces no findings. `next_offset` continues the list. A base URL with credentials or a non-HTTP scheme is rejected as `invalid_input` before any request.
+
 ## Migration and validation
 
 The archive advances from schema 1 to schema 2 by adding the HTTP admission budget table. Existing evidence and notes are preserved. An older phase 2 executable rejects schema 2, so make a private backup before upgrading if rollback is needed. No upstream session migration or generated client change is involved.
