@@ -1,6 +1,6 @@
 ﻿export * as ForkCyberScope from "./scope.js"
 
-import { Schema } from "effect"
+import { Schema, SchemaGetter } from "effect"
 import { BlockList, isIP } from "node:net"
 import { ForkCyberDiagnostics } from "./diagnostics.js"
 
@@ -36,22 +36,99 @@ export const NetworkBudget = Schema.Struct({
   Schema.makeFilter((value) => value.bytes_per_job <= value.bytes_total || "bytes_per_job must not exceed bytes_total"),
 )
 
+const S3Arn = Schema.String.check(Schema.isPattern(/^arn:aws:s3:::[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/))
+const Domain = Schema.String.check(
+  Schema.makeFilter<string>(
+    (value) =>
+      (isHost(value) && !isIP(normalize(value))) || "Expected a DNS name without an IP address, URL, port or path",
+  ),
+)
+const Url = Schema.String.check(
+  Schema.makeFilter<string>((value) => {
+    if (!URL.canParse(value)) return "Expected an absolute URL"
+    const url = new URL(value)
+    return (
+      ((url.protocol === "http:" || url.protocol === "https:") && !url.username && !url.password) ||
+      "Expected an HTTP(S) URL without credentials"
+    )
+  }),
+)
+const RepoPath = Text.check(Schema.makeFilter<string>((value) => !value.includes("\0") || "Must not contain NUL bytes"))
+const ImageDigest = Schema.String.check(Schema.isPattern(/^[^\s@]+@sha256:[a-f0-9]{64}$/))
+const DirectoryName = Text.check(Schema.isMaxLength(255))
+
+// Typed targets name what an engagement may touch. Each kind is validated here; `enforcement` says where it is enforced.
+const Typed = {
+  host: Schema.Struct({ type: Schema.Literal("host"), value: Host }),
+  domain: Schema.Struct({ type: Schema.Literal("domain"), value: Domain }),
+  cidr: Schema.Struct({ type: Schema.Literal("cidr"), value: Cidr }),
+  url: Schema.Struct({ type: Schema.Literal("url"), value: Url }),
+  service: Schema.Struct({ type: Schema.Literal("service"), value: Service }),
+  cloud_resource: Schema.Struct({ type: Schema.Literal("cloud_resource"), value: S3Arn }),
+  repo_path: Schema.Struct({ type: Schema.Literal("repo_path"), value: RepoPath }),
+  container_image: Schema.Struct({ type: Schema.Literal("container_image"), value: ImageDigest }),
+  device: Schema.Struct({ type: Schema.Literal("device"), value: Host }),
+  directory: Schema.Struct({ type: Schema.Literal("directory"), value: DirectoryName }),
+}
+export const TypedTarget = Schema.Union(Object.values(Typed))
+
+// Where each kind is enforced. A manifest records only the kinds whose enforcement exists today;
+// the others are refused until the work item that adds their enforcement lands.
+export const enforcement = {
+  host: "Kali egress policy and pinned HTTP addresses. Recorded as a domain entry.",
+  domain: "Kali egress policy and pinned HTTP addresses. Exact name only; subdomains are not implied.",
+  cidr: "Kali egress policy and HTTP address matching.",
+  url: "HTTP scheme, host and port; the path is not enforced. Recorded as a service entry.",
+  service: "Kali egress policy per protocol and port.",
+  cloud_resource: "Exact S3 ARN before cyber_surface and identity-cloud calls. Live API filtering arrives with OC-304.",
+  repo_path: "Code-review snapshot boundary. Refused by manifests until OC-205 records it.",
+  container_image: "Pull by digest only. Refused by manifests until OC-206 records it.",
+  device: "Host policy under the simulator-by-default rule. Refused by manifests until OC-301 records it.",
+  directory: "Bounded read-only directory account. Refused by manifests until OC-303 records it.",
+} satisfies Record<keyof typeof Typed, string>
+
+const ManifestTarget = Schema.Union([
+  Typed.host,
+  Typed.domain,
+  Typed.cidr,
+  Typed.url,
+  Typed.service,
+  Typed.cloud_resource,
+])
+
+const Inclusions = Schema.Struct({
+  domains: Schema.Array(Host),
+  cidrs: Schema.Array(Cidr),
+  excluded: Schema.Array(Target),
+  services: Schema.optional(Schema.Array(Service).check(Schema.isMaxLength(64))),
+  excluded_services: Schema.optional(Schema.Array(Service).check(Schema.isMaxLength(64))),
+  resources: Schema.optional(Schema.Array(S3Arn).check(Schema.isMaxLength(64))),
+})
+
+// Typed entries are recorded into the legacy lists while decoding, so every enforcement path reads one shape.
+// Manifests without `targets` decode to the same value as before, which keeps approved manifest text valid.
+const Scope = Schema.Struct({
+  ...Inclusions.fields,
+  targets: Schema.optional(
+    Schema.Array(ManifestTarget).check(Schema.isMaxLength(128)).annotate({
+      description:
+        "Typed scope entries: host, domain, cidr, url, service or cloud_resource (S3 bucket ARN). Exclusions stay in scope.excluded and scope.excluded_services.",
+    }),
+  ),
+}).pipe(
+  Schema.decodeTo(Inclusions, {
+    decode: SchemaGetter.transform(({ targets, ...scope }) =>
+      targets === undefined ? scope : withTargets(scope, targets),
+    ),
+    encode: SchemaGetter.passthrough({ strict: false }),
+  }),
+)
+
 export const Manifest = Schema.Struct({
   engagement: Text,
   authorized_by: Text,
   authorization_ref: Text,
-  scope: Schema.Struct({
-    domains: Schema.Array(Host),
-    cidrs: Schema.Array(Cidr),
-    excluded: Schema.Array(Target),
-    services: Schema.optional(Schema.Array(Service).check(Schema.isMaxLength(64))),
-    excluded_services: Schema.optional(Schema.Array(Service).check(Schema.isMaxLength(64))),
-    resources: Schema.optional(
-      Schema.Array(Schema.String.check(Schema.isPattern(/^arn:aws:s3:::[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/))).check(
-        Schema.isMaxLength(64),
-      ),
-    ),
-  }),
+  scope: Scope,
   rules_of_engagement: Schema.Struct({
     no_dos: Schema.Boolean,
     max_rps: Schema.Finite.check(Schema.isGreaterThan(0)),
@@ -114,6 +191,28 @@ export function webService(value: string) {
         scheme: url.protocol === "https:" ? ("https" as const) : ("http" as const),
         ports: [Number(url.port || (url.protocol === "https:" ? 443 : 80))],
       },
+    ],
+  }
+}
+
+function withTargets(scope: typeof Inclusions.Type, targets: readonly (typeof ManifestTarget.Type)[]) {
+  const services = targets.flatMap((target) => {
+    if (target.type === "url") return webService(target.value).services
+    if (target.type === "service") return [target.value]
+    return []
+  })
+  return {
+    domains: [
+      ...scope.domains,
+      ...targets.flatMap((target) => (target.type === "host" || target.type === "domain" ? [target.value] : [])),
+    ],
+    cidrs: [...scope.cidrs, ...targets.flatMap((target) => (target.type === "cidr" ? [target.value] : []))],
+    excluded: scope.excluded,
+    services: [...(scope.services ?? []), ...services],
+    excluded_services: scope.excluded_services,
+    resources: [
+      ...(scope.resources ?? []),
+      ...targets.flatMap((target) => (target.type === "cloud_resource" ? [target.value] : [])),
     ],
   }
 }
