@@ -129,6 +129,14 @@ if (@(($userPath -split ";") | Where-Object { $_ }) -notcontains (Split-Path $in
 }
 
 Write-Host "[3/4] Running the background service"
+# The cyber channel's default port is a fixed hash (49866) and a host can already have a
+# listener on it, which the server reports as an unrecoverable port conflict. Pick a free
+# loopback port explicitly: the recovery its own error recommends.
+$probe = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, 0)
+$probe.Start()
+$freePort = ([Net.IPEndPoint]$probe.LocalEndpoint).Port
+$probe.Stop()
+Invoke-Opencyber $installed @("service", "set", "port", [string]$freePort)
 $url = Start-OpencyberService $installed
 $status = Get-ServiceStatus $installed
 if ($status -notmatch "^http://") { throw "service status after start: $status" }
