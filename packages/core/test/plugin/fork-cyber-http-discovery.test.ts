@@ -124,24 +124,29 @@ test("pagination continues with the next fixed candidates", async () => {
   )
 })
 
-test("requests stay within the shared rate limit, one at a time", async () => {
+test("requests are admitted at least one interval apart, one at a time", async () => {
   await withStore((store) =>
     Effect.gen(function* () {
-      const arrivals: number[] = []
-      const server = yield* lab((_request, response) => {
-        arrivals.push(Date.now())
-        respond(response, 404, "missing")
-      })
+      const server = yield* lab((_request, response) => respond(response, 404, "missing"))
       const worker = yield* claimedWorker(store, server.url, manifest(5))
       yield* ForkCyberHttpDiscovery.run(store, () => Effect.succeed(worker), {
         url: server.url,
         profile: "basic",
         limit: 3,
       })
-      expect(arrivals.length).toBe(4)
-      // max_rps 5 admits one request every 200 ms; allow timer jitter.
-      for (let index = 1; index < arrivals.length; index++) {
-        expect(arrivals[index]! - arrivals[index - 1]!).toBeGreaterThanOrEqual(150)
+      const executions = (yield* store.executions("owner")).filter((execution) => execution.tool === "http_request")
+      // Pacing is enforced at admission. Dispatch follows admission by a variable delay, so the server's arrival
+      // times are not compared here.
+      const admitted = (yield* Effect.forEach(executions, (execution) =>
+        Effect.gen(function* () {
+          const output = (yield* store.artifacts("owner", execution.id)).find((artifact) => artifact.kind === "output")!
+          return (yield* ForkCyberHttp.readCapture(store, "owner", output.id)).admitted_at
+        }),
+      )).sort((first, second) => first - second)
+      expect(admitted.length).toBe(4)
+      // max_rps 5 admits one request every 200 ms.
+      for (let index = 1; index < admitted.length; index++) {
+        expect(admitted[index]! - admitted[index - 1]!).toBeGreaterThanOrEqual(195)
       }
     }),
   )
