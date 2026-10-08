@@ -129,6 +129,8 @@ dockerTest(
           const raw = yield* env.store.readArtifact(assessment.owner, result.capture.xml_artifact)
           expect(raw.bytes.toString()).toContain("<finished ")
           expect(raw.bytes.toString()).toContain('exit="success"')
+          expect(result.capture.xml_excerpt.preview).toContain("<nmaprun")
+          expect(result.capture.xml_excerpt.preview.length).toBeLessThanOrEqual(8000)
           const output = yield* env.store.readArtifact(assessment.owner, result.evidence)
           expect(output.kind).toBe("output")
           expect(output.bytes.toString()).toContain(result.capture.xml_artifact)

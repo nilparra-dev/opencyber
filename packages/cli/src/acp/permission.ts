@@ -1,12 +1,11 @@
-import type { PermissionOption } from "@agentclientprotocol/sdk"
+import type { PermissionOption, SessionUpdate } from "@agentclientprotocol/sdk"
 import { Delegation } from "@opencode/schema/delegation"
-// fork: manual delegation approval applies only to this invocation (F-027).
 import type { OpenCodeClient, OpenCodeEvent } from "@opencode/client/effect"
 import { FileDiff } from "@opencode/schema/file-diff"
 import type { Permission } from "@opencode/schema/permission"
 import type { Session } from "@opencode/schema/session"
 import { Patch } from "@opencode/util/patch"
-import { applyPatch } from "diff"
+import { applyPatch, parsePatch, reversePatch, structuredPatch, type StructuredPatch } from "diff"
 import { Effect, Option, Schema } from "effect"
 import { ACPChild } from "./child"
 import { ACPClient } from "./client"
@@ -19,6 +18,7 @@ import {
   pendingToolCall,
   stringValue,
   toLocations,
+  type DiffSource,
   type ToolInput,
 } from "./tool"
 
@@ -58,6 +58,7 @@ export const ask = Effect.fnUntraced(function* (input: Input) {
     state: { input: toolInput, title: title ? ACPChild.prefixTitle(input.child, title) : input.child?.title },
     cwd: input.cwd,
   })
+  // fork: manual delegation approval applies only to this invocation (F-027).
   const available =
     input.event.data.metadata?.[Delegation.ApprovalKey] === true
       ? options.filter((option) => option.optionId !== "always")
@@ -66,6 +67,7 @@ export const ask = Effect.fnUntraced(function* (input: Input) {
     sessionId: input.clientSessionID,
     toolCall: {
       ...toolCall,
+      name: input.tool?.name,
       rawInput: input.tool ? toolCall.rawInput : undefined,
       locations: permissionLocations(toolName, toolInput, input.event.data, input.cwd),
       ...(previews.length > 0 ? { content: previews } : {}),
@@ -84,6 +86,45 @@ export function respond(input: Input, decision: Permission.Reply) {
     Effect.catchTag("PermissionNotFoundError", () => Effect.void),
     Effect.catch(ACPClient.classify),
   )
+}
+
+export const withCompletedDiffs = Effect.fnUntraced(function* (
+  update: SessionUpdate,
+  source: DiffSource | undefined,
+  cwd: string,
+) {
+  if (!source || update.sessionUpdate !== "tool_call_update") return update
+  const hunks = canonicalName(source.toolName) === "patch" ? patchHunks(source.input) : []
+  const diffs = yield* Effect.forEach(
+    Option.getOrElse(decodeFiles(source.metadata?.files), () => []),
+    (file) =>
+      Effect.gen(function* () {
+        const path = absolutePath(file.file, cwd)
+        const newText = file.status === "deleted" ? "" : yield* Effect.tryPromise(() => Bun.file(path).text())
+        if (file.status === "added") return [diff(path, null, newText)]
+        const recorded = parsePatch(file.patch)[0]
+        if (!recorded) return []
+        const oldText = yield* Effect.try(() => applyPatch(newText, reversePatch(recorded)))
+        if (oldText !== false) return [diff(path, oldText, newText)]
+        // Core trims indentation from patch-tool diffs, so rebuild those from its hunks and keep them if the ranges agree.
+        const hunk = hunks.find(
+          (item) => item.type === "update" && absolutePath(item.movePath ?? item.path, cwd) === path,
+        )
+        if (hunk?.type !== "update" || hunk.chunks.some((chunk) => !chunk.oldLines.length || !chunk.newLines.length))
+          return []
+        const chunks = hunk.chunks.map((chunk) => ({ ...chunk, oldLines: chunk.newLines, newLines: chunk.oldLines }))
+        const rebuilt = (yield* Effect.try(() => Patch.derive(hunk.path, chunks, newText))).content
+        return ranges(structuredPatch(path, path, rebuilt, newText)) === ranges(recorded)
+          ? [diff(path, rebuilt, newText)]
+          : []
+      }).pipe(Effect.orElseSucceed((): Preview[] => [])),
+    { concurrency: "unbounded" },
+  ).pipe(Effect.map((items) => items.flat()))
+  return diffs.length === 0 ? update : { ...update, content: [...(update.content ?? []), ...diffs] }
+})
+
+function ranges(patch: StructuredPatch) {
+  return patch.hunks.map((hunk) => `${hunk.oldStart},${hunk.oldLines},${hunk.newStart},${hunk.newLines}`).join(" ")
 }
 
 // Core trims the patch tool's diffs for display, which breaks `applyPatch`, so its previews come from its own hunks.

@@ -1,14 +1,13 @@
 import { describe, expect, test } from "bun:test"
 import type { AnyRequest, CreateElicitationResponse, RequestPermissionResponse } from "@agentclientprotocol/sdk"
 import type { OpenCodeEventEncoded } from "@opencode/protocol/groups/event"
-import { createTwoFilesPatch } from "diff"
 import { Delegation } from "@opencode/schema/delegation"
-// fork: manual delegation approvals do not offer a persistent grant (F-027).
 import fs from "node:fs/promises"
 import path from "node:path"
 import { tmpdir } from "../fixture/tmpdir"
 import {
   delivered,
+  fileDiff,
   ephemeralEvent,
   interrupted,
   permissionAsked,
@@ -24,6 +23,7 @@ import {
 const allowOnce = () => ({ outcome: { outcome: "selected", optionId: "once" } }) as const
 
 describe("acp permissions over the wire", () => {
+  // fork: manual delegation approvals do not offer a persistent grant (F-027).
   test.each(["once", "always"])("limits manual delegation approval when the client selects %s", async (selected) => {
     await using acp = await startSession({
       onPrompt: ({ sessionID, id }) =>
@@ -304,6 +304,8 @@ describe("acp edit previews over the wire", () => {
       [{ path: file("folder") }],
       [{ path: file("unpatched.ts") }],
     ])
+    expect(acp.permissions[0]?.toolCall.name).toBe("edit")
+    expect(acp.permissions[4]?.toolCall).not.toHaveProperty("name")
     expect(decisions(acp)).toHaveLength(8)
   })
 })
@@ -324,6 +326,3 @@ function decisions(acp: Wire) {
   return acp.server.replies.map((reply) => [reply.requestID, reply.decision])
 }
 
-function fileDiff(file: string, before: string, after: string, status: "added" | "deleted" | "modified" = "modified") {
-  return { file, patch: createTwoFilesPatch(file, file, before, after), additions: 1, deletions: 1, status }
-}

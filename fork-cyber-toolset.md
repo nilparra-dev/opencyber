@@ -350,14 +350,14 @@ Updated with each merge. "Done" means the acceptance criteria in the work item's
 | OC-102 | Done    | #57, PR #84: risk class per action and one decision function                                                                            |
 | OC-103 | Done    | #61, PR #94: phase risk ceilings; exploitation phases split their surfaces; post-exploitation has no tools                              |
 | OC-104 | Done    | #60: `kali_run` admits only allowlisted bare names (`kali-allowlist.ts`, image version 5); refusals are `binary_not_allowlisted` decisions. Wrapper pattern documented in `fork-cyber-kali.md` with `cyber_services` as reference |
-| OC-105 | Partial | #58, PR #86: seven shared categories, recovery steps and the `kind` mapping. Open: the long-output contract for Kali outputs, and migration of tool-specific recovery text |
+| OC-105 | Partial | #58, PR #86: seven shared categories, recovery steps and the `kind` mapping. Long-output previews and `next_offset` for `kali_run` and `cyber_services`. Open: migration of tool-specific recovery text |
 | OC-106 | Done    | #62, PR #95: `finding_retest` (R1) replays a finding's HTTP evidence and links each execution; a separate tool, not an action of `findings` |
 | OC-107 | Done    | #63, PR #85: append-only decision log, including denials                                                                                |
 | OC-108 | Open    | #59. Needs a model budget decision                                                                                                      |
 | OC-201 | Done    | #64, PR #87: `http_discover`                                                                                                             |
 | OC-202 | Done    | #65, PR #88: `cyber_web_test` with openapi, jwt, graphql and plan. `cyber_web_plan` stays registered beside it                         |
 | OC-203 | Done    | #66: `cyber_discover` with `passive_dns` (absorbs `cyber_dns`), `certificates` (declared passive OSINT, D-5), `host_sweep` (scoped Kali) and `fingerprint`. Exception: names beyond 200 in `certificates` stay in the artifact, with no offset action. See `fork-cyber-discovery.md` |
-| OC-204 | Open    | #67. Needs the Kali image                                                                                                              |
+| OC-204 | Partial | #67: `version`, `probe` (redis_info, elasticsearch_root) and `udp_top` (not_configured, no raw sockets). Open: the other probe checks (anonymous FTP, LDAP root DSE, SMB signing, NFS exports, MongoDB) |
 | OC-205 | Partial | #68, PR #92: `secrets` (offline, redacted). Open: `sast` and `sca`, which need pinned analyzers and advisory data                    |
 | OC-206 | Partial | #69, PR #96: `dockerfile_lint` and `runtime_review` (offline). Open: `image_scan` and `pull`                                          |
 | OC-207 | Partial | #70, PR #93: `iam_analyze` (offline, JSON pointers). Open: `iac_scan`                                                                 |

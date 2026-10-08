@@ -100,6 +100,47 @@ dockerTest(
   120000,
 )
 
+test("long streams return a bounded redacted preview and a continuation position", () => {
+  expect(ForkCyberKali.excerpt(Buffer.from("ok\n"))).toEqual({ preview: "ok\n", next_offset: null })
+  const long = ForkCyberKali.excerpt(Buffer.from(`${"a".repeat(8000)}b${"c".repeat(100)}`))
+  expect(long.preview).toHaveLength(8000)
+  expect(long.next_offset).toBe(8000)
+  const secret = ForkCyberKali.excerpt(Buffer.from("Authorization: Bearer abc.def-ghi-jkl"))
+  expect(secret.preview).not.toContain("abc.def-ghi-jkl")
+})
+
+dockerTest(
+  "real Kali returns a preview and a continuation position for long output",
+  async () => {
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const { store, manager } = yield* fixture
+          yield* store.start({ ...assessment, id: "seed-long", tool: "fixture", input: {} })
+          const text = "line of output\n".repeat(1000)
+          const input = (yield* store.artifact(
+            assessment.owner,
+            "seed-long",
+            "input",
+            Buffer.from(text),
+            "text/plain",
+          ))[0]!.id
+          yield* store.finish(assessment.owner, "seed-long", "completed", {})
+          const result = yield* manager.run(assessment, {
+            argv: ["cat", "source.txt"],
+            inputs: [{ name: "source.txt", artifact: input }],
+          })
+          expect(result.stdout_excerpt.preview).toBe(text.slice(0, 8000))
+          expect(result.stdout_excerpt.next_offset).toBe(8000)
+          expect(ForkCyberStore.preview(text, 8000)).toBe(text.slice(8000))
+          expect(result.stderr_excerpt.next_offset).toBeNull()
+        }),
+      ),
+    )
+  },
+  120000,
+)
+
 dockerTest(
   "real Kali runs allowlisted utilities on artifact inputs under the production limits",
   async () => {
