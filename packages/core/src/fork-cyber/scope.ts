@@ -37,7 +37,7 @@ export const NetworkBudget = Schema.Struct({
 )
 
 const S3Arn = Schema.String.check(Schema.isPattern(/^arn:aws:s3:::[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/))
-const Domain = Schema.String.check(
+export const Domain = Schema.String.check(
   Schema.makeFilter<string>(
     (value) =>
       (isHost(value) && !isIP(normalize(value))) || "Expected a DNS name without an IP address, URL, port or path",
@@ -152,6 +152,8 @@ export const Manifest = Schema.Struct({
     contact: Text,
     network: Schema.optional(NetworkBudget),
     validation: Schema.optional(Validation),
+    // Third-party lookups (certificate transparency) reveal interest in the target (R-9), so they need this declaration.
+    passive_osint: Schema.optional(Schema.Boolean),
   }),
   // Compatibility with existing session records. New manifests need no derived flag.
   derived: Schema.optional(Schema.Boolean),
@@ -183,6 +185,7 @@ export function render(manifest: Manifest) {
           `Validation (R2) declared for ${manifest.rules_of_engagement.validation.environment}: ${manifest.rules_of_engagement.validation.actions.join(", ")}. Each run needs a fresh operator approval for one action and one target.`,
         ]
       : []),
+    `Passive OSINT declared as permitted: ${manifest.rules_of_engagement.passive_osint === true ? "yes" : "no"}. Only yes permits third-party certificate transparency lookups.`,
     ...(manifest.rules_of_engagement.network
       ? [
           `Kali network budgets: ${JSON.stringify(manifest.rules_of_engagement.network)}. Each job reserves bytes_per_job against bytes_total before access; reservations are not refunded.`,

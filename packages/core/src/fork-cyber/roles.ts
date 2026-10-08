@@ -40,7 +40,7 @@ const observe = [
   "http_discover",
   "cyber_services",
   "cyber_artifacts",
-  "cyber_dns",
+  "cyber_discover",
   "cyber_web_plan",
   "cyber_web_test",
   "cyber_cloud",
