@@ -128,6 +128,8 @@ Cyber tools report one of seven shared error categories: `not_configured`, `inva
 
 `cyber_web_test` analyzes web data with four actions. `openapi` lists operations from a captured JSON API description and whether each allows anonymous access; it is offline. `jwt` checks a token's structure: algorithm, expiry, key references and signature presence. It does not verify the signature, and it stores only a redacted input, so the credential never reaches the evidence archive; it is offline. `graphql` sends one read-only introspection query to a URL in scope (R1), and never sends mutations. `plan` is the same plan as `cyber_web_plan`. Target-supplied names are truncated and treated as untrusted data.
 
+`cyber_cloud` analyzes an exported IAM policy offline. Import the document with `cyber_surface` first, then run `iam_analyze` on its artifact. Each finding names a JSON pointer to its statement: wildcard actions or resources, public principals, `NotAction` and `NotResource` grants, and actions that create or hand out identities or roles. Findings are candidates for review. No cloud API is called. `iac_scan` is not implemented.
+
 Custom `.opencode/cyber/adapters.jsonc` suffixes remain opt-in and operator-controlled. Provider defaults that asserted blanket authorization are removed. Title and generic generation requests do not receive cyber instructions.
 
 In phase 1, `notes` held at most 50 bounded, normalized entries. Phase 2 replaces that storage with durable, paginated rows and captures tool evidence separately. See [fork-cyber-storage.md](fork-cyber-storage.md) for storage contracts, migration, retrieval, export/purge and the optional independent profile. Reporting agents can read the archive but cannot mutate scope, notes or findings.
