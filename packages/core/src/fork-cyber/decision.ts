@@ -1,6 +1,7 @@
 export * as ForkCyberDecision from "./decision.js"
 
 import { Option, Schema } from "effect"
+import { ForkCyberKaliAllowlist } from "./kali-allowlist.js"
 import { ForkCyberPolicy } from "./policy.js"
 import { ForkCyberRoles } from "./roles.js"
 import { ForkCyberScope } from "./scope.js"
@@ -91,7 +92,13 @@ export function available(mode: ForkCyberPolicy.Mode, agent: string, tool: strin
   return risks.some((risk) => permits(mode, agent, risk))
 }
 
-export const Reason = Schema.Literals(["allowed", "outside_role_or_mode", "undeclared_action", "above_ceiling"])
+export const Reason = Schema.Literals([
+  "allowed",
+  "outside_role_or_mode",
+  "undeclared_action",
+  "above_ceiling",
+  "binary_not_allowlisted",
+])
 export type Verdict = { decision: "allow" | "deny"; reason: typeof Reason.Type; risk?: Risk }
 
 // Action-level check for each execution. An undeclared variant of a governed tool is denied.
@@ -103,6 +110,9 @@ export function decide(request: { mode: ForkCyberPolicy.Mode; agent: string; too
   const risk = riskOf(governed, request.input)
   if (risk === undefined) return { decision: "deny", reason: "undeclared_action" }
   if (!permits(request.mode, request.agent, risk)) return { decision: "deny", reason: "above_ceiling", risk }
+  // kali_run takes free-form argv, so its binary is checked after the risk class.
+  if (request.tool === "kali_run" && !ForkCyberKaliAllowlist.allows(request.input))
+    return { decision: "deny", reason: "binary_not_allowlisted", risk }
   return { decision: "allow", reason: "allowed", risk }
 }
 
