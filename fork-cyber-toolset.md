@@ -67,7 +67,7 @@ These rules apply to every tool. They should be in place (W0) before new domain 
 | R2, intrusive validation | Test payloads, credential testing, exploitability confirmation                         | Only with an engagement flag and per-action approval. Laboratory only by default |
 | R3, impact               | Denial of service, writes, persistence, lateral movement, access to real data          | Not implemented in the harness                                                   |
 
-Until the approval flow exists (OC-401), R2 actions are denied in every mode.
+R2 actions are denied in development and review modes. In assessment mode an R2 action is denied unless the engagement declares it under `rules_of_engagement.validation`, and a declared action needs an operator approval for each action and target (OC-401). See [fork-cyber-approval.md](fork-cyber-approval.md).
 
 **R-3. One decision point.** A single function evaluates (action, target type, risk class, phase, engagement flags) and returns `allow`, `ask` or `deny` before `execute()`. Every decision is written to the audit log, including denials. This replaces the repeated checks in `plugin/fork-cyber.ts` (around lines 180, 239–251 and 531), which currently combine `ForkCyberPolicy.allowed` with `ForkCyberRoles.allowed`.
 
@@ -306,7 +306,7 @@ A tool is complete when all of the following hold:
 Each decision was accepted with its recommendation (#81). Outcomes:
 
 - **D-1** applied in #55: the scope manifest validates all ten kinds and records six. `repo_path` and `container_image` are refused by manifests until OC-205 and OC-206 record them.
-- **D-2** applied in #57: R2 is denied in every mode. No approval flow exists yet (OC-401), so `cyber_local_validation` and `binary.execute` are unavailable.
+- **D-2** applied in #57 and extended by OC-401: R2 is refused outside assessment mode. Inside it, only actions the engagement declares run, each after an operator approval for that action and target.
 - **D-3** kept: the VM tier waits for the W1 milestone.
 - **D-4** kept as the design: credential custody belongs to the OpenCyber service. OC-307 has not started.
 - **D-5** kept as the design: passive OSINT needs an engagement declaration. OC-203 will check it before `certificates`.
@@ -362,7 +362,7 @@ Updated with each merge. "Done" means the acceptance criteria in the work item's
 | OC-206 | Partial | #69, PR #96: `dockerfile_lint` and `runtime_review` (offline). Open: `image_scan` and `pull`                                          |
 | OC-207 | Partial | #70, PR #93: `iam_analyze` (offline, JSON pointers). Open: `iac_scan`                                                                 |
 | OC-301 to OC-307 | Open | #71 to #77 and #72. Need the VM lab and credential brokering                                                                      |
-| OC-401 | Open    | #78. Required before any R2 action can run                                                                                              |
+| OC-401 | Done    | #78: engagement declaration, operator approval, approvals that expire after 10 minutes. See fork-cyber-approval.md                      |
 | OC-403, OC-404 | Open | #89 and #90, created from this document                                                                                            |
 | OC-405 to OC-402 | Open | #79 and #80                                                                                                                       |
 

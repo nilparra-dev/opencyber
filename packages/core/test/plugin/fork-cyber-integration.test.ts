@@ -1,5 +1,5 @@
 import { expect, setDefaultTimeout } from "bun:test"
-import { Deferred, Effect, Exit, Fiber, Schema } from "effect"
+import { Cause, Deferred, Effect, Exit, Fiber, Schema } from "effect"
 import path from "path"
 import { Agent } from "@opencode/core/agent"
 import { Bus } from "@opencode/core/bus"
@@ -12,6 +12,8 @@ import { Job } from "@opencode/core/job"
 import { Plugin } from "@opencode/core/plugin"
 import { ForkCyberPlugin } from "@opencode/core/plugin/fork-cyber"
 import { ForkCyberCoordination } from "@opencode/core/fork-cyber/coordination"
+import { ForkCyberDecision } from "@opencode/core/fork-cyber/decision"
+import { ForkCyberScope } from "@opencode/core/fork-cyber/scope"
 import { ForkCyberStore } from "@opencode/core/fork-cyber/store"
 import { PluginHooks } from "@opencode/core/plugin/hooks"
 import { PluginHost } from "@opencode/core/plugin/host"
@@ -1435,4 +1437,95 @@ it.live("registers HTTP tools with inherited scope, replay, comparison and read-
       expect(requests).toHaveLength(2)
     }).pipe(env.provide)
   }),
+)
+
+it.live(
+  "R2 validation waits for an operator approval per action and target, and reuses one only until it expires",
+  () =>
+    Effect.gen(function* () {
+      // The mode is read when the plugin activates, so it is selected before the Location boots.
+      const previous = process.env.OPENCYBER_MODE
+      process.env.OPENCYBER_MODE = "assessment"
+      yield* Effect.addFinalizer(() =>
+        Effect.sync(() => {
+          if (previous === undefined) delete process.env.OPENCYBER_MODE
+          else process.env.OPENCYBER_MODE = previous
+        }),
+      )
+      const env = yield* project
+      const global = yield* Global.Service
+      const store = yield* ForkCyberStore.open(path.join(global.data, "opencyber", "evidence.sqlite"))
+      const validated: ForkCyberScope.Manifest = {
+        ...manifest,
+        rules_of_engagement: {
+          ...manifest.rules_of_engagement,
+          validation: { environment: "laboratory", actions: ["cyber_local_validation"] },
+        },
+      }
+      yield* store.saveManifest(env.root.id, validated, 0)
+      yield* store.approveManifest(env.root.id, validated, 1)
+      yield* Effect.gen(function* () {
+        const permission = yield* Permission.Service
+        const validationCase = { input: { value: 1 }, expected: { kind: "value", value: 1 } }
+        const validation = (source: string) => ({ source, healthy: validationCase, candidate: validationCase })
+        const attempt = (input: unknown, agent = "cyber-validate") =>
+          call(env.root.id, "cyber_local_validation", input, agent).pipe(Effect.exit, Effect.forkChild)
+        const answer = Effect.fn(function* (reply: "once" | "reject") {
+          for (let tries = 0; tries < 500; tries++) {
+            const [request] = yield* permission.forSession(env.root.id)
+            if (request) {
+              yield* permission.reply({ requestID: request.id, reply })
+              return request
+            }
+            yield* Effect.sleep("10 millis")
+          }
+          return yield* Effect.die(new Error("No approval was requested"))
+        })
+
+        const declined = yield* attempt(validation("fixture.txt"))
+        const declinedRequest = yield* answer("reject")
+        const declinedExit = yield* Fiber.join(declined)
+        expect(declinedRequest.metadata).toMatchObject({
+          action: "cyber_local_validation",
+          target: ForkCyberDecision.approvalTarget(validation("fixture.txt")),
+        })
+        expect(Exit.isFailure(declinedExit) && Cause.pretty(declinedExit.cause)).toContain("did not approve")
+
+        const approved = yield* attempt(validation("fixture.txt"))
+        yield* answer("once")
+        const approvedExit = yield* Fiber.join(approved)
+        // The validator itself may then fail for local reasons; the approval must not be the refusal.
+        expect(Exit.isFailure(approvedExit) && Cause.pretty(approvedExit.cause)).not.toContain("did not approve")
+
+        // Within the expiry window the same action and target runs without asking again.
+        const reused = yield* attempt(validation("fixture.txt"))
+        const reusedExit = yield* Fiber.join(reused)
+        expect(yield* permission.forSession(env.root.id)).toEqual([])
+        expect(Exit.isFailure(reusedExit) && Cause.pretty(reusedExit.cause)).not.toContain("did not approve")
+
+        // A different input is a different target, so it asks again.
+        const other = yield* attempt(validation("fixture-other.txt"))
+        yield* answer("reject")
+        expect(Exit.isFailure(yield* Fiber.join(other))).toBe(true)
+
+        // The primary agent has no phase ceiling, but it still needs an approval for each R2 action.
+        const primary = yield* attempt(validation("fixture-primary.txt"), "build")
+        yield* answer("reject")
+        expect(Exit.isFailure(yield* Fiber.join(primary))).toBe(true)
+
+        const reasons = (yield* store.decisions(env.root.id))
+          .filter((row) => row.tool === "cyber_local_validation")
+          .map((row) => (row.reason.startsWith("approved:") ? "approved" : row.reason))
+        expect(reasons).toEqual(["approval_declined", "approved", "approved", "approval_declined", "approval_declined"])
+        const active = yield* store.activeApproval({
+          owner: env.root.id,
+          action: "cyber_local_validation",
+          target: ForkCyberDecision.approvalTarget(validation("fixture.txt")),
+          now: Date.now(),
+        })
+        expect(active).toHaveLength(1)
+        expect(active[0]?.approver).toBe("operator")
+        expect(active[0]?.expires_at).toBeGreaterThan(Date.now())
+      }).pipe(env.provide)
+    }),
 )

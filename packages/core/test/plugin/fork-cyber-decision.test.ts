@@ -16,14 +16,18 @@ describe("risk ceilings", () => {
   test.each([
     ["development", ["R0", "R1"]],
     ["review", ["R0"]],
-    ["assessment", ["R0", "R1"]],
+    ["assessment", ["R0", "R1", "R2"]],
   ] as const)("%s allows %j", (mode, allowed) => {
     expect(ForkCyberDecision.ceiling(mode)).toEqual([...allowed])
   })
 
-  test.each(["development", "review", "assessment"] as const)("%s allows no R2 or R3 action", (mode) => {
+  test.each(["development", "review"] as const)("%s allows no R2 or R3 action", (mode) => {
     expect(ForkCyberDecision.ceiling(mode)).not.toContain("R2")
     expect(ForkCyberDecision.ceiling(mode)).not.toContain("R3")
+  })
+
+  test("no mode allows R3", () => {
+    expect(ForkCyberDecision.ceiling("assessment")).not.toContain("R3")
   })
 })
 
@@ -53,21 +57,95 @@ describe("declarations", () => {
 })
 
 describe("decisions", () => {
-  test.each(["development", "assessment"] as const)("R2 local validation is denied above the ceiling in %s", (mode) => {
-    expect(verdict(mode, "cyber-validate", "cyber_local_validation")).toEqual({
+  test("R2 local validation is denied above the ceiling in development", () => {
+    expect(verdict("development", "cyber-validate", "cyber_local_validation")).toEqual({
       decision: "deny",
       reason: "above_ceiling",
       risk: "R2",
     })
   })
 
-  test.each(["development", "assessment"] as const)("R2 surface binary execution is denied in %s", (mode) => {
-    const input = { module: "binary", action: "execute" }
-    expect(verdict(mode, "cyber-exploit-net", "cyber_surface", input)).toEqual({
+  test("review mode refuses the validation phase outright", () => {
+    expect(verdict("review", "cyber-validate", "cyber_local_validation").decision).toBe("deny")
+  })
+
+  test("R2 local validation is denied in assessment until the engagement declares it", () => {
+    expect(verdict("assessment", "cyber-validate", "cyber_local_validation")).toEqual({
       decision: "deny",
-      reason: "above_ceiling",
+      reason: "not_declared",
       risk: "R2",
+      action: "cyber_local_validation",
     })
+  })
+
+  test("a declared R2 action waits for approval", () => {
+    expect(
+      ForkCyberDecision.decide({
+        mode: "assessment",
+        agent: "cyber-validate",
+        tool: "cyber_local_validation",
+        input: {},
+        declared: ["cyber_local_validation"],
+      }),
+    ).toEqual({ decision: "ask", reason: "approval_required", risk: "R2", action: "cyber_local_validation" })
+  })
+
+  test("declaring one R2 action does not declare another", () => {
+    const input = { module: "binary", action: "execute" }
+    expect(
+      ForkCyberDecision.decide({
+        mode: "assessment",
+        agent: "cyber-exploit-net",
+        tool: "cyber_surface",
+        input,
+        declared: ["cyber_local_validation"],
+      }),
+    ).toEqual({ decision: "deny", reason: "not_declared", risk: "R2", action: "cyber_surface.binary.execute" })
+  })
+
+  test("a declaration never lifts the mode ceiling", () => {
+    expect(
+      ForkCyberDecision.decide({
+        mode: "development",
+        agent: "cyber-validate",
+        tool: "cyber_local_validation",
+        input: {},
+        declared: ["cyber_local_validation"],
+      }),
+    ).toEqual({ decision: "deny", reason: "above_ceiling", risk: "R2" })
+  })
+
+  test.each(["development", "assessment"] as const)("R2 surface binary execution is refused in %s", (mode) => {
+    const input = { module: "binary", action: "execute" }
+    const decision = verdict(mode, "cyber-exploit-net", "cyber_surface", input)
+    expect(decision.decision).toBe("deny")
+    expect(decision.risk).toBe("R2")
+  })
+
+  test("action identifiers name the tool and its variant", () => {
+    expect(ForkCyberDecision.actionID("cyber_local_validation", {})).toBe("cyber_local_validation")
+    expect(ForkCyberDecision.actionID("cyber_surface", { module: "binary", action: "execute" })).toBe(
+      "cyber_surface.binary.execute",
+    )
+    expect(ForkCyberDecision.actionID("cyber_surface", { action: "procedures", module: "ot" })).toBe(
+      "cyber_surface.procedures",
+    )
+  })
+
+  test("approval targets are endpoints without query strings", () => {
+    expect(ForkCyberDecision.approvalTarget({ url: "https://app.example.test/api/item?id=1' OR 1=1" })).toBe(
+      "https://app.example.test/api/item",
+    )
+    expect(ForkCyberDecision.approvalTarget({ url: "https://app.example.test/x?a=1" })).not.toBe(
+      ForkCyberDecision.approvalTarget({ url: "https://app.example.test/y?a=1" }),
+    )
+  })
+
+  test("inputs without a URL or host are approved only as the exact input", () => {
+    const first = ForkCyberDecision.approvalTarget({ source: "artifact-1" })
+    expect(first).toStartWith("input:")
+    expect(ForkCyberDecision.approvalTarget({ source: "artifact-1" })).toBe(first)
+    expect(ForkCyberDecision.approvalTarget({ source: "artifact-2" })).not.toBe(first)
   })
 
   test("surface variants are classified by module and action", () => {
@@ -143,8 +221,13 @@ describe("decision targets", () => {
 })
 
 describe("catalog availability", () => {
-  test("a tool with only denied actions is withheld from the catalog", () => {
-    expect(ForkCyberDecision.available("assessment", "cyber-validate", "cyber_local_validation")).toBe(false)
+  test("a tool whose only action is above the mode ceiling is withheld from the catalog", () => {
+    expect(ForkCyberDecision.available("development", "cyber-validate", "cyber_local_validation")).toBe(false)
+    expect(ForkCyberDecision.available("review", "cyber-validate", "cyber_local_validation")).toBe(false)
+  })
+
+  test("an R2 tool is offered in assessment, and each declared action is still decided separately", () => {
+    expect(ForkCyberDecision.available("assessment", "cyber-validate", "cyber_local_validation")).toBe(true)
   })
 
   test("a tool with at least one permitted action is offered", () => {

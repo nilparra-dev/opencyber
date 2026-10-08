@@ -1,13 +1,14 @@
 export * as ForkCyberDecision from "./decision.js"
 
+import { createHash } from "node:crypto"
 import { Option, Schema } from "effect"
 import { ForkCyberKaliAllowlist } from "./kali-allowlist.js"
 import { ForkCyberPolicy } from "./policy.js"
 import { ForkCyberRoles } from "./roles.js"
 import { ForkCyberScope } from "./scope.js"
 
-// Risk classes from fork-cyber-toolset.md (R-2). R3 is never declared. R2 is above every ceiling until the
-// approval flow (OC-401) can return `ask`, so R2 actions are denied in every mode.
+// Risk classes from fork-cyber-toolset.md (R-2). R3 is never declared. R2 is reachable only in assessment mode,
+// and only for actions the engagement declares; each use then waits for an operator approval (OC-401).
 export const Risk = Schema.Literals(["R0", "R1", "R2", "R3"])
 export type Risk = typeof Risk.Type
 
@@ -60,7 +61,7 @@ const declared: Readonly<Record<string, Declaration>> = {
 const ceilings: Record<ForkCyberPolicy.Mode, readonly Risk[]> = {
   development: ["R0", "R1"],
   review: ["R0"],
-  assessment: ["R0", "R1"],
+  assessment: ["R0", "R1", "R2"],
 }
 
 const Discriminator = Schema.Struct({ action: Schema.String, module: Schema.optional(Schema.String) })
@@ -97,12 +98,22 @@ export const Reason = Schema.Literals([
   "outside_role_or_mode",
   "undeclared_action",
   "above_ceiling",
+  "not_declared",
+  "approval_required",
   "binary_not_allowlisted",
 ])
-export type Verdict = { decision: "allow" | "deny"; reason: typeof Reason.Type; risk?: Risk }
+// `ask` means the action may run only after an operator approves this action on this target.
+export type Verdict = { decision: "allow" | "deny" | "ask"; reason: typeof Reason.Type; risk?: Risk; action?: string }
 
-// Action-level check for each execution. An undeclared variant of a governed tool is denied.
-export function decide(request: { mode: ForkCyberPolicy.Mode; agent: string; tool: string; input: unknown }): Verdict {
+// Action-level check for each execution. An undeclared variant of a governed tool is denied. `declared` lists the
+// R2 actions the engagement declares; it is empty when no engagement validation is recorded.
+export function decide(request: {
+  mode: ForkCyberPolicy.Mode
+  agent: string
+  tool: string
+  input: unknown
+  declared?: readonly string[]
+}): Verdict {
   if (!ForkCyberPolicy.allowed(request.mode, request.agent, request.tool))
     return { decision: "deny", reason: "outside_role_or_mode" }
   const governed = declaration(request.tool)
@@ -113,7 +124,29 @@ export function decide(request: { mode: ForkCyberPolicy.Mode; agent: string; too
   // kali_run takes free-form argv, so its binary is checked after the risk class.
   if (request.tool === "kali_run" && !ForkCyberKaliAllowlist.allows(request.input))
     return { decision: "deny", reason: "binary_not_allowlisted", risk }
-  return { decision: "allow", reason: "allowed", risk }
+  if (risk !== "R2") return { decision: "allow", reason: "allowed", risk }
+  const action = actionID(request.tool, request.input)
+  if (!request.declared?.includes(action)) return { decision: "deny", reason: "not_declared", risk, action }
+  return { decision: "ask", reason: "approval_required", risk, action }
+}
+
+// Stable identifier of an action, used by engagement declarations and approvals: `tool` or `tool.action`.
+export function actionID(tool: string, input: unknown) {
+  const key = Option.getOrUndefined(Schema.decodeUnknownOption(Discriminator)(input))
+  if (key === undefined) return tool
+  const shared = key.action === "procedures" || key.action === "import"
+  const name = key.module !== undefined && !shared ? `${key.module}.${key.action}` : key.action
+  return `${tool}.${name}`
+}
+
+// An approval covers one endpoint: origin and path. A query string carries payloads, so it is not part of the
+// target. Inputs without a URL or host are approved only as the exact input they were approved with.
+export function approvalTarget(input: unknown) {
+  const host = target(input)
+  const value = Option.getOrUndefined(Schema.decodeUnknownOption(Target)(input))
+  if (value?.url !== undefined && host !== undefined) return `${host}${new URL(value.url).pathname}`
+  if (host !== undefined) return host
+  return `input:${createHash("sha256").update(JSON.stringify(input)).digest("hex")}`
 }
 
 // Only scope vocabulary is recorded: a valid host, or the origin of a URL. Paths, query strings and

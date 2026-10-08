@@ -124,6 +124,17 @@ const Scope = Schema.Struct({
   }),
 )
 
+// R2 actions an engagement may declare (fork-cyber-toolset.md, D-2). Each run still needs a per-action,
+// per-target operator approval that expires. The decision function refuses any other identifier.
+export const ValidationAction = Schema.Literals(["cyber_local_validation", "cyber_surface.binary.execute"])
+export type ValidationAction = typeof ValidationAction.Type
+
+export const Validation = Schema.Struct({
+  // Laboratory is the only environment until an approval model for other environments exists.
+  environment: Schema.Literal("laboratory"),
+  actions: Schema.Array(ValidationAction).check(Schema.isMinLength(1), Schema.isMaxLength(8)),
+})
+
 export const Manifest = Schema.Struct({
   engagement: Text,
   authorized_by: Text,
@@ -135,6 +146,7 @@ export const Manifest = Schema.Struct({
     window: Text,
     contact: Text,
     network: Schema.optional(NetworkBudget),
+    validation: Schema.optional(Validation),
     // Third-party lookups (certificate transparency) reveal interest in the target (R-9), so they need this declaration.
     passive_osint: Schema.optional(Schema.Boolean),
   }),
@@ -163,6 +175,11 @@ export function render(manifest: Manifest) {
       manifest.rules_of_engagement.no_dos ? ", no denial-of-service" : ""
     }, window ${manifest.rules_of_engagement.window}. Security contact: ${manifest.rules_of_engagement.contact}.`,
     "HTTP tools and captured browser requests enforce destinations and shared max_rps. Scoped Kali jobs enforce a pinned destination policy and require separate connection, packet, byte and duration budgets. Cyber phase agents cannot use the host shell. The primary agent and external plugins are outside this isolation. The free-text window and no_dos declaration are not machine-enforced technique controls.",
+    ...(manifest.rules_of_engagement.validation
+      ? [
+          `Validation (R2) declared for ${manifest.rules_of_engagement.validation.environment}: ${manifest.rules_of_engagement.validation.actions.join(", ")}. Each run needs a fresh operator approval for one action and one target.`,
+        ]
+      : []),
     `Passive OSINT declared as permitted: ${manifest.rules_of_engagement.passive_osint === true ? "yes" : "no"}. Only yes permits third-party certificate transparency lookups.`,
     ...(manifest.rules_of_engagement.network
       ? [

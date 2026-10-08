@@ -30,7 +30,7 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
   )
   yield* sql`PRAGMA foreign_keys = ON`
   const version = yield* sql<{ user_version: number }>`PRAGMA user_version`
-  if (![0, 1, 2, 3, 4, 5, 6, 7, 8].includes(version[0]?.user_version ?? -1))
+  if (![0, 1, 2, 3, 4, 5, 6, 7, 8, 9].includes(version[0]?.user_version ?? -1))
     return yield* Effect.fail(new Error("Unsupported OpenCyber evidence database version"))
   if (version[0]?.user_version === 0)
     yield* sql
@@ -204,6 +204,27 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
         PRIMARY KEY(owner, execution))`
           yield* sql`CREATE INDEX IF NOT EXISTS finding_retest_finding ON finding_retest(owner, finding, created_at)`
           yield* sql`PRAGMA user_version = 8`
+        }),
+      )
+      .pipe(
+        Effect.retry({
+          while: (error) => error.reason._tag === "LockTimeoutError",
+          times: 3,
+          schedule: Schedule.spaced(25),
+        }),
+      )
+
+  // Operator approvals for one R2 action on one target. An approval is honoured only until it expires.
+  if ((version[0]?.user_version ?? 0) < 9)
+    yield* sql
+      .withTransaction(
+        Effect.gen(function* () {
+          yield* sql`CREATE TABLE IF NOT EXISTS validation_approval (
+        owner TEXT NOT NULL, id TEXT NOT NULL, action TEXT NOT NULL, target TEXT NOT NULL,
+        approver TEXT NOT NULL, approved_at INTEGER NOT NULL, expires_at INTEGER NOT NULL,
+        PRIMARY KEY(owner, id))`
+          yield* sql`CREATE INDEX IF NOT EXISTS validation_approval_subject ON validation_approval(owner, action, target, expires_at)`
+          yield* sql`PRAGMA user_version = 9`
         }),
       )
       .pipe(
@@ -902,6 +923,24 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
     }>`SELECT seq, session, agent, tool, mode, risk, decision, reason, target FROM cyber_decision
       WHERE owner = ${owner} ORDER BY seq LIMIT 100 OFFSET ${offset}`
 
+  const grantApproval = (input: {
+    owner: string
+    id: string
+    action: string
+    target: string
+    approver: string
+    approved_at: number
+    expires_at: number
+  }) =>
+    sql`INSERT INTO validation_approval VALUES (${input.owner}, ${input.id}, ${input.action}, ${input.target},
+      ${input.approver}, ${input.approved_at}, ${input.expires_at})`
+
+  // Only the exact action and target match. Expired approvals are never returned.
+  const activeApproval = (input: { owner: string; action: string; target: string; now: number }) =>
+    sql<{ id: string; approver: string; expires_at: number }>`SELECT id, approver, expires_at FROM validation_approval
+      WHERE owner = ${input.owner} AND action = ${input.action} AND target = ${input.target} AND expires_at > ${input.now}
+      ORDER BY approved_at DESC, id LIMIT 1`
+
   const recordRetest = (owner: string, finding: string, execution: string) =>
     sql`INSERT INTO finding_retest VALUES (${owner}, ${finding}, ${execution}, ${Date.now()})`
 
@@ -919,6 +958,7 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
       Effect.gen(function* () {
         yield* sql`INSERT INTO legacy_tombstone VALUES (${owner}) ON CONFLICT DO NOTHING`
         yield* sql`DELETE FROM cyber_decision WHERE owner = ${owner}`
+        yield* sql`DELETE FROM validation_approval WHERE owner = ${owner}`
         yield* sql`DELETE FROM finding_retest WHERE owner = ${owner}`
         yield* sql`DELETE FROM finding_evidence WHERE owner = ${owner}`
         yield* sql`DELETE FROM finding_validation WHERE owner = ${owner}`
@@ -942,6 +982,8 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
     decision,
     decisions,
     recordRetest,
+    grantApproval,
+    activeApproval,
     retests,
     findingRecord,
     manifest,
