@@ -8,7 +8,7 @@ import { Tool } from "@opencode/schema/tool"
 import { Global } from "@opencode/util/global"
 import { parse, type ParseError } from "jsonc-parser"
 import path from "path"
-import { Effect, Exit, Option, Schema, Semaphore } from "effect"
+import { Cause, Effect, Exit, Option, Schema, Semaphore } from "effect"
 import { Agent } from "../agent.js"
 import { ForkCyberAdapters } from "../fork-cyber/adapters.js"
 import { ForkCyberAgents } from "../fork-cyber/agents.js"
@@ -671,7 +671,11 @@ export const Plugin = define({
           source: { type: "tool", messageID: request.messageID, id: request.id },
         })
         .pipe(Effect.exit)
-      if (Exit.isFailure(asked)) return { decision: "deny" as const, reason: "approval_declined" }
+      // Only a refusal is a decline. Interrupting the call while it waits must not be recorded as the operator's answer.
+      if (Exit.isFailure(asked)) {
+        if (Cause.hasInterruptsOnly(asked.cause)) return yield* Effect.failCause(asked.cause)
+        return { decision: "deny" as const, reason: "approval_declined" }
+      }
       const id = crypto.randomUUID()
       yield* store.grantApproval({
         owner: request.owner,
