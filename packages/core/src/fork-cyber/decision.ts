@@ -2,6 +2,7 @@ export * as ForkCyberDecision from "./decision.js"
 
 import { createHash } from "node:crypto"
 import { Option, Schema } from "effect"
+import { ForkCyberKaliAllowlist } from "./kali-allowlist.js"
 import { ForkCyberPolicy } from "./policy.js"
 import { ForkCyberRoles } from "./roles.js"
 import { ForkCyberScope } from "./scope.js"
@@ -99,6 +100,7 @@ export const Reason = Schema.Literals([
   "above_ceiling",
   "not_declared",
   "approval_required",
+  "binary_not_allowlisted",
 ])
 // `ask` means the action may run only after an operator approves this action on this target.
 export type Verdict = { decision: "allow" | "deny" | "ask"; reason: typeof Reason.Type; risk?: Risk; action?: string }
@@ -119,6 +121,9 @@ export function decide(request: {
   const risk = riskOf(governed, request.input)
   if (risk === undefined) return { decision: "deny", reason: "undeclared_action" }
   if (!permits(request.mode, request.agent, risk)) return { decision: "deny", reason: "above_ceiling", risk }
+  // kali_run takes free-form argv, so its binary is checked after the risk class.
+  if (request.tool === "kali_run" && !ForkCyberKaliAllowlist.allows(request.input))
+    return { decision: "deny", reason: "binary_not_allowlisted", risk }
   if (risk !== "R2") return { decision: "allow", reason: "allowed", risk }
   const action = actionID(request.tool, request.input)
   if (!request.declared?.includes(action)) return { decision: "deny", reason: "not_declared", risk, action }
