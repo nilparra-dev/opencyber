@@ -380,6 +380,8 @@ export function manager(store: Store, profile: string, configuration: Config) {
             execution: id,
             stdout: output[0]!.id,
             stderr: errors[0]!.id,
+            stdout_excerpt: excerpt(Buffer.concat(stdout)),
+            stderr_excerpt: excerpt(Buffer.concat(stderr)),
             ...result.value,
             evidence: finished[0]!.id,
             completion_evidence:
@@ -414,6 +416,14 @@ export const diagnose = Effect.fn(function* (config: Config) {
     network: network === undefined ? "none" : network._tag === "Success" ? "available" : "missing",
   }
 })
+
+// A long stream returns a redacted preview and the position to continue from. `evidence` reads from that position.
+export function excerpt(bytes: Buffer) {
+  const text = bytes.toString("utf8")
+  const preview = ForkCyberStore.preview(text)
+  const whole = ForkCyberStore.preview(text, 0, "output", Number.MAX_SAFE_INTEGER)
+  return { preview, next_offset: preview.length < whole.length ? preview.length : null }
+}
 
 function createArgs(
   name: string,
