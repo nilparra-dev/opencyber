@@ -4,7 +4,6 @@ export * as AgentPlugin from "./agent.js"
 import { define } from "@opencode/plugin/effect/plugin"
 import { Effect } from "effect"
 import { Agent } from "../agent.js"
-import { Permission } from "../permission.js"
 
 const PROMPT_EXPLORE = `You are a file search specialist. You excel at thoroughly navigating and exploring codebases.
 
@@ -98,31 +97,24 @@ export const Plugin = define({
       })
 
       editor.update(Agent.ID.make("explore"), (item) => {
-        const externalDirectories = item.permissions.filter(
-          (rule) => rule.action === "external_directory" && rule.effect === "allow",
-        )
         item.name = Agent.Name.make("Explore")
         item.description =
           'Optional worker for delegated codebase exploration. Ordinary file and keyword searches belong to the primary agent. Use only when requested or authorized by the session policy. Specify thoroughness: "quick", "medium", or "very thorough".'
         item.system = PROMPT_EXPLORE
         item.mode = "subagent"
         item.permissions.push(
-          ...Permission.merge(
-            [
-              { action: "*", resource: "*", effect: "deny" },
-              { action: "shell", resource: "*", effect: "allow" },
-              { action: "grep", resource: "*", effect: "allow" },
-              { action: "glob", resource: "*", effect: "allow" },
-              { action: "webfetch", resource: "*", effect: "allow" },
-              { action: "websearch", resource: "*", effect: "allow" },
-              { action: "read", resource: "*", effect: "allow" },
-              { action: "read", resource: "*.env", effect: "ask" },
-              { action: "read", resource: "*.env.*", effect: "ask" },
-              { action: "read", resource: "*.env.example", effect: "allow" },
-              { action: "subagent", resource: "*", effect: "deny" },
-            ],
-            [{ action: "external_directory", resource: "*", effect: "ask" }, ...externalDirectories],
-          ),
+          { action: "*", resource: "*", effect: "deny" },
+          { action: "shell", resource: "*", effect: "allow" },
+          { action: "grep", resource: "*", effect: "allow" },
+          { action: "glob", resource: "*", effect: "allow" },
+          { action: "webfetch", resource: "*", effect: "allow" },
+          { action: "websearch", resource: "*", effect: "allow" },
+          { action: "read", resource: "*", effect: "allow" },
+          { action: "read", resource: "*.env", effect: "ask" },
+          { action: "read", resource: "*.env.*", effect: "ask" },
+          { action: "read", resource: "*.env.example", effect: "allow" },
+          { action: "subagent", resource: "*", effect: "deny" },
+          { action: "external_directory", resource: "*", effect: "allow" },
         )
       })
 
