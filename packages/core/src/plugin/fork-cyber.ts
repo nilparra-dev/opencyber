@@ -8,7 +8,8 @@ import { Tool } from "@opencode/schema/tool"
 import { Global } from "@opencode/util/global"
 import { parse, type ParseError } from "jsonc-parser"
 import path from "path"
-import { Effect, Option, Schema, Semaphore } from "effect"
+import { Effect, Exit, Option, Schema, Semaphore } from "effect"
+import { Agent } from "../agent.js"
 import { ForkCyberAdapters } from "../fork-cyber/adapters.js"
 import { ForkCyberAgents } from "../fork-cyber/agents.js"
 import { ForkCyberEngagement } from "../fork-cyber/engagement.js"
@@ -68,6 +69,54 @@ const OPERATOR = [
   "Report observations separately from demonstrated security impact. CORS header reflection, including Origin:null and credentials on a public WordPress REST resource, does not establish protected cross-origin access or a medium-severity vulnerability. Validate the authenticated identity, cookie/nonce behavior, browser-readable protected data and healthy controls before claiming impact. Keep header-only results as observations or candidates. A 403 describes only the tested path and request; it does not establish that directory listing is disabled. A 301 does not establish TLS readiness or safe HSTS deployment. Verify TLS and affected subdomains before recommending a long max-age or includeSubDomains, and leave unverified prerequisites explicit.",
 ].join("\n")
 
+const APPROVAL_TTL_MS = 10 * 60 * 1000
+
+type ValidationRequest = {
+  sessionID: Session.ID
+  agent: string
+  tool: string
+  input: unknown
+  messageID: string
+  id: string
+}
+
+// Refusals name their cause, so the model knows whether the engagement, the operator or its plan has to change.
+function refusal(event: Pick<ValidationRequest, "agent" | "tool" | "input">, reason: string) {
+  const action = ForkCyberDecision.actionID(event.tool, event.input)
+  const target = ForkCyberDecision.approvalTarget(event.input)
+  if (reason === "not_declared")
+    return new ForkCyberDiagnostics.Failure({
+      category: "capability",
+      operation: event.tool,
+      message: `The engagement does not declare ${action}`,
+      target_started: false,
+      effects: "not_started",
+      recovery:
+        "Ask the operator to declare this action in rules_of_engagement.validation. Until then, use a permitted check.",
+      details: { registered_agent: event.agent, action },
+    })
+  if (reason === "approval_declined")
+    return new ForkCyberDiagnostics.Failure({
+      category: "capability",
+      operation: event.tool,
+      message: `The operator did not approve ${action} on ${target}`,
+      target_started: false,
+      effects: "not_started",
+      recovery:
+        "Do not repeat this action unless the operator approves it. Continue with permitted checks and report the blocked validation.",
+      details: { registered_agent: event.agent, action },
+    })
+  return new ForkCyberDiagnostics.Failure({
+    category: "capability",
+    operation: event.tool,
+    message: `Role ${event.agent} cannot execute ${event.tool}`,
+    target_started: false,
+    effects: "not_started",
+    recovery: "Read cyber_capabilities and delegate to a permitted role or use a bounded available operation.",
+    details: { registered_agent: event.agent },
+  })
+}
+
 const decodeManifest = Schema.decodeUnknownOption(ForkCyberScope.Manifest)
 const decodeAdapters = Schema.decodeUnknownOption(ForkCyberAdapters.Adapters)
 const decodeNotes = Schema.decodeUnknownOption(Schema.Array(Schema.String))
@@ -77,6 +126,12 @@ export const Plugin = define({
   effect: Effect.fn("ForkCyberPlugin")(function* (ctx) {
     const global = yield* Global.Service
     const permission = yield* Permission.Service
+    // Approval prompts stay visible: a build agent's `*: allow` or a generic setting must not answer them.
+    yield* ctx.permission.hook("evaluate", (event) =>
+      Effect.sync(() => {
+        if (event.action === ForkCyberRoles.validationPermission && event.effect !== "deny") event.effect = "ask"
+      }),
+    )
     const cyberMode = Option.getOrElse(yield* Effect.serviceOption(ForkCyberPolicy.Service), ForkCyberPolicy.selected)
     const store = yield* ForkCyberStore.open(path.join(global.data, "opencyber", "evidence.sqlite")).pipe(Effect.orDie)
     const browser = yield* ForkCyberBrowser.make(store)
@@ -593,17 +648,55 @@ export const Plugin = define({
     ])
     const executionID = (event: { sessionID: string; messageID: string; id: string }) =>
       ForkCyberStore.digest(Buffer.from(JSON.stringify([event.sessionID, event.messageID, event.id])))
+    // R2 runs only after an operator approves this action on this target. An active approval for the same action
+    // and target is reused until it expires; after that the operator is asked again.
+    const approveValidation = Effect.fnUntraced(function* (request: ValidationRequest & { owner: string }) {
+      const action = ForkCyberDecision.actionID(request.tool, request.input)
+      const target = ForkCyberDecision.approvalTarget(request.input)
+      const now = Date.now()
+      const active = yield* store.activeApproval({ owner: request.owner, action, target, now })
+      if (active[0]) return { decision: "allow" as const, reason: `approved:${active[0].id}` }
+      const asked = yield* permission
+        .assert({
+          action: ForkCyberRoles.validationPermission,
+          resources: [`${action} ${target}`],
+          metadata: { [Delegation.ApprovalKey]: true, action, target, tool: request.tool, ttl_ms: APPROVAL_TTL_MS },
+          sessionID: request.sessionID,
+          agent: Agent.ID.make(request.agent),
+          source: { type: "tool", messageID: request.messageID, id: request.id },
+        })
+        .pipe(Effect.exit)
+      if (Exit.isFailure(asked)) return { decision: "deny" as const, reason: "approval_declined" }
+      const id = crypto.randomUUID()
+      yield* store.grantApproval({
+        owner: request.owner,
+        id,
+        action,
+        target,
+        approver: "operator",
+        approved_at: now,
+        expires_at: now + APPROVAL_TTL_MS,
+      })
+      return { decision: "allow" as const, reason: `approved:${id}` }
+    })
     yield* ctx.tool.hook("execute.before", (event) =>
       Effect.gen(function* () {
         const owner = yield* topLevel(event.sessionID)
         // Capability follows the registered agent (see the catalog filter); the claim below is
         // only required for delegated workers so their executions attach to a durable task.
+        const current = yield* engagement(event.sessionID)
+        const declared = current.status === "ready" ? current.value.rules_of_engagement.validation?.actions : undefined
         const verdict = ForkCyberDecision.decide({
           mode: cyberMode,
           agent: event.agent,
           tool: event.tool,
           input: event.input,
+          declared,
         })
+        const outcome =
+          verdict.decision === "ask"
+            ? yield* approveValidation({ ...event, owner })
+            : { decision: verdict.decision, reason: verdict.reason }
         yield* store.decision({
           owner,
           session: event.sessionID,
@@ -611,23 +704,11 @@ export const Plugin = define({
           tool: event.tool,
           mode: cyberMode,
           risk: verdict.risk,
-          decision: verdict.decision,
-          reason: verdict.reason,
+          decision: outcome.decision,
+          reason: outcome.reason,
           target: ForkCyberDecision.target(event.input),
         })
-        if (verdict.decision === "deny")
-          return yield* Effect.fail(
-            new ForkCyberDiagnostics.Failure({
-              category: "capability",
-              operation: event.tool,
-              message: `Role ${event.agent} cannot execute ${event.tool}`,
-              target_started: false,
-              effects: "not_started",
-              recovery:
-                "Read cyber_capabilities and delegate to a permitted role or use a bounded available operation.",
-              details: { registered_agent: event.agent },
-            }),
-          )
+        if (outcome.decision === "deny") return yield* Effect.fail(refusal(event, outcome.reason))
         if (
           ForkCyberRoles.worker(event.agent) &&
           ["http_request", "http_discover", "http_replay", "cyber_browser", "kali_run", "kali_environment"].includes(

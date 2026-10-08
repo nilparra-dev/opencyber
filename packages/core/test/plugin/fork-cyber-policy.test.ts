@@ -374,7 +374,7 @@ it.live("denied and allowed cyber decisions are recorded, and a denied request s
           agent: "cyber-validate",
           tool: "cyber_local_validation",
           decision: "deny",
-          reason: "above_ceiling",
+          reason: "not_declared",
           risk: "R2",
           target: null,
         },

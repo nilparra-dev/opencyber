@@ -95,10 +95,15 @@ export function allowed(agent: string, tool: string) {
   return tools(agent)?.includes(tool) ?? true
 }
 
+// Upstream permission action for operator approval of one R2 action on one target (OC-401).
+export const validationPermission = "cyber_validation"
+
 export function permissions(agent: string) {
   return [
     { action: "*", resource: "*", effect: "deny" as const },
     ...(tools(agent) ?? []).map((action) => ({ action, resource: "*", effect: "allow" as const })),
+    // The phase's `*: deny` would otherwise refuse the approval prompt itself; asking is the only permitted outcome.
+    ...(ceiling(agent) === "R2" ? [{ action: validationPermission, resource: "*", effect: "ask" as const }] : []),
   ]
 }
 

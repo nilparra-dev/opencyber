@@ -37,9 +37,21 @@ describe("phase ceilings", () => {
     expect(ForkCyberDecision.permits("development", "cyber-code-review", "R0")).toBe(true)
   })
 
+  test("R2 phases ask the operator for approval rather than refusing the prompt itself", () => {
+    expect(ForkCyberRoles.permissions("cyber-validate")).toContainEqual({
+      action: ForkCyberRoles.validationPermission,
+      resource: "*",
+      effect: "ask",
+    })
+    expect(ForkCyberRoles.permissions("cyber-recon")).not.toContainEqual(
+      expect.objectContaining({ action: ForkCyberRoles.validationPermission }),
+    )
+  })
+
   test("the primary agent has no phase ceiling beyond the mode", () => {
     expect(ForkCyberRoles.ceiling("build")).toBeUndefined()
     expect(ForkCyberDecision.permits("assessment", "build", "R1")).toBe(true)
-    expect(ForkCyberDecision.permits("assessment", "build", "R2")).toBe(false)
+    expect(ForkCyberDecision.permits("assessment", "build", "R2")).toBe(true)
+    expect(ForkCyberDecision.permits("development", "build", "R2")).toBe(false)
   })
 })
