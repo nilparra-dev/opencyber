@@ -37,7 +37,7 @@ export const NetworkBudget = Schema.Struct({
 )
 
 const S3Arn = Schema.String.check(Schema.isPattern(/^arn:aws:s3:::[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/))
-const Domain = Schema.String.check(
+export const Domain = Schema.String.check(
   Schema.makeFilter<string>(
     (value) =>
       (isHost(value) && !isIP(normalize(value))) || "Expected a DNS name without an IP address, URL, port or path",
@@ -135,6 +135,8 @@ export const Manifest = Schema.Struct({
     window: Text,
     contact: Text,
     network: Schema.optional(NetworkBudget),
+    // Third-party lookups (certificate transparency) reveal interest in the target (R-9), so they need this declaration.
+    passive_osint: Schema.optional(Schema.Boolean),
   }),
   // Compatibility with existing session records. New manifests need no derived flag.
   derived: Schema.optional(Schema.Boolean),
@@ -161,6 +163,7 @@ export function render(manifest: Manifest) {
       manifest.rules_of_engagement.no_dos ? ", no denial-of-service" : ""
     }, window ${manifest.rules_of_engagement.window}. Security contact: ${manifest.rules_of_engagement.contact}.`,
     "HTTP tools and captured browser requests enforce destinations and shared max_rps. Scoped Kali jobs enforce a pinned destination policy and require separate connection, packet, byte and duration budgets. Cyber phase agents cannot use the host shell. The primary agent and external plugins are outside this isolation. The free-text window and no_dos declaration are not machine-enforced technique controls.",
+    `Passive OSINT declared as permitted: ${manifest.rules_of_engagement.passive_osint === true ? "yes" : "no"}. Only yes permits third-party certificate transparency lookups.`,
     ...(manifest.rules_of_engagement.network
       ? [
           `Kali network budgets: ${JSON.stringify(manifest.rules_of_engagement.network)}. Each job reserves bytes_per_job against bytes_total before access; reservations are not refunded.`,
