@@ -349,7 +349,7 @@ Updated with each merge. "Done" means the acceptance criteria in the work item's
 | OC-101 | Done    | #55, PR #83: typed targets in the scope manifest                                                                                        |
 | OC-102 | Done    | #57, PR #84: risk class per action and one decision function                                                                            |
 | OC-103 | Done    | #61, PR #94: phase risk ceilings; exploitation phases split their surfaces; post-exploitation has no tools                              |
-| OC-104 | Open    | #60. Needs the Kali image to verify                                                                                                    |
+| OC-104 | Done    | #60: `kali_run` admits only allowlisted bare names (`kali-allowlist.ts`, image version 5); refusals are `binary_not_allowlisted` decisions. Wrapper pattern documented in `fork-cyber-kali.md` with `cyber_services` as reference |
 | OC-105 | Partial | #58, PR #86: seven shared categories, recovery steps and the `kind` mapping. Open: the long-output contract for Kali outputs, and migration of tool-specific recovery text |
 | OC-106 | Done    | #62, PR #95: `finding_retest` (R1) replays a finding's HTTP evidence and links each execution; a separate tool, not an action of `findings` |
 | OC-107 | Done    | #63, PR #85: append-only decision log, including denials                                                                                |
@@ -370,6 +370,6 @@ Deviations from the tables above, recorded where they were made:
 
 - `http_compare` is R0. Its description states it makes no network activity; the table grouped it with R1.
 - `cyber_dns` is R0, and it queries the operator's resolver for an authorized name.
-- `kali_run` is R1 even though its argv is free-form. OC-104 narrows it.
+- `kali_run` is R1 even though its argv is free-form. OC-104 narrows it to the allowlisted binaries; none of them contacts a network.
 - `cyber_surface` `cloud.policy` and `binary.elf` are R0, because they read a local artifact.
 - `cyber_web_plan` stays registered beside `cyber_web_test`'s `plan` action, which shares its implementation.
