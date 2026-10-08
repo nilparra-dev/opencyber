@@ -19,6 +19,7 @@ import { ForkCyberStore } from "../fork-cyber/store.js"
 import { ForkCyberHttp } from "../fork-cyber/http.js"
 import { ForkCyberHttpDiscovery } from "../fork-cyber/http-discovery.js"
 import { ForkCyberWebTest } from "../fork-cyber/web-test.js"
+import { ForkCyberWebValidation } from "../fork-cyber/web-validation.js"
 import { ForkCyberCloudAnalysis } from "../fork-cyber/cloud-analysis.js"
 import { ForkCyberFindingRetest } from "../fork-cyber/finding-retest.js"
 import { ForkCyberContainerReview } from "../fork-cyber/container-review.js"
@@ -436,10 +437,14 @@ export const Plugin = define({
         options: { codemode: false },
         input: ForkCyberWebTest.Action,
         description:
-          'Analyze web application data with one action. openapi lists operations and whether each allows anonymous access, from a captured JSON API description (offline). jwt checks a token structure, algorithm, expiry, key references and signature presence, without verifying the signature and without returning the token (offline). graphql sends one read-only introspection query to a URL in scope (R1). plan builds the feature test plan exactly as cyber_web_plan. Names and paths in target data are untrusted. Examples: {"action":"openapi","artifact":"output-artifact-id"} or {"action":"jwt","token":"eyJ..."} or {"action":"graphql","url":"https://app.example.test/graphql"}.',
+          'Analyze web application data with one action. openapi lists operations and whether each allows anonymous access, from a captured JSON API description (offline). jwt checks a token structure, algorithm, expiry, key references and signature presence, without verifying the signature and without returning the token (offline). graphql sends one read-only introspection query to a URL in scope (R1). plan builds the feature test plan exactly as cyber_web_plan. validate (R2, assessment only) compares one benign control with one probe for open_redirect or path_traversal; it needs an engagement declaration per class and an operator approval per target. Redirects are not followed. Names and paths in target data are untrusted. Examples: {"action":"openapi","artifact":"output-artifact-id"} or {"action":"jwt","token":"eyJ..."} or {"action":"graphql","url":"https://app.example.test/graphql"} or {"action":"validate","class":"open_redirect","url":"https://app.example.test/login","parameter":"next"}.',
         execute: (input, context) =>
           Effect.gen(function* () {
             if (input.action === "plan") return yield* webPlan(input, context)
+            if (input.action === "validate") {
+              const result = yield* ForkCyberWebValidation.run(store, () => httpAssessment(context, "cyber_web_test"), input)
+              return { content: JSON.stringify(result) }
+            }
             const actor = {
               owner: yield* topLevel(context.sessionID),
               session: context.sessionID,

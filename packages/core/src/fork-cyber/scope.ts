@@ -126,7 +126,12 @@ const Scope = Schema.Struct({
 
 // R2 actions an engagement may declare (fork-cyber-toolset.md, D-2). Each run still needs a per-action,
 // per-target operator approval that expires. The decision function refuses any other identifier.
-export const ValidationAction = Schema.Literals(["cyber_local_validation", "cyber_surface.binary.execute"])
+export const ValidationAction = Schema.Literals([
+  "cyber_local_validation",
+  "cyber_surface.binary.execute",
+  "cyber_web_test.validate.open_redirect",
+  "cyber_web_test.validate.path_traversal",
+])
 export type ValidationAction = typeof ValidationAction.Type
 
 export const Validation = Schema.Struct({
