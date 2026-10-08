@@ -101,6 +101,45 @@ dockerTest(
 )
 
 dockerTest(
+  "real Kali runs allowlisted utilities on artifact inputs under the production limits",
+  async () => {
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const { store, manager } = yield* fixture
+          yield* store.start({ ...assessment, id: "seed-utilities", tool: "fixture", input: {} })
+          const input = (yield* store.artifact(
+            assessment.owner,
+            "seed-utilities",
+            "input",
+            Buffer.from("alpha\nneedle\nneedle\n"),
+            "text/plain",
+          ))[0]!.id
+          yield* store.finish(assessment.owner, "seed-utilities", "completed", {})
+          const count = yield* manager.run(assessment, {
+            argv: ["grep", "-c", "needle", "source.txt"],
+            inputs: [{ name: "source.txt", artifact: input }],
+          })
+          expect(count.exit_code).toBe(0)
+          expect((yield* store.readArtifact(assessment.owner, count.stdout)).bytes.toString()).toBe("2\n")
+          const copy = yield* manager.run(assessment, {
+            argv: ["cp", "source.txt", "result.txt"],
+            inputs: [{ name: "source.txt", artifact: input }],
+            outputs: ["result.txt"],
+          })
+          expect(copy.exit_code).toBe(0)
+          expect((yield* store.readArtifact(assessment.owner, copy.files![0]!.artifact)).bytes.toString()).toBe(
+            "alpha\nneedle\nneedle\n",
+          )
+          expect(yield* manager.status(assessment.owner)).toEqual([])
+        }),
+      ),
+    )
+  },
+  120000,
+)
+
+dockerTest(
   "real Kali denies external networking, host mounts, root writes and inherited provider credentials",
   async () => {
     await Effect.runPromise(

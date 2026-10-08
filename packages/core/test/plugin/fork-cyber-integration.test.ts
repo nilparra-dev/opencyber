@@ -231,8 +231,9 @@ it.live("a primary claim keeps its build catalog and execution while retaining p
       )
       expect(yield* call(env.root.id, "evidence", {})).toContain('"items":[]')
       yield* call(env.root.id, "cyber_tasks", { action: "release", key: "primary-recon", revision: 2 })
-      // Execution reaches schema validation instead of a claimed-phase role denial.
-      const error = yield* call(env.root.id, "kali_run", {}).pipe(Effect.flip)
+      // Execution reaches schema validation instead of a claimed-phase role denial. The argv must pass the
+      // binary allowlist first, so the invalid field is the timeout.
+      const error = yield* call(env.root.id, "kali_run", { argv: ["cat"], timeout_ms: 1 }).pipe(Effect.flip)
       expect(error.message).toContain("Invalid arguments")
       expect(error.message).not.toContain("cannot execute")
     }).pipe(env.provide)
@@ -1012,7 +1013,7 @@ it.live("Kali tools are native, optional and reject invalid scope, reporting age
     const env = yield* project
     const global = yield* Global.Service
     yield* Effect.gen(function* () {
-      expect(String(yield* call(env.root.id, "kali_run", { argv: ["true"] }).pipe(Effect.flip))).toContain("disabled")
+      expect(String(yield* call(env.root.id, "kali_run", { argv: ["cat"] }).pipe(Effect.flip))).toContain("disabled")
       yield* Effect.promise(() =>
         Bun.write(
           path.join(global.config, "opencyber-kali.jsonc"),
@@ -1022,12 +1023,15 @@ it.live("Kali tools are native, optional and reject invalid scope, reporting age
           }),
         ),
       )
-      expect(String(yield* call(env.root.id, "kali_run", { argv: ["true"] }).pipe(Effect.flip))).toContain(
+      expect(String(yield* call(env.root.id, "kali_run", { argv: ["cat"] }).pipe(Effect.flip))).toContain(
         "explicit engagement",
       )
       yield* call(env.root.id, "engagement", { manifest })
+      expect(String(yield* call(env.root.id, "kali_run", { argv: ["nmap", "--version"] }).pipe(Effect.flip))).toContain(
+        "refused_by_policy",
+      )
       expect(
-        Exit.isFailure(yield* call(env.child.id, "kali_run", { argv: ["true"] }, "cyber-report").pipe(Effect.exit)),
+        Exit.isFailure(yield* call(env.child.id, "kali_run", { argv: ["cat"] }, "cyber-report").pipe(Effect.exit)),
       ).toBe(true)
       const agents = yield* Agent.Service
       yield* agents.transform((editor) =>
@@ -1035,7 +1039,7 @@ it.live("Kali tools are native, optional and reject invalid scope, reporting age
           agent.permissions.push({ action: "kali_run", resource: "*", effect: "deny" })
         }),
       )
-      expect(Exit.isFailure(yield* call(env.child.id, "kali_run", { argv: ["true"] }).pipe(Effect.exit))).toBe(true)
+      expect(Exit.isFailure(yield* call(env.child.id, "kali_run", { argv: ["cat"] }).pipe(Effect.exit))).toBe(true)
       expect(yield* call(env.root.id, "evidence", {})).toBe(
         JSON.stringify({ items: [], offset: 0, limit: 25, has_more: false, next_offset: null }),
       )
