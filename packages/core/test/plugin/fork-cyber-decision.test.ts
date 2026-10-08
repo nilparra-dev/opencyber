@@ -52,7 +52,7 @@ describe("declarations", () => {
         .filter(([, risk]) => risk === "R2")
         .map(([action]) => `${tool}:${action}`)
     })
-    expect(r2.sort()).toEqual(["cyber_local_validation", "cyber_surface:binary.execute"])
+    expect(r2.sort()).toEqual(["cyber_local_validation", "cyber_surface:binary.execute", "cyber_web_test:validate"])
   })
 })
 
@@ -120,6 +120,61 @@ describe("decisions", () => {
     const decision = verdict(mode, "cyber-exploit-net", "cyber_surface", input)
     expect(decision.decision).toBe("deny")
     expect(decision.risk).toBe("R2")
+  })
+
+  test("web validation classes are separate actions that each need their own declaration", () => {
+    const input = {
+      action: "validate",
+      class: "open_redirect",
+      url: "https://app.example.test/login",
+      parameter: "next",
+    }
+    expect(ForkCyberDecision.actionID("cyber_web_test", input)).toBe("cyber_web_test.validate.open_redirect")
+    expect(
+      ForkCyberDecision.decide({
+        mode: "assessment",
+        agent: "cyber-exploit-web",
+        tool: "cyber_web_test",
+        input,
+        declared: ["cyber_web_test.validate.path_traversal"],
+      }),
+    ).toEqual({
+      decision: "deny",
+      reason: "not_declared",
+      risk: "R2",
+      action: "cyber_web_test.validate.open_redirect",
+    })
+    expect(
+      ForkCyberDecision.decide({
+        mode: "assessment",
+        agent: "cyber-exploit-web",
+        tool: "cyber_web_test",
+        input,
+        declared: ["cyber_web_test.validate.open_redirect"],
+      }),
+    ).toEqual({
+      decision: "ask",
+      reason: "approval_required",
+      risk: "R2",
+      action: "cyber_web_test.validate.open_redirect",
+    })
+  })
+
+  test("web validation is refused for reconnaissance and for development mode", () => {
+    const input = {
+      action: "validate",
+      class: "path_traversal",
+      url: "https://app.example.test/f",
+      parameter: "name",
+      file: "etc/hostname",
+      marker: "x",
+    }
+    expect(verdict("assessment", "cyber-recon", "cyber_web_test", input).decision).toBe("deny")
+    expect(verdict("development", "cyber-exploit-web", "cyber_web_test", input)).toEqual({
+      decision: "deny",
+      reason: "above_ceiling",
+      risk: "R2",
+    })
   })
 
   test("action identifiers name the tool and its variant", () => {

@@ -45,7 +45,7 @@ const declared: Readonly<Record<string, Declaration>> = {
   cyber_cloud: "R0",
   cyber_container: "R0",
   finding_retest: "R1",
-  cyber_web_test: { openapi: "R0", jwt: "R0", plan: "R0", graphql: "R1" },
+  cyber_web_test: { openapi: "R0", jwt: "R0", plan: "R0", graphql: "R1", validate: "R2" },
   engagement: "R0",
   evidence: "R0",
   findings: "R0",
@@ -64,7 +64,11 @@ const ceilings: Record<ForkCyberPolicy.Mode, readonly Risk[]> = {
   assessment: ["R0", "R1", "R2"],
 }
 
-const Discriminator = Schema.Struct({ action: Schema.String, module: Schema.optional(Schema.String) })
+const Discriminator = Schema.Struct({
+  action: Schema.String,
+  module: Schema.optional(Schema.String),
+  class: Schema.optional(Schema.String),
+})
 
 export function ceiling(mode: ForkCyberPolicy.Mode) {
   return ceilings[mode]
@@ -136,7 +140,8 @@ export function actionID(tool: string, input: unknown) {
   if (key === undefined) return tool
   const shared = key.action === "procedures" || key.action === "import"
   const name = key.module !== undefined && !shared ? `${key.module}.${key.action}` : key.action
-  return `${tool}.${name}`
+  // Validation classes are separate actions: approving one class never approves another.
+  return key.class === undefined ? `${tool}.${name}` : `${tool}.${name}.${key.class}`
 }
 
 // An approval covers one endpoint: origin and path. A query string carries payloads, so it is not part of the

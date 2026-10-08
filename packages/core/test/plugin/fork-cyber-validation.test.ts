@@ -33,7 +33,12 @@ test.each(["failed", "unknown"] as const)("cleanup %s makes every oracle result 
 })
 
 test("effects the step cannot report are unknown even when cleanup completed", () => {
-  const record = ForkCyberValidation.outcome({ ...step, result: "reproduced", cleanup: "completed", effects: "unknown" })
+  const record = ForkCyberValidation.outcome({
+    ...step,
+    result: "reproduced",
+    cleanup: "completed",
+    effects: "unknown",
+  })
   expect(record).toMatchObject({ effects: "unknown", oracle: { result: "inconclusive" } })
 })
 

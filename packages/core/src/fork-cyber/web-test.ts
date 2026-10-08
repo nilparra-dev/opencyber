@@ -5,6 +5,7 @@ import { ForkCyberDiagnostics } from "./diagnostics.js"
 import { ForkCyberHttp } from "./http.js"
 import { ForkCyberOfflineAnalysis } from "./offline-analysis.js"
 import { ForkCyberWebPlan } from "./web-plan.js"
+import { ForkCyberWebValidation } from "./web-validation.js"
 
 // Target-supplied names and paths are untrusted data. They are truncated before they reach the model.
 const shown = (value: string) => (value.length > 200 ? `${value.slice(0, 200)}...` : value)
@@ -22,7 +23,7 @@ export const GraphQL = Schema.Struct({
   url: Schema.String.check(Schema.isMaxLength(2048)),
 })
 export const Plan = Schema.Struct({ action: Schema.Literal("plan"), ...ForkCyberWebPlan.Action.fields })
-export const Action = Schema.Union([OpenApi, Jwt, GraphQL, Plan])
+export const Action = Schema.Union([OpenApi, Jwt, GraphQL, Plan, ForkCyberWebValidation.Validate])
 export type Action = typeof Action.Type
 
 const methods = ["get", "put", "post", "delete", "patch", "head", "options", "trace"]
