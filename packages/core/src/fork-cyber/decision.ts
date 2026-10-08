@@ -2,6 +2,7 @@ export * as ForkCyberDecision from "./decision.js"
 
 import { Option, Schema } from "effect"
 import { ForkCyberPolicy } from "./policy.js"
+import { ForkCyberRoles } from "./roles.js"
 import { ForkCyberScope } from "./scope.js"
 
 // Risk classes from fork-cyber-toolset.md (R-2). R3 is never declared. R2 is above every ceiling until the
@@ -65,6 +66,16 @@ export function ceiling(mode: ForkCyberPolicy.Mode) {
   return ceilings[mode]
 }
 
+const order: Record<Risk, number> = { R0: 0, R1: 1, R2: 2, R3: 3 }
+
+// A risk class is permitted when the mode allows it and the phase's own ceiling reaches it (R-4).
+export function permits(mode: ForkCyberPolicy.Mode, agent: string, risk: Risk) {
+  if (!ceilings[mode].includes(risk)) return false
+  const limit = ForkCyberRoles.ceiling(agent)
+  if (limit === undefined) return true
+  return limit !== "none" && order[risk] <= order[limit]
+}
+
 export function declaration(tool: string) {
   return Object.hasOwn(declared, tool) ? declared[tool] : undefined
 }
@@ -75,7 +86,7 @@ export function available(mode: ForkCyberPolicy.Mode, agent: string, tool: strin
   const governed = declaration(tool)
   if (governed === undefined) return true
   const risks = typeof governed === "string" ? [governed] : Object.values(governed)
-  return risks.some((risk) => ceilings[mode].includes(risk))
+  return risks.some((risk) => permits(mode, agent, risk))
 }
 
 export const Reason = Schema.Literals(["allowed", "outside_role_or_mode", "undeclared_action", "above_ceiling"])
@@ -89,7 +100,7 @@ export function decide(request: { mode: ForkCyberPolicy.Mode; agent: string; too
   if (governed === undefined) return { decision: "allow", reason: "allowed" }
   const risk = riskOf(governed, request.input)
   if (risk === undefined) return { decision: "deny", reason: "undeclared_action" }
-  if (!ceilings[request.mode].includes(risk)) return { decision: "deny", reason: "above_ceiling", risk }
+  if (!permits(request.mode, request.agent, risk)) return { decision: "deny", reason: "above_ceiling", risk }
   return { decision: "allow", reason: "allowed", risk }
 }
 

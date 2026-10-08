@@ -131,7 +131,9 @@ export function register(editor: AgentEditor) {
       "Web exploitation phase of the engagement. Validates vulnerability classes on live in-scope web endpoints with raw request/response evidence, stopping at proof."
     agent.mode = "subagent"
     agent.system =
-      EXPLOIT_WEB + COORDINATION + "\nRun commands only through kali_run. Host shell access is unavailable."
+      EXPLOIT_WEB +
+      COORDINATION +
+      "\nUse HTTP, replay, browser and cyber_web_test tools within scope. kali_run, network tools and host shell access are unavailable to this phase."
     agent.permissions.push(...ForkCyberRoles.permissions("cyber-exploit-web"))
   })
   editor.update(Agent.ID.make("cyber-exploit-net"), (agent) => {
@@ -140,7 +142,9 @@ export function register(editor: AgentEditor) {
       "Network exploitation phase of the engagement. Validates service-side vectors within scope with raw evidence, respecting rate limits and never causing denial of service."
     agent.mode = "subagent"
     agent.system =
-      EXPLOIT_NET + COORDINATION + "\nRun commands only through kali_run. Host shell access is unavailable."
+      EXPLOIT_NET +
+      COORDINATION +
+      "\nRun commands only through kali_run, cyber_services and cyber_surface. Web tools and host shell access are unavailable to this phase."
     agent.permissions.push(...ForkCyberRoles.permissions("cyber-exploit-net"))
   })
   editor.update(Agent.ID.make("cyber-postex"), (agent) => {
@@ -148,7 +152,10 @@ export function register(editor: AgentEditor) {
     agent.description =
       "Post-exploitation phase of the engagement. Demonstrates real impact from an existing foothold: privilege escalation, reachable assets and exposed data inside scope, stopping at proof."
     agent.mode = "subagent"
-    agent.system = POSTEX + COORDINATION + "\nRun commands only through kali_run. Host shell access is unavailable."
+    agent.system =
+      POSTEX +
+      COORDINATION +
+      "\nNo cyber tools are available to this phase until a laboratory VM tier with per-action approval exists. Host shell access is unavailable."
     agent.permissions.push(...ForkCyberRoles.permissions("cyber-postex"))
   })
   editor.update(Agent.ID.make("cyber-validate"), (agent) => {

@@ -55,13 +55,38 @@ const assess = [
   "cyber_surface",
 ]
 
+// Exploitation phases split the assessment tools by surface, so each phase gets only its own surface.
+const web = ["http_replay", "cyber_browser"]
+const network = ["kali_run", "kali_environment", "cyber_surface"]
+
 export function tools(agent: string) {
   if (agent === "cyber-validate") return [...assess, "cyber_local_validation"]
   if (agent === "cyber-report") return read
   if (agent === "cyber-code-review") return [...read, "cyber_code_review", "cyber_artifacts"]
   if (agent === "cyber-recon" || agent === "cyber-enum") return observe
+  if (agent === "cyber-exploit-web") return [...observe, ...web]
+  if (agent === "cyber-exploit-net") return [...observe, ...network]
+  // No tools until a laboratory VM tier with per-action approval exists (fork-cyber-toolset.md, R-4).
+  if (agent === "cyber-postex") return []
   if (worker(agent)) return assess
   return undefined
+}
+
+// The highest risk class a phase may use (fork-cyber-toolset.md, R-4). "none" means the phase has no actions.
+// Exploitation phases keep R2 as their ceiling; the decision function still refuses R2 until OC-401 exists.
+const ceilings: Readonly<Record<string, "none" | "R0" | "R1" | "R2">> = {
+  "cyber-recon": "R1",
+  "cyber-enum": "R1",
+  "cyber-exploit-web": "R2",
+  "cyber-exploit-net": "R2",
+  "cyber-postex": "none",
+  "cyber-validate": "R2",
+  "cyber-code-review": "R0",
+  "cyber-report": "R0",
+}
+
+export function ceiling(agent: string) {
+  return Object.hasOwn(ceilings, agent) ? ceilings[agent] : undefined
 }
 
 export function allowed(agent: string, tool: string) {
