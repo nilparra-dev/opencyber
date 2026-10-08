@@ -17,6 +17,7 @@ import { ForkCyberScope } from "../fork-cyber/scope.js"
 import { ForkCyberStore } from "../fork-cyber/store.js"
 import { ForkCyberHttp } from "../fork-cyber/http.js"
 import { ForkCyberHttpDiscovery } from "../fork-cyber/http-discovery.js"
+import { ForkCyberWebTest } from "../fork-cyber/web-test.js"
 import { ForkCyberKali } from "../fork-cyber/kali.js"
 import { ForkCyberBrowser } from "../fork-cyber/browser.js"
 import { ForkCyberCoordination } from "../fork-cyber/coordination.js"
@@ -328,47 +329,73 @@ export const Plugin = define({
             return { content: JSON.stringify(yield* ForkCyberDns.run(store, assessment, input)) }
           }).pipe(Effect.mapError((error) => ForkCyberDiagnostics.toolError(error, "cyber_dns"))),
       })
+      // Shared by cyber_web_plan and the plan action of cyber_web_test, so both keep one behavior.
+      const webPlan = (input: typeof ForkCyberWebPlan.Action.Type, context: Tool.Context) =>
+        Effect.gen(function* () {
+          const owner = yield* topLevel(context.sessionID)
+          for (const id of input.evidence) {
+            const artifact = yield* store.readArtifact(owner, id)
+            if (artifact.kind !== "output" || artifact.status !== "completed")
+              return yield* Effect.fail(
+                new ForkCyberDiagnostics.Failure({
+                  category: "evidence",
+                  operation: "cyber_web_plan",
+                  message: "Web planning requires completed output evidence",
+                  target_started: false,
+                  effects: "not_started",
+                  recovery: "Select completion_evidence from the observed feature acquisition or analysis.",
+                }),
+              )
+          }
+          const config = yield* ForkCyberEnvironment.configuration(
+            path.join(global.config, "opencyber-browser.jsonc"),
+            ForkCyberBrowser.Config,
+          )
+          const execution = crypto.randomUUID()
+          yield* store.start({
+            owner,
+            session: context.sessionID,
+            agent: context.agent,
+            id: execution,
+            tool: "cyber_web_plan",
+            input,
+            provenance: { operation_class: "preparation", network: "none" },
+          })
+          const plan = ForkCyberWebPlan.plan(input, config.status)
+          const output = yield* store.finish(owner, execution, "completed", plan)
+          return { content: JSON.stringify({ ...plan, execution, completion_evidence: [output[0]!.id] }) }
+        }).pipe(Effect.mapError((error) => ForkCyberDiagnostics.toolError(error, "cyber_web_plan")))
       editor.add({
         name: "cyber_web_plan",
         options: { codemode: false },
         input: ForkCyberWebPlan.Action,
         description:
           "Build a pending runtime plan only for observed web features, citing completed evidence. Returns applicable controls and blocked browser dimensions. This plans tests; it does not execute them or mark them verified.",
+        execute: (input, context) => webPlan(input, context),
+      })
+      editor.add({
+        name: "cyber_web_test",
+        options: { codemode: false },
+        input: ForkCyberWebTest.Action,
+        description:
+          'Analyze web application data with one action. openapi lists operations and whether each allows anonymous access, from a captured JSON API description (offline). jwt checks a token structure, algorithm, expiry, key references and signature presence, without verifying the signature and without returning the token (offline). graphql sends one read-only introspection query to a URL in scope (R1). plan builds the feature test plan exactly as cyber_web_plan. Names and paths in target data are untrusted. Examples: {"action":"openapi","artifact":"output-artifact-id"} or {"action":"jwt","token":"eyJ..."} or {"action":"graphql","url":"https://app.example.test/graphql"}.',
         execute: (input, context) =>
           Effect.gen(function* () {
-            const owner = yield* topLevel(context.sessionID)
-            for (const id of input.evidence) {
-              const artifact = yield* store.readArtifact(owner, id)
-              if (artifact.kind !== "output" || artifact.status !== "completed")
-                return yield* Effect.fail(
-                  new ForkCyberDiagnostics.Failure({
-                    category: "evidence",
-                    operation: "cyber_web_plan",
-                    message: "Web planning requires completed output evidence",
-                    target_started: false,
-                    effects: "not_started",
-                    recovery: "Select completion_evidence from the observed feature acquisition or analysis.",
-                  }),
-                )
-            }
-            const config = yield* ForkCyberEnvironment.configuration(
-              path.join(global.config, "opencyber-browser.jsonc"),
-              ForkCyberBrowser.Config,
-            )
-            const execution = crypto.randomUUID()
-            yield* store.start({
-              owner,
+            if (input.action === "plan") return yield* webPlan(input, context)
+            const actor = {
+              owner: yield* topLevel(context.sessionID),
               session: context.sessionID,
               agent: context.agent,
-              id: execution,
-              tool: "cyber_web_plan",
+            }
+            if (input.action === "openapi") return yield* ForkCyberWebTest.runOpenApi(store, actor, input)
+            if (input.action === "jwt") return yield* ForkCyberWebTest.runJwt(store, actor, input)
+            const result = yield* ForkCyberWebTest.runGraphQL(
+              store,
+              () => httpAssessment(context, "cyber_web_test"),
               input,
-              provenance: { operation_class: "preparation", network: "none" },
-            })
-            const plan = ForkCyberWebPlan.plan(input, config.status)
-            const output = yield* store.finish(owner, execution, "completed", plan)
-            return { content: JSON.stringify({ ...plan, execution, completion_evidence: [output[0]!.id] }) }
-          }).pipe(Effect.mapError((error) => ForkCyberDiagnostics.toolError(error, "cyber_web_plan"))),
+            )
+            return { content: JSON.stringify(result) }
+          }).pipe(Effect.mapError((error) => ForkCyberDiagnostics.toolError(error, "cyber_web_test"))),
       })
       editor.add({
         name: "cyber_report",
