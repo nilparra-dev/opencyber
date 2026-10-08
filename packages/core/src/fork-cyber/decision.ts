@@ -43,6 +43,7 @@ const declared: Readonly<Record<string, Declaration>> = {
   evidence: "R0",
   findings: "R0",
   http_compare: "R0",
+  http_discover: "R1",
   http_replay: "R1",
   http_request: "R1",
   kali_environment: "R0",

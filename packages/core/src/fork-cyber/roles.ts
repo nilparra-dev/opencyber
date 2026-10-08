@@ -34,7 +34,15 @@ const read = [
   "cyber_capabilities",
   "cyber_report",
 ]
-const observe = [...read, "http_request", "cyber_services", "cyber_artifacts", "cyber_dns", "cyber_web_plan"]
+const observe = [
+  ...read,
+  "http_request",
+  "http_discover",
+  "cyber_services",
+  "cyber_artifacts",
+  "cyber_dns",
+  "cyber_web_plan",
+]
 const assess = [
   ...observe,
   "http_replay",

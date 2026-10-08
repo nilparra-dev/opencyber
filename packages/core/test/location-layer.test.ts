@@ -494,6 +494,7 @@ describe("LocationServiceMap", () => {
               "http_request",
               "http_replay",
               "http_compare",
+              "http_discover",
               "kali_run",
               "kali_environment",
               "cyber_browser",
@@ -507,6 +508,7 @@ describe("LocationServiceMap", () => {
               "cyber_dns",
               "cyber_report",
               "cyber_web_plan",
+              "cyber_web_test",
               "cyber_local_validation",
             ].includes(name)
           expect(blockedTools.filter(upstreamTool).sort()).toEqual([

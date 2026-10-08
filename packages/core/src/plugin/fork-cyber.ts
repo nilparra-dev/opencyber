@@ -16,6 +16,7 @@ import { ForkCyberNotes } from "../fork-cyber/notes.js"
 import { ForkCyberScope } from "../fork-cyber/scope.js"
 import { ForkCyberStore } from "../fork-cyber/store.js"
 import { ForkCyberHttp } from "../fork-cyber/http.js"
+import { ForkCyberHttpDiscovery } from "../fork-cyber/http-discovery.js"
 import { ForkCyberKali } from "../fork-cyber/kali.js"
 import { ForkCyberBrowser } from "../fork-cyber/browser.js"
 import { ForkCyberCoordination } from "../fork-cyber/coordination.js"
@@ -555,7 +556,9 @@ export const Plugin = define({
           )
         if (
           ForkCyberRoles.worker(event.agent) &&
-          ["http_request", "http_replay", "cyber_browser", "kali_run", "kali_environment"].includes(event.tool)
+          ["http_request", "http_discover", "http_replay", "cyber_browser", "kali_run", "kali_environment"].includes(
+            event.tool,
+          )
         )
           yield* store.coordination.requireClaim({
             owner,
@@ -1028,6 +1031,18 @@ export const Plugin = define({
           ForkCyberHttp.run(store, () => httpAssessment(context), input).pipe(
             Effect.map(httpSummary),
             Effect.mapError((error) => ForkCyberDiagnostics.toolError(error, "cyber_tool")),
+          ),
+      })
+      editor.add({
+        name: "http_discover",
+        options: { codemode: false },
+        input: ForkCyberHttpDiscovery.Action,
+        description:
+          'Check a fixed list of read-only paths on an HTTP(S) target within the recorded scope, one GET each, sharing max_rps. Only the basic profile exists; paths cannot be supplied. Reports found, protected (401/403) and redirect responses with evidence IDs. A random path first establishes how the target answers missing pages; candidates that answer identically are suppressed, not reported. Paginated with next_offset. Example: {"url":"https://app.example.test","profile":"basic"}.',
+        execute: (input, context) =>
+          ForkCyberHttpDiscovery.run(store, () => httpAssessment(context, "http_discover"), input).pipe(
+            Effect.map((result) => ({ content: JSON.stringify(result) })),
+            Effect.mapError((error) => ForkCyberDiagnostics.toolError(error, "http_discover")),
           ),
       })
       editor.add({
