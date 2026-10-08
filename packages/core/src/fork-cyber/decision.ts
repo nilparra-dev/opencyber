@@ -24,7 +24,7 @@ const declared: Readonly<Record<string, Declaration>> = {
   cyber_discover: { passive_dns: "R0", certificates: "R0", host_sweep: "R1", fingerprint: "R1" },
   cyber_local_validation: "R2",
   cyber_report: "R0",
-  cyber_services: { procedures: "R0", scan: "R1" },
+  cyber_services: { procedures: "R0", scan: "R1", version: "R1", udp_top: "R1", probe: "R1" },
   cyber_surface: {
     procedures: "R0",
     import: "R0",
