@@ -4,6 +4,7 @@ import { Effect, Schema } from "effect"
 import { realpath } from "node:fs/promises"
 import path from "node:path"
 import { ForkCyberRoles } from "./roles.js"
+import { ForkCyberSecretScan } from "./secret-scan.js"
 import { ForkCyberStore } from "./store.js"
 
 const filename = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(4096))
@@ -68,6 +69,10 @@ export const Action = Schema.Union([
   Schema.Struct({ action: Schema.Literal("procedures") }),
   Schema.Struct({
     action: Schema.Literal("snapshot"),
+    files: Schema.Array(filename).check(Schema.isMinLength(1), Schema.isMaxLength(25)),
+  }),
+  Schema.Struct({
+    action: Schema.Literal("secrets"),
     files: Schema.Array(filename).check(Schema.isMinLength(1), Schema.isMaxLength(25)),
   }),
   Schema.Struct({ action: Schema.Literal("sarif"), report: filename }),
@@ -145,13 +150,15 @@ export const run = Effect.fn("ForkCyberCodeReview.run")(function* (
         Effect.mapError((error) => (error.cause instanceof Error ? error.cause : new Error(String(error.cause)))),
       )
     : []
-  const filenames = [
-    ...new Set(input.action === "snapshot" ? input.files : candidates.map((candidate) => candidate.file)),
-  ]
+  const filenames = [...new Set(input.action === "sarif" ? candidates.map((candidate) => candidate.file) : input.files)]
   if (filenames.length > 25) return yield* Effect.fail(new Error("A review can snapshot at most 25 files"))
   const sources = yield* Effect.forEach(filenames, (file) => read(root, file, 512 * 1024, assessment.permission))
   if (sources.reduce((total, source) => total + source.bytes.byteLength, 0) > 2 * 1024 * 1024)
     return yield* Effect.fail(new Error("A review can snapshot at most 2 MiB of source"))
+  const findings =
+    input.action === "secrets"
+      ? ForkCyberSecretScan.scan(sources.map((source) => ({ file: source.file, text: source.bytes.toString("utf8") })))
+      : undefined
   const observations = yield* Effect.try(() =>
     candidates.map((candidate) => {
       const source = sources.find((source) => source.file === candidate.file)!
@@ -213,6 +220,13 @@ export const run = Effect.fn("ForkCyberCodeReview.run")(function* (
         captured_at: Date.now(),
       },
       action: input.action,
+      ...(findings
+        ? {
+            findings: findings.slice(0, 200),
+            coverage:
+              "Offline credential patterns for common formats. Findings are redacted; an empty result does not prove that no secret exists.",
+          }
+        : {}),
       report_artifact: reportArtifact?.[0]?.id ?? null,
       files,
       candidates: observations.map((candidate) => ({

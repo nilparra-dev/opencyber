@@ -42,6 +42,12 @@ Code flows, fixes, logical locations, related locations, columns and scanner cov
 
 A capture permits at most 25 distinct source paths, 512 KiB per source and 2 MiB total source bytes. Reports are at most 2 MiB, with at most eight runs and 200 results per run. Files must be regular UTF-8 text without NUL bytes. Invalid reports, missing/outside/denied files, out-of-range lines and stale hashes fail before any execution or artifact is stored. Storage failures after admission retain an error execution. Interruption can retain unresolved work under the existing task contract; it is never replayed automatically.
 
+## Secret scanning
+
+The `secrets` action reads explicit files the same way `snapshot` does, with the same limits, permission checks and source artifacts, then scans them offline. It runs no tool and makes no network request. The rules cover AWS access key IDs, GitHub and Slack tokens, Google API keys, live Stripe keys, PEM private key blocks, and quoted values assigned to password, secret, API-key or access-token names.
+
+Each finding reports its rule, file, line, a masked preview (four leading characters and the length) and a 16-character fingerprint, so repeated credentials can be recognized without the value. Values that contain placeholder markers, such as `example`, `changeme`, `your_` or interpolation, are not reported. The output says that an empty result does not prove that no secret exists. Raw matches never appear in the output, the candidates or the decision log. Source artifacts keep the full text in the private archive, as `snapshot` does.
+
 ## Reproducible laboratory
 
 `packages/core/test/fixture/fork-cyber-code-review` contains a vulnerable SQLite query, its bound-parameter control, a local Semgrep rule and a report generated with Semgrep OSS 1.178.0. The rule detects query concatenation in this lab; it is not a general SQL-injection detector or a production rule pack. The tests execute only these controlled fixtures. They verify ordinary lookups in both implementations, demonstrate that the injection changes the vulnerable result set, and show that the control treats the same input as data.

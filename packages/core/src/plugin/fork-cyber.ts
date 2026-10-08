@@ -896,7 +896,7 @@ export const Plugin = define({
         options: { codemode: false },
         input: ForkCyberCodeReview.Action,
         description:
-          "Read local review procedures, snapshot explicit project-relative UTF-8 files with hashes and line counts, or import a local SARIF 2.1.0 report with source evidence. Does not execute a scanner or project code. Imported observations are candidates, not confirmed findings. Workers require an active phase task; each file must pass both review and read permissions.",
+          "Read local review procedures, snapshot explicit project-relative UTF-8 files with hashes and line counts, scan explicit files offline for credential patterns (secrets; findings are redacted and carry a fingerprint, never the value), or import a local SARIF 2.1.0 report with source evidence. Does not execute a scanner or project code. Imported observations are candidates, not confirmed findings. Workers require an active phase task; each file must pass both review and read permissions.",
         execute: (input, context) =>
           Effect.gen(function* () {
             const result = yield* ForkCyberCodeReview.run(
