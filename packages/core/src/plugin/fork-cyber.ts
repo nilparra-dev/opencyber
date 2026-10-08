@@ -23,6 +23,7 @@ import { ForkCyberCloudAnalysis } from "../fork-cyber/cloud-analysis.js"
 import { ForkCyberFindingRetest } from "../fork-cyber/finding-retest.js"
 import { ForkCyberContainerReview } from "../fork-cyber/container-review.js"
 import { ForkCyberKali } from "../fork-cyber/kali.js"
+import { ForkCyberKaliAllowlist } from "../fork-cyber/kali-allowlist.js"
 import { ForkCyberBrowser } from "../fork-cyber/browser.js"
 import { ForkCyberCoordination } from "../fork-cyber/coordination.js"
 import { ForkCyberRoles } from "../fork-cyber/roles.js"
@@ -84,6 +85,17 @@ type ValidationRequest = {
 function refusal(event: Pick<ValidationRequest, "agent" | "tool" | "input">, reason: string) {
   const action = ForkCyberDecision.actionID(event.tool, event.input)
   const target = ForkCyberDecision.approvalTarget(event.input)
+  if (reason === "binary_not_allowlisted")
+    return new ForkCyberDiagnostics.Failure({
+      category: "capability",
+      operation: event.tool,
+      message: `${event.tool} argv[0] is not in the binary allowlist`,
+      target_started: false,
+      effects: "not_started",
+      recovery:
+        "Use a binary from the kali_run allowlist, or the typed tool that wraps the binary, such as cyber_services for TCP service inventory.",
+      details: { registered_agent: event.agent },
+    })
   if (reason === "not_declared")
     return new ForkCyberDiagnostics.Failure({
       category: "capability",
@@ -1151,7 +1163,7 @@ export const Plugin = define({
         options: { codemode: false },
         input: ForkCyberKali.Run,
         description:
-          "Run argv in an optional Kali Docker job. Fresh /work, non-root, bounded CPU/memory/files/output/time. Inputs reference this engagement's artifacts; outputs name regular files directly inside /work. Returns stdout/stderr/file artifact IDs and exit code. Default network is none. Scoped networking requires engagement rules_of_engagement.network budgets, pins destinations/exclusions, and reserves the job's full byte allowance against the persistent engagement total. It does not apply HTTP max_rps to arbitrary processes. Cancellation destroys the containers. No host mounts or inherited provider credentials.",
+          `Run argv in an optional Kali Docker job. argv[0] must be a bare name from the allowlist: ${ForkCyberKaliAllowlist.binaries.join(", ")}. Other binaries, paths, shells and interpreters are refused with refused_by_policy before anything starts; typed tools such as cyber_services wrap the rest. Example: argv [\"grep\",\"-c\",\"token\",\"source.txt\"] with inputs [{\"name\":\"source.txt\",\"artifact\":\"<artifact ID>\"}]. Fresh /work, non-root, bounded CPU/memory/files/output/time. Inputs reference this engagement's artifacts; outputs name regular files directly inside /work. Returns stdout/stderr/file artifact IDs and exit code. Default network is none. Scoped networking requires engagement rules_of_engagement.network budgets, pins destinations/exclusions, and reserves the job's full byte allowance against the persistent engagement total. It does not apply HTTP max_rps to arbitrary processes. Cancellation destroys the containers. No host mounts or inherited provider credentials.`,
         execute: (input, context) =>
           Effect.gen(function* () {
             const runtime = yield* kali(context, "kali_run")
