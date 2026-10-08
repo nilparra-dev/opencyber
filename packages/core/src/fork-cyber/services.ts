@@ -148,12 +148,14 @@ export const run = Effect.fn("ForkCyberServices.run")(function* (
             (isIP(host) !== 0 && !matches(parsed.address, host))
           )
             return yield* Effect.fail(new Error("Nmap report does not match the requested ports and address family"))
+          const xml = yield* store.readArtifact(assessment.owner, raw.artifact)
           return {
             format: "opencyber-tcp-services-v1",
             target: host,
             family: input.family ?? "ipv4",
             ...parsed,
             unreported_ports: ports.filter((port) => !parsed.ports.some((entry) => entry.port === port)),
+            xml_excerpt: ForkCyberKali.excerpt(xml.bytes),
             xml_artifact: raw.artifact,
             report_artifact: report.artifact,
             limitations: procedures.limits,

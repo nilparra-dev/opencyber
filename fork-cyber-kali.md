@@ -48,7 +48,7 @@ To preserve a generated file:
 }
 ```
 
-`kali_run` returns an execution ID, output evidence ID, stdout/stderr artifact IDs, exit code and declared file artifacts. Retrieve previews through `evidence`. A later job can pass `inputs: [{"name":"source.txt","artifact":"<artifact ID>"}]`. Inputs must belong to the same engagement. Files use simple names directly under `/work`; traversal, absolute paths and symlink exports are rejected. The host never extracts an untrusted archive or mounts an assessment directory.
+`kali_run` returns an execution ID, output evidence ID, stdout/stderr artifact IDs, exit code and declared file artifacts. Each stream also returns `stdout_excerpt` and `stderr_excerpt`: a redacted preview of at most 8,000 characters and a `next_offset`, which is `null` when the stream fits. To read the rest, call `evidence` with the stream's artifact ID and `position` set to `next_offset`. `cyber_services` returns the Nmap XML the same way as `xml_excerpt`. A later job can pass `inputs: [{"name":"source.txt","artifact":"<artifact ID>"}]`. Inputs must belong to the same engagement. Files use simple names directly under `/work`; traversal, absolute paths and symlink exports are rejected. The host never extracts an untrusted archive or mounts an assessment directory.
 
 ## Limits and lifecycle
 
