@@ -348,15 +348,19 @@ Updated with each merge. "Done" means the acceptance criteria in the work item's
 | ------ | ------- | --------------------------------------------------------------------------------------------------------------------------------------- |
 | OC-101 | Done    | #55, PR #83: typed targets in the scope manifest                                                                                        |
 | OC-102 | Done    | #57, PR #84: risk class per action and one decision function                                                                            |
-| OC-103 | Open    | #61                                                                                                                                     |
+| OC-103 | Done    | #61, PR #94: phase risk ceilings; exploitation phases split their surfaces; post-exploitation has no tools                              |
 | OC-104 | Open    | #60. Needs the Kali image to verify                                                                                                    |
 | OC-105 | Partial | #58, PR #86: seven shared categories, recovery steps and the `kind` mapping. Open: the long-output contract for Kali outputs, and migration of tool-specific recovery text |
-| OC-106 | Open    | #62                                                                                                                                     |
+| OC-106 | Done    | #62, PR #95: `finding_retest` (R1) replays a finding's HTTP evidence and links each execution; a separate tool, not an action of `findings` |
 | OC-107 | Done    | #63, PR #85: append-only decision log, including denials                                                                                |
 | OC-108 | Open    | #59. Needs a model budget decision                                                                                                      |
 | OC-201 | Done    | #64, PR #87: `http_discover`                                                                                                             |
 | OC-202 | Done    | #65, PR #88: `cyber_web_test` with openapi, jwt, graphql and plan. `cyber_web_plan` stays registered beside it                         |
-| OC-203 to OC-207 | Open | #66 to #70                                                                                                                       |
+| OC-203 | Open    | #66. `fingerprint` and passive DNS are feasible offline; `host_sweep` needs Kali; `certificates` needs D-5 and an external source     |
+| OC-204 | Open    | #67. Needs the Kali image                                                                                                              |
+| OC-205 | Partial | #68, PR #92: `secrets` (offline, redacted). Open: `sast` and `sca`, which need pinned analyzers and advisory data                    |
+| OC-206 | Partial | #69, PR #96: `dockerfile_lint` and `runtime_review` (offline). Open: `image_scan` and `pull`                                          |
+| OC-207 | Partial | #70, PR #93: `iam_analyze` (offline, JSON pointers). Open: `iac_scan`                                                                 |
 | OC-301 to OC-307 | Open | #71 to #77 and #72. Need the VM lab and credential brokering                                                                      |
 | OC-401 | Open    | #78. Required before any R2 action can run                                                                                              |
 | OC-403, OC-404 | Open | #89 and #90, created from this document                                                                                            |
