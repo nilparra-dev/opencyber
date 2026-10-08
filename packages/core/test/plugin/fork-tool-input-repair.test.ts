@@ -44,3 +44,20 @@ test("preserves unrestricted alternatives, scalar roots and unsupported composit
   for (const value of [null, 1, "claim", "{broken", "[]", []])
     expect(ForkToolInputRepair.select(value, { anyOf: [claim, release] })).toBeUndefined()
 })
+
+test("defaults action-less read payloads only for tools with a read default", () => {
+  expect(ForkToolInputRepair.normalize("cyber_tasks", {})).toEqual({ action: "list" })
+  expect(ForkToolInputRepair.normalize("cyber_tasks", "{}")).toEqual({ action: "list" })
+  expect(ForkToolInputRepair.normalize("cyber_tasks", { offset: 3 })).toEqual({ offset: 3, action: "list" })
+  expect(ForkToolInputRepair.normalize("kali_environment", {})).toEqual({ action: "status" })
+  // Declared actions, foreign keys, unparseable values and other tools keep their own errors.
+  expect(ForkToolInputRepair.normalize("cyber_tasks", { action: "claim", key: "x" })).toEqual({
+    action: "claim",
+    key: "x",
+  })
+  expect(ForkToolInputRepair.normalize("cyber_tasks", { action: null })).toEqual({ action: null })
+  expect(ForkToolInputRepair.normalize("cyber_tasks", { key: "x" })).toEqual({ key: "x" })
+  expect(ForkToolInputRepair.normalize("kali_environment", { action: "stop" })).toEqual({ action: "stop" })
+  expect(ForkToolInputRepair.normalize("notes", {})).toEqual({})
+  expect(ForkToolInputRepair.normalize("cyber_tasks", "nope")).toBe("nope")
+})

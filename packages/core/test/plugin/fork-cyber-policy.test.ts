@@ -140,7 +140,7 @@ it.live("review ignores target plugins, MCP, agents and nested instructions whil
       expect(yield* call(root.id, "read", { path: "nested/source.txt" })).toContain("source data")
       for (const file of [privateFile, "private-link.txt"]) {
         const rejected = String(yield* call(root.id, "read", { path: file }).pipe(Effect.flip))
-        expect(rejected).toContain('"category":"scope"')
+        expect(rejected).toContain('"category":"outside_scope"')
         expect(rejected).toContain('"target_started":false')
         expect(rejected).not.toContain("synthetic-host-file-secret")
       }
@@ -297,6 +297,89 @@ it.live("assessment applies exclusions to primary and generic children and treat
       expect(preview).not.toContain("COOKIE_SECRET")
       expect(preview).not.toContain("STORAGE_SECRET")
       expect((yield* store.readArtifact(root.id, checkpoint[0]!.id)).bytes.toString()).toContain("COOKIE_SECRET")
+    }).pipe(Effect.provide(locations.get(root.location)))
+  }),
+)
+
+it.live("denied and allowed cyber decisions are recorded, and a denied request sends nothing", () =>
+  Effect.gen(function* () {
+    const tmp = yield* tmpdirScoped()
+    const target = path.join(tmp.path, "assessment")
+    yield* Effect.promise(() => Bun.write(path.join(target, "fixture.txt"), "local"))
+    const sessions = yield* Session.Service
+    const root = yield* sessions.create({ location: { directory: AbsolutePath.make(target) } })
+    const global = yield* Global.Service
+    const store = yield* ForkCyberStore.open(path.join(global.data, "opencyber", "evidence.sqlite"))
+    const manifest = {
+      engagement: "decision-log",
+      authorized_by: "operator",
+      authorization_ref: "decision-log-plan",
+      scope: { domains: ["127.0.0.1"], cidrs: [], excluded: [] },
+      rules_of_engagement: { no_dos: true, max_rps: 10, window: "fixture", contact: "operator" },
+    }
+    yield* store.saveManifest(root.id, manifest, 0)
+    yield* store.approveManifest(root.id, manifest, 1)
+    let hits = 0
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      fetch: () => {
+        hits++
+        return new Response("served")
+      },
+    })
+    yield* Effect.addFinalizer(() => Effect.promise(() => server.stop(true)))
+    const validationCase = { input: { value: 1 }, expected: { kind: "value", value: 1 } }
+    const locations = yield* LocationServiceMap.Service
+    yield* Effect.gen(function* () {
+      expect(yield* call(root.id, "engagement", {})).toContain("127.0.0.1")
+      expect(
+        yield* call(
+          root.id,
+          "http_request",
+          { url: `${server.url.href}probe?token=SECRET_TOKEN` },
+          "cyber-report",
+        ).pipe(Effect.isFailure),
+      ).toBe(true)
+      expect(
+        yield* call(
+          root.id,
+          "cyber_local_validation",
+          { source: "fixture.txt", healthy: validationCase, candidate: validationCase },
+          "cyber-validate",
+        ).pipe(Effect.isFailure),
+      ).toBe(true)
+      expect(hits).toBe(0)
+      const rows = yield* store.decisions(root.id)
+      expect(
+        rows.map(({ agent, tool, decision, reason, risk, target }) => ({
+          agent,
+          tool,
+          decision,
+          reason,
+          risk,
+          target,
+        })),
+      ).toEqual([
+        { agent: "build", tool: "engagement", decision: "allow", reason: "allowed", risk: "R0", target: null },
+        {
+          agent: "cyber-report",
+          tool: "http_request",
+          decision: "deny",
+          reason: "outside_role_or_mode",
+          risk: null,
+          target: server.url.origin,
+        },
+        {
+          agent: "cyber-validate",
+          tool: "cyber_local_validation",
+          decision: "deny",
+          reason: "above_ceiling",
+          risk: "R2",
+          target: null,
+        },
+      ])
+      expect(JSON.stringify(rows)).not.toContain("SECRET_TOKEN")
     }).pipe(Effect.provide(locations.get(root.location)))
   }),
 )
