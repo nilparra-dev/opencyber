@@ -356,7 +356,7 @@ Updated with each merge. "Done" means the acceptance criteria in the work item's
 | OC-108 | Open    | #59. Needs a model budget decision                                                                                                      |
 | OC-201 | Done    | #64, PR #87: `http_discover`                                                                                                             |
 | OC-202 | Done    | #65, PR #88: `cyber_web_test` with openapi, jwt, graphql and plan. `cyber_web_plan` stays registered beside it                         |
-| OC-203 | Open    | #66. `fingerprint` and passive DNS are feasible offline; `host_sweep` needs Kali; `certificates` needs D-5 and an external source     |
+| OC-203 | Done    | #66: `cyber_discover` with `passive_dns` (absorbs `cyber_dns`), `certificates` (declared passive OSINT, D-5), `host_sweep` (scoped Kali) and `fingerprint`. Exception: names beyond 200 in `certificates` stay in the artifact, with no offset action. See `fork-cyber-discovery.md` |
 | OC-204 | Partial | #67: `version`, `probe` (redis_info, elasticsearch_root) and `udp_top` (not_configured, no raw sockets). Open: the other probe checks (anonymous FTP, LDAP root DSE, SMB signing, NFS exports, MongoDB) |
 | OC-205 | Partial | #68, PR #92: `secrets` (offline, redacted). Open: `sast` and `sca`, which need pinned analyzers and advisory data                    |
 | OC-206 | Partial | #69, PR #96: `dockerfile_lint` and `runtime_review` (offline). Open: `image_scan` and `pull`                                          |
