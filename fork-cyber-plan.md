@@ -8,6 +8,8 @@ Support for a surface means a tested workflow with reproducible evidence. Instal
 
 Docker/Kali is an optional execution environment. Local code review must remain usable without Docker. Additional VM, remote Linux and device environments should implement the same execution contract when needed.
 
+The planned tool catalog, risk classes and delivery waves for new surfaces are defined in [fork-cyber-toolset.md](fork-cyber-toolset.md). This plan remains the record of implemented phases.
+
 ## Baseline
 
 The initial audit examined `960aae2675` on `cyber-compliance`, based on upstream `v2.0.18`. The existing fork had engagement prompts, seven phase agents, bounded shared notes, provider-specific instruction suffixes and a live refusal-rate evaluation.
