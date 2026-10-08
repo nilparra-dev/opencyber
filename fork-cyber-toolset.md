@@ -1,6 +1,6 @@
 # OpenCyber audit toolset: design and roadmap
 
-Status: proposed. Baseline: `origin/custom` at `bc43767fcf`.
+Status: accepted with the recommendations in section 7 (#81). Implementation status is in section 10. Baseline when proposed: `origin/custom` at `bc43767fcf`.
 
 This document defines the target catalog of tools for authorized security assessments and the rules every tool must follow. It extends the phase plan in [fork-cyber-plan.md](fork-cyber-plan.md): phases 0 to 6 remain the implemented foundation, and new surface modules are planned here. Work items below use stable IDs (`OC-###`) and are tracked as GitHub issues.
 
@@ -303,7 +303,15 @@ A tool is complete when all of the following hold:
 
 ## 7. Open decisions
 
-Each decision has a recommendation. The owner confirms or changes it before the dependent work item starts.
+Each decision was accepted with its recommendation (#81). Outcomes:
+
+- **D-1** applied in #55: the scope manifest validates all ten kinds and records six. `repo_path` and `container_image` are refused by manifests until OC-205 and OC-206 record them.
+- **D-2** applied in #57: R2 is denied in every mode. No approval flow exists yet (OC-401), so `cyber_local_validation` and `binary.execute` are unavailable.
+- **D-3** kept: the VM tier waits for the W1 milestone.
+- **D-4** kept as the design: credential custody belongs to the OpenCyber service. OC-307 has not started.
+- **D-5** kept as the design: passive OSINT needs an engagement declaration. OC-203 will check it before `certificates`.
+- **D-6** deferred: the three `http_*` tools stay separate until OC-108 measurements exist. Measuring needs model runs, and those need a budget decision.
+- **D-7** accepted: W2 and W3 issues stay public. They hold acceptance criteria, not exploit payloads. Review any detail beyond that before publishing it.
 
 | ID  | Decision                                   | Recommendation                                                                                                       |
 | --- | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
@@ -331,3 +339,33 @@ Each decision has a recommendation. The owner confirms or changes it before the 
 - The wave is a GitHub milestone (W0 to W3). Dependencies are recorded as linked issues.
 - Pull requests reference their issue with `Refs #<n>`, and the title follows the repository convention `type(scope): summary`.
 - Open decisions (D-1 to D-7) are tracked in a single issue, and each decision is closed by updating this document.
+
+## 10. Implementation status
+
+Updated with each merge. "Done" means the acceptance criteria in the work item's issue are met, with exceptions named below.
+
+| ID     | Status  | Change                                                                                                                                  |
+| ------ | ------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| OC-101 | Done    | #55, PR #83: typed targets in the scope manifest                                                                                        |
+| OC-102 | Done    | #57, PR #84: risk class per action and one decision function                                                                            |
+| OC-103 | Open    | #61                                                                                                                                     |
+| OC-104 | Open    | #60. Needs the Kali image to verify                                                                                                    |
+| OC-105 | Partial | #58, PR #86: seven shared categories, recovery steps and the `kind` mapping. Open: the long-output contract for Kali outputs, and migration of tool-specific recovery text |
+| OC-106 | Open    | #62                                                                                                                                     |
+| OC-107 | Done    | #63, PR #85: append-only decision log, including denials                                                                                |
+| OC-108 | Open    | #59. Needs a model budget decision                                                                                                      |
+| OC-201 | Done    | #64, PR #87: `http_discover`                                                                                                             |
+| OC-202 | Done    | #65, PR #88: `cyber_web_test` with openapi, jwt, graphql and plan. `cyber_web_plan` stays registered beside it                         |
+| OC-203 to OC-207 | Open | #66 to #70                                                                                                                       |
+| OC-301 to OC-307 | Open | #71 to #77 and #72. Need the VM lab and credential brokering                                                                      |
+| OC-401 | Open    | #78. Required before any R2 action can run                                                                                              |
+| OC-403, OC-404 | Open | #89 and #90, created from this document                                                                                            |
+| OC-405 to OC-402 | Open | #79 and #80                                                                                                                       |
+
+Deviations from the tables above, recorded where they were made:
+
+- `http_compare` is R0. Its description states it makes no network activity; the table grouped it with R1.
+- `cyber_dns` is R0, and it queries the operator's resolver for an authorized name.
+- `kali_run` is R1 even though its argv is free-form. OC-104 narrows it.
+- `cyber_surface` `cloud.policy` and `binary.elf` are R0, because they read a local artifact.
+- `cyber_web_plan` stays registered beside `cyber_web_test`'s `plan` action, which shares its implementation.
