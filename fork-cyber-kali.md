@@ -9,11 +9,11 @@ The implementation uses a fresh container per job, associated with the top-level
 Use Docker with Linux containers and a Docker CLI accessible to the OpenCyber service. Build from the repository root:
 
 ```sh
-docker build --tag opencyber-kali:3 fork-kali
-docker image inspect opencyber-kali:3 --format '{{.Id}}'
+docker build --tag opencyber-kali:5 fork-kali
+docker image inspect opencyber-kali:5 --format '{{.Id}}'
 ```
 
-The Dockerfile pins the official Kali base by digest. Its package repository is rolling, so a rebuild can install newer package versions. The resulting image ID and `/opt/opencyber/packages.txt` identify what actually ran; this is not a claim of bit-for-bit reproducible builds. Keep/export the built image if exact replay matters. The initial selection includes curl, nmap, DNS utilities, sqlmap, Python, jq, ripgrep and OpenSSL. Extend the Dockerfile deliberately; the base image does not contain every Kali tool.
+The Dockerfile pins the official Kali base by digest. Its package repository is rolling, so a rebuild can install newer package versions. The resulting image ID and `/opt/opencyber/packages.txt` identify what actually ran; this is not a claim of bit-for-bit reproducible builds. Keep/export the built image if exact replay matters. The initial selection includes curl, nmap, DNS utilities, sqlmap, Python, jq, ripgrep and OpenSSL. Installed is not the same as allowed: `kali_run` runs only the binaries listed in [Binary allowlist and typed wrappers](#binary-allowlist-and-typed-wrappers). Extend the Dockerfile deliberately; the base image does not contain every Kali tool.
 
 Image version 3 removes Nmap's packaged file capabilities so it can run under the existing capability-free workload. The [TCP inventory module](fork-cyber-services.md) invokes the underlying binary with `--unprivileged`; arbitrary privileged/raw scans remain unavailable.
 
@@ -35,20 +35,46 @@ An absent or malformed file disables Kali execution. Image tags are rejected; ex
 Record an explicit engagement with the existing `engagement` tool, then call:
 
 ```json
-{ "argv": ["/usr/lib/nmap/nmap", "--unprivileged", "--version"] }
+{ "argv": ["jq", "--version"] }
 ```
 
-To preserve a generated file:
+Nmap is not on the allowlist. Its TCP scans run through [`cyber_services`](fork-cyber-services.md), which builds the Nmap command itself.
+
+To preserve a generated file, copy an input artifact to an output name:
 
 ```json
 {
-  "argv": ["sh", "-c", "printf 'example evidence' > result.txt"],
+  "argv": ["cp", "source.txt", "result.txt"],
+  "inputs": [{"name":"source.txt","artifact":"<artifact ID>"}],
   "outputs": ["result.txt"],
   "timeout_ms": 10000
 }
 ```
 
 `kali_run` returns an execution ID, output evidence ID, stdout/stderr artifact IDs, exit code and declared file artifacts. Each stream also returns `stdout_excerpt` and `stderr_excerpt`: a redacted preview of at most 8,000 characters and a `next_offset`, which is `null` when the stream fits. To read the rest, call `evidence` with the stream's artifact ID and `position` set to `next_offset`. `cyber_services` returns the Nmap XML the same way as `xml_excerpt`. A later job can pass `inputs: [{"name":"source.txt","artifact":"<artifact ID>"}]`. Inputs must belong to the same engagement. Files use simple names directly under `/work`; traversal, absolute paths and symlink exports are rejected. The host never extracts an untrusted archive or mounts an assessment directory.
+
+## Binary allowlist and typed wrappers
+
+`kali_run` accepts a free-form `argv`, so its first element is checked before anything starts. `argv[0]` must be a bare name from this list, which is versioned with the image recipe (`org.opencyber.kali.version`, currently 5):
+
+`base64`, `cat`, `cp`, `cut`, `file`, `grep`, `head`, `jq`, `md5sum`, `sha256sum`, `strings`, `tail`, `tr`, `uniq`, `wc`
+
+The list lives in `packages/core/src/fork-cyber/kali-allowlist.ts`. A test fails when its `IMAGE_VERSION` disagrees with the recipe, and a Docker test checks that every listed name exists in the configured image. The check is part of the same permission decision as the role and risk rules. A refusal is recorded in the decision log with reason `binary_not_allowlisted`, returned as `refused_by_policy`, and made before any Kali container is created.
+
+Names must be bare. A path such as `/usr/bin/cat` or `/work/cat` is refused. The image's `PATH` resolves names under `/usr/bin`, and `/work` is not on it.
+
+Excluded on purpose:
+
+- Interpreters and shells (`python3`, `sh`, `node`, `env`) run arbitrary code.
+- `rg` and `sort` run the program named by `--pre` or `--compress-program`, so an allowed name could run anything.
+- `nmap`, `curl`, `dig`, `whois` and `sqlmap` reach targets. Those actions belong to typed tools that record scope and evidence.
+- `readelf` runs through `cyber_surface`. `aapt` has no tool yet. `nft` needs `NET_ADMIN`, which job containers do not have.
+
+None of the listed utilities contacts a network. Scoped networking through `kali_run` therefore has no allowlisted binary; network work runs through typed tools.
+
+**Typed wrappers.** A binary outside the list is exposed only as a typed action. The tool validates its own parameters with a schema, builds the argv itself from fixed values, calls the Kali manager directly, and parses the binary's output before it returns anything. The model never supplies the argv. `cyber_services` is the reference implementation. It runs Nmap with fixed connect-scan flags (`--unprivileged -sT`) against one in-scope host and at most 32 declared ports, then parses the XML with a restricted parser that rejects entity declarations and checks the report against the requested ports. See [TCP service inventory](fork-cyber-services.md).
+
+To expose a new binary, install it in the Dockerfile, add the typed action with positive and negative fixtures, and bump `org.opencyber.kali.version` and `IMAGE_VERSION` in the same change. Add the binary to the allowlist only if it is offline and cannot run other programs.
 
 ## Limits and lifecycle
 
@@ -88,7 +114,7 @@ The Docker suite builds no mocks. It executes the selected Kali image, transfers
 PowerShell:
 
 ```powershell
-$env:OPENCYBER_TEST_KALI_IMAGE = docker image inspect opencyber-kali:3 --format '{{.Id}}'
+$env:OPENCYBER_TEST_KALI_IMAGE = docker image inspect opencyber-kali:5 --format '{{.Id}}'
 Set-Location packages/core
 bun test test/plugin/fork-cyber-kali.test.ts test/plugin/fork-cyber-network.test.ts
 ```
