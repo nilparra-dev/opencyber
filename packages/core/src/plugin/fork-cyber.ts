@@ -1016,11 +1016,17 @@ export const Plugin = define({
         options: { codemode: false },
         input: ForkCyberServices.Action,
         description:
-          "Read TCP inventory procedures or scan one explicit host and up to 32 TCP ports using unprivileged Nmap connect scans in scoped Kali. Defaults to IPv4; select IPv6 explicitly. Requires an engagement with network budgets and active worker claim. Returns port-state observations, table-derived service guesses, original XML and completed output evidence. No version detection, scripts, UDP, discovery or arbitrary scanner arguments. Open ports are not confirmed vulnerabilities. Example: {\"action\":\"procedures\"} then {\"action\":\"scan\",\"host\":\"app.example.test\",\"ports\":[80,443]}.",
+          "Read TCP inventory procedures, scan or version-detect one explicit host and up to 32 TCP ports with unprivileged Nmap connect scans in scoped Kali (version adds light detection without scripts), probe one port with one unauthenticated check (redis_info or elasticsearch_root), or report udp_top as not_configured because this workload has no raw sockets. Defaults to IPv4; select IPv6 explicitly. Requires an engagement with network budgets and an active worker claim. Returns port states, service names, original XML and output evidence. No scripts, credentials or arbitrary scanner arguments. Open ports are not confirmed vulnerabilities. Example: {\"action\":\"procedures\"} then {\"action\":\"version\",\"host\":\"app.example.test\",\"ports\":[80,443]}.",
         execute: (input, context) =>
           Effect.gen(function* () {
             if (input.action === "procedures") return { content: JSON.stringify(ForkCyberServices.procedures) }
             const runtime = yield* kali(context, "cyber_services")
+            if (input.action === "probe")
+              return {
+                content: JSON.stringify(
+                  yield* ForkCyberServices.probe(store, global.data, runtime.configuration, runtime.assessment, input),
+                ),
+              }
             return {
               content: JSON.stringify(
                 yield* ForkCyberServices.run(store, global.data, runtime.configuration, runtime.assessment, input),
