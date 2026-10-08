@@ -509,6 +509,7 @@ describe("LocationServiceMap", () => {
               "cyber_report",
               "cyber_web_plan",
               "cyber_web_test",
+              "cyber_cloud",
               "cyber_local_validation",
             ].includes(name)
           expect(blockedTools.filter(upstreamTool).sort()).toEqual([

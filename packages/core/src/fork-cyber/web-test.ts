@@ -3,6 +3,7 @@ export * as ForkCyberWebTest from "./web-test.js"
 import { Effect, Option, Schema } from "effect"
 import { ForkCyberDiagnostics } from "./diagnostics.js"
 import { ForkCyberHttp } from "./http.js"
+import { ForkCyberOfflineAnalysis } from "./offline-analysis.js"
 import { ForkCyberWebPlan } from "./web-plan.js"
 
 // Target-supplied names and paths are untrusted data. They are truncated before they reach the model.
@@ -186,23 +187,10 @@ const invalid = (operation: string, message: string, recovery: string) =>
   })
 
 type Store = ForkCyberHttp.Store
-type Owner = { owner: string; session: string; agent: string }
+type Owner = ForkCyberOfflineAnalysis.Actor
 
-// Offline analysis is recorded like cyber_web_plan: one execution with an output artifact, and no network.
-const analysis = Effect.fn(function* (store: Store, actor: Owner, input: unknown, output: object) {
-  const execution = crypto.randomUUID()
-  yield* store.start({
-    owner: actor.owner,
-    session: actor.session,
-    agent: actor.agent,
-    id: execution,
-    tool: "cyber_web_test",
-    input,
-    provenance: { operation_class: "analysis", network: "none" },
-  })
-  const artifacts = yield* store.finish(actor.owner, execution, "completed", { ...output, execution })
-  return { content: JSON.stringify({ ...output, execution, completion_evidence: [artifacts[0]!.id] }) }
-})
+const analysis = (store: Store, actor: Owner, input: unknown, output: object) =>
+  ForkCyberOfflineAnalysis.record(store, actor, "cyber_web_test", input, output)
 
 export const runOpenApi = Effect.fn(function* (store: Store, actor: Owner, input: typeof OpenApi.Type) {
   const artifact = yield* store.readArtifact(actor.owner, input.artifact)
