@@ -20,6 +20,7 @@ import { ForkCyberHttpDiscovery } from "../fork-cyber/http-discovery.js"
 import { ForkCyberWebTest } from "../fork-cyber/web-test.js"
 import { ForkCyberCloudAnalysis } from "../fork-cyber/cloud-analysis.js"
 import { ForkCyberFindingRetest } from "../fork-cyber/finding-retest.js"
+import { ForkCyberContainerReview } from "../fork-cyber/container-review.js"
 import { ForkCyberKali } from "../fork-cyber/kali.js"
 import { ForkCyberBrowser } from "../fork-cyber/browser.js"
 import { ForkCyberCoordination } from "../fork-cyber/coordination.js"
@@ -426,6 +427,22 @@ export const Plugin = define({
             Effect.map((result) => ({ content: JSON.stringify(result) })),
             Effect.mapError((error) => ForkCyberDiagnostics.toolError(error, "finding_retest")),
           ),
+      })
+      editor.add({
+        name: "cyber_container",
+        options: { codemode: false },
+        input: ForkCyberContainerReview.Action,
+        description:
+          'Review container configuration offline. dockerfile_lint reads a captured Dockerfile and reports unpinned or latest base images, root users, remote ADD, pipe-to-shell builds, credential-like build variables, SSH exposure and missing HEALTHCHECK. runtime_review reads an exported docker inspect JSON and reports privileged mode, host network or PID namespaces, the Docker socket, added capabilities, disabled security profiles, writable root filesystems, root users and credential-like environment names. Values are never reported. Findings are candidates; an empty result does not prove the image is hardened. No image is pulled or run. Example: {"action":"dockerfile_lint","artifact":"output-artifact-id"}.',
+        execute: (input, context) =>
+          Effect.gen(function* () {
+            const actor = {
+              owner: yield* topLevel(context.sessionID),
+              session: context.sessionID,
+              agent: context.agent,
+            }
+            return yield* ForkCyberContainerReview.runReview(store, actor, input)
+          }).pipe(Effect.mapError((error) => ForkCyberDiagnostics.toolError(error, "cyber_container"))),
       })
       editor.add({
         name: "cyber_report",

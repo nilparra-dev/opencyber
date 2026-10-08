@@ -44,6 +44,7 @@ const observe = [
   "cyber_web_plan",
   "cyber_web_test",
   "cyber_cloud",
+  "cyber_container",
 ]
 const assess = [
   ...observe,
