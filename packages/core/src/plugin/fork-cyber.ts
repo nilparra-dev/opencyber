@@ -43,7 +43,7 @@ import { ForkCyberEnvironment } from "../fork-cyber/environment.js"
 import { ForkCyberDiagnostics } from "../fork-cyber/diagnostics.js"
 import { ForkCyberRedaction } from "../fork-cyber/redaction.js"
 import { ForkCyberArtifacts } from "../fork-cyber/artifacts.js"
-import { ForkCyberDns } from "../fork-cyber/dns.js"
+import { ForkCyberDiscovery } from "../fork-cyber/discovery.js"
 import { ForkCyberWebPlan } from "../fork-cyber/web-plan.js"
 import { ForkCyberLocalValidation } from "../fork-cyber/local-validation.js"
 import { ForkCyberLanguage } from "../fork-cyber/language.js"
@@ -62,7 +62,7 @@ const OPERATOR = [
   "Record explicit authorized targets and rules with engagement. A URL authorizes its exact service and scheme, not all host ports or subdomains. Preserve provenance of operator values, defaults and proposals. Existing authorization persists; ask only for missing scope needed by the next action.",
   "Read cyber_tasks before creating work. Claim the stable asset/procedure/identity key in the executing session and role. Claims are bookkeeping and provenance: they record what was tested and never reduce your own tools or HTTP methods; phase lanes apply to delegated workers only. The top-level primary may claim and validate directly while retaining its real agent identity. Complete with that task's completion_evidence, and record a structured handoff with performed work, pending capabilities and blockers. Partial work is retained. Unknown effects require reconciliation before replay.",
   "Lists return continuation metadata. Follow next_offset or next_before, use tool/task/operation filters, and request detail only when needed. cyber_report derives counts and historical predecessor/successor states from storage. Counts are not numbers of security tests or proof of full coverage.",
-  "Use http_request bodies by artifact ID. Analyze existing captures with cyber_artifacts before collecting missing assets; it reads original bytes beyond previews, returns hashes and detector limits, and uses no network. No matches applies only to the declared inputs and patterns. cyber_dns includes CAA outcomes without turning empty records into a vulnerability verdict.",
+  "Use http_request bodies by artifact ID. Analyze existing captures with cyber_artifacts before collecting missing assets; it reads original bytes beyond previews, returns hashes and detector limits, and uses no network. No matches applies only to the declared inputs and patterns. cyber_discover passive_dns includes CAA outcomes without turning empty records into a vulnerability verdict.",
   "For applicable modules, read cyber_surface.procedures or cyber_services.procedures. TLS chain trust, hostname verification and protocol negotiation are distinct observations. Select browser dimensions with cyber_web_plan and keep unexecuted dimensions pending. HTTP or bundle review alone does not establish runtime behavior.",
   "Local source snapshots use cyber_code_review. Keep source commit/dirty state and file hashes separate from deployed URL/body hashes unless their relationship is proven. cyber_local_validation compares a minimal fixture with synthetic inputs and a healthy control in offline bounded jobs; local reproduction does not prove remote exploitability.",
   "Findings require candidates and completed validation evidence from the matching validation-phase task, asset, recorded session and authorized executor. The executor may be the assigned validator or the top-level primary. Technical errors do not refute hypotheses. Kali network:none performs offline work without traffic reservations; scoped jobs enforce separate connection/packet/byte/duration budgets, not HTTP max_rps. Native tools are called directly; only the execute inventory is available inside execute.",
@@ -379,25 +379,37 @@ export const Plugin = define({
           }).pipe(Effect.mapError((error) => ForkCyberDiagnostics.toolError(error, "cyber_artifacts"))),
       })
       editor.add({
-        name: "cyber_dns",
+        name: "cyber_discover",
         options: { codemode: false },
-        input: ForkCyberDns.Action,
+        input: ForkCyberDiscovery.Action,
         description:
-          "Query one authorized exact hostname for A, AAAA, CAA, CNAME, TXT, MX, NS or SOA using harness-controlled DNS infrastructure. Records resolver, records, available TTL and distinct no-records, NXDOMAIN, timeout and unsupported states. No shell or target-selected resolver. DNS observations do not automatically establish findings.",
+          "Discover within the engagement. passive_dns queries one authorized exact hostname for A, AAAA, CAA, CNAME, TXT, MX, NS or SOA through harness-controlled DNS and records resolver, records, TTL and no-records, NXDOMAIN, timeout and unsupported states. certificates lists in-scope names from public certificate transparency only when the engagement declares passive OSINT. host_sweep checks one declared IPv4 range from /24 to /32 with unprivileged Nmap ping probes in scoped Kali; it needs network budgets and, for workers, an active task claim. fingerprint reads one in-scope HTTP(S) URL and reports technology hints from headers, cookie names and HTML. Results are candidates or observations, not findings. Example: {\"action\":\"passive_dns\",\"host\":\"app.example.test\",\"type\":\"CAA\"}.",
         execute: (input, context) =>
           Effect.gen(function* () {
-            const assessment = yield* httpAssessment(context, "cyber_dns")
+            const assessment = yield* httpAssessment(context, "cyber_discover")
             yield* permission.assert({
-              action: "cyber_dns",
-              resources: [input.host],
-              save: [input.host],
+              action: "cyber_discover",
+              resources: [ForkCyberDiscovery.target(input)],
+              save: [ForkCyberDiscovery.target(input)],
               sessionID: context.sessionID,
               agent: context.agent,
               source: { type: "tool", messageID: context.messageID, id: context.id },
             })
             if (ForkCyberRoles.worker(context.agent)) yield* store.coordination.requireClaim(assessment)
-            return { content: JSON.stringify(yield* ForkCyberDns.run(store, assessment, input)) }
-          }).pipe(Effect.mapError((error) => ForkCyberDiagnostics.toolError(error, "cyber_dns"))),
+            if (input.action === "host_sweep") {
+              const runtime = yield* kali(context, "cyber_discover")
+              return {
+                content: JSON.stringify(
+                  yield* ForkCyberDiscovery.sweep(store, global.data, runtime.configuration, runtime.assessment, input),
+                ),
+              }
+            }
+            return {
+              content: JSON.stringify(
+                yield* ForkCyberDiscovery.run(store, () => httpAssessment(context, "cyber_discover"), input),
+              ),
+            }
+          }).pipe(Effect.mapError((error) => ForkCyberDiagnostics.toolError(error, "cyber_discover"))),
       })
       // Shared by cyber_web_plan and the plan action of cyber_web_test, so both keep one behavior.
       const webPlan = (input: typeof ForkCyberWebPlan.Action.Type, context: Tool.Context) =>
@@ -653,7 +665,7 @@ export const Plugin = define({
       "cyber_surface",
       "cyber_capabilities",
       "cyber_artifacts",
-      "cyber_dns",
+      "cyber_discover",
       "cyber_report",
       "cyber_web_plan",
       "cyber_local_validation",
