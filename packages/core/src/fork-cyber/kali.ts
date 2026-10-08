@@ -190,7 +190,11 @@ export function manager(store: Store, profile: string, configuration: Config) {
             input,
             provenance: {
               capture: "docker-exec-v1",
-              operation_class: capture?.tool === "cyber_services" ? "acquisition" : capture ? "validation" : "unknown",
+              operation_class: ["cyber_services", "cyber_discover"].includes(capture?.tool ?? "")
+                ? "acquisition"
+                : capture
+                  ? "validation"
+                  : "unknown",
               image: config.image,
               policy: config,
               scope: assessment.manifest,
