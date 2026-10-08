@@ -48,6 +48,7 @@ const observe = [
 const assess = [
   ...observe,
   "http_replay",
+  "finding_retest",
   "cyber_browser",
   "kali_run",
   "kali_environment",
@@ -56,7 +57,7 @@ const assess = [
 ]
 
 // Exploitation phases split the assessment tools by surface, so each phase gets only its own surface.
-const web = ["http_replay", "cyber_browser"]
+const web = ["http_replay", "cyber_browser", "finding_retest"]
 const network = ["kali_run", "kali_environment", "cyber_surface"]
 
 export function tools(agent: string) {

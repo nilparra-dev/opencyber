@@ -19,6 +19,7 @@ import { ForkCyberHttp } from "../fork-cyber/http.js"
 import { ForkCyberHttpDiscovery } from "../fork-cyber/http-discovery.js"
 import { ForkCyberWebTest } from "../fork-cyber/web-test.js"
 import { ForkCyberCloudAnalysis } from "../fork-cyber/cloud-analysis.js"
+import { ForkCyberFindingRetest } from "../fork-cyber/finding-retest.js"
 import { ForkCyberKali } from "../fork-cyber/kali.js"
 import { ForkCyberBrowser } from "../fork-cyber/browser.js"
 import { ForkCyberCoordination } from "../fork-cyber/coordination.js"
@@ -413,6 +414,18 @@ export const Plugin = define({
             }
             return yield* ForkCyberCloudAnalysis.runIamAnalyze(store, actor, input)
           }).pipe(Effect.mapError((error) => ForkCyberDiagnostics.toolError(error, "cyber_cloud"))),
+      })
+      editor.add({
+        name: "finding_retest",
+        options: { codemode: false },
+        input: ForkCyberFindingRetest.Action,
+        description:
+          'Replay the HTTP requests that support a finding, within the recorded scope and the shared rate limit, to check whether a fix holds. Each replay is a new execution linked to the finding. At most three requests per call. The finding status is not changed; the operator decides. Refused when the finding has no HTTP evidence. Example: {"id":"finding-id"}.',
+        execute: (input, context) =>
+          ForkCyberFindingRetest.run(store, () => httpAssessment(context, "finding_retest"), input).pipe(
+            Effect.map((result) => ({ content: JSON.stringify(result) })),
+            Effect.mapError((error) => ForkCyberDiagnostics.toolError(error, "finding_retest")),
+          ),
       })
       editor.add({
         name: "cyber_report",

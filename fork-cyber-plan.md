@@ -132,6 +132,8 @@ Cyber tools report one of seven shared error categories: `not_configured`, `inva
 
 `cyber_cloud` analyzes an exported IAM policy offline. Import the document with `cyber_surface` first, then run `iam_analyze` on its artifact. Each finding names a JSON pointer to its statement: wildcard actions or resources, public principals, `NotAction` and `NotResource` grants, and actions that create or hand out identities or roles. Findings are candidates for review. No cloud API is called. `iac_scan` is not implemented.
 
+`finding_retest` (R1) checks whether a fix holds. It replays up to three HTTP requests from a finding's evidence, through the same scope check, rate limit and capture as `http_request`, and links each new execution to the finding in `finding_retest`. It does not change the finding status. A finding without HTTP evidence is refused as invalid input, and a request outside the recorded scope is refused before any traffic. It is a separate tool rather than an action of `findings`, so that its risk class is its own. Findings whose evidence is not HTTP need a validator that does not exist yet (OC-405), so they are not retested.
+
 Custom `.opencode/cyber/adapters.jsonc` suffixes remain opt-in and operator-controlled. Provider defaults that asserted blanket authorization are removed. Title and generic generation requests do not receive cyber instructions.
 
 In phase 1, `notes` held at most 50 bounded, normalized entries. Phase 2 replaces that storage with durable, paginated rows and captures tool evidence separately. See [fork-cyber-storage.md](fork-cyber-storage.md) for storage contracts, migration, retrieval, export/purge and the optional independent profile. Reporting agents can read the archive but cannot mutate scope, notes or findings.

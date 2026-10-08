@@ -30,7 +30,7 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
   )
   yield* sql`PRAGMA foreign_keys = ON`
   const version = yield* sql<{ user_version: number }>`PRAGMA user_version`
-  if (![0, 1, 2, 3, 4, 5, 6, 7].includes(version[0]?.user_version ?? -1))
+  if (![0, 1, 2, 3, 4, 5, 6, 7, 8].includes(version[0]?.user_version ?? -1))
     return yield* Effect.fail(new Error("Unsupported OpenCyber evidence database version"))
   if (version[0]?.user_version === 0)
     yield* sql
@@ -184,6 +184,26 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
           yield* sql`CREATE TRIGGER IF NOT EXISTS cyber_decision_append_only BEFORE UPDATE ON cyber_decision
         BEGIN SELECT RAISE(ABORT, 'cyber decisions are append-only'); END`
           yield* sql`PRAGMA user_version = 7`
+        }),
+      )
+      .pipe(
+        Effect.retry({
+          while: (error) => error.reason._tag === "LockTimeoutError",
+          times: 3,
+          schedule: Schedule.spaced(25),
+        }),
+      )
+
+  // Each retest execution is linked to the finding it re-checked. Retests never change the finding status.
+  if ((version[0]?.user_version ?? 0) < 8)
+    yield* sql
+      .withTransaction(
+        Effect.gen(function* () {
+          yield* sql`CREATE TABLE IF NOT EXISTS finding_retest (
+        owner TEXT NOT NULL, finding TEXT NOT NULL, execution TEXT NOT NULL, created_at INTEGER NOT NULL,
+        PRIMARY KEY(owner, execution))`
+          yield* sql`CREATE INDEX IF NOT EXISTS finding_retest_finding ON finding_retest(owner, finding, created_at)`
+          yield* sql`PRAGMA user_version = 8`
         }),
       )
       .pipe(
@@ -882,11 +902,24 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
     }>`SELECT seq, session, agent, tool, mode, risk, decision, reason, target FROM cyber_decision
       WHERE owner = ${owner} ORDER BY seq LIMIT 100 OFFSET ${offset}`
 
+  const recordRetest = (owner: string, finding: string, execution: string) =>
+    sql`INSERT INTO finding_retest VALUES (${owner}, ${finding}, ${execution}, ${Date.now()})`
+
+  const retests = (owner: string, finding: string) =>
+    sql<{ execution: string; created_at: number }>`SELECT execution, created_at FROM finding_retest
+      WHERE owner = ${owner} AND finding = ${finding} ORDER BY created_at, execution`
+
+  const findingRecord = (owner: string, id: string) =>
+    sql<{ id: string; status: string; evidence: string }>`SELECT f.id, f.status,
+      (SELECT json_group_array(artifact) FROM finding_evidence WHERE owner = f.owner AND finding = f.id) AS evidence
+      FROM finding f WHERE f.owner = ${owner} AND f.id = ${id}`
+
   const purge = (owner: string) =>
     sql.withTransaction(
       Effect.gen(function* () {
         yield* sql`INSERT INTO legacy_tombstone VALUES (${owner}) ON CONFLICT DO NOTHING`
         yield* sql`DELETE FROM cyber_decision WHERE owner = ${owner}`
+        yield* sql`DELETE FROM finding_retest WHERE owner = ${owner}`
         yield* sql`DELETE FROM finding_evidence WHERE owner = ${owner}`
         yield* sql`DELETE FROM finding_validation WHERE owner = ${owner}`
         yield* sql`DELETE FROM finding WHERE owner = ${owner}`
@@ -908,6 +941,9 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
   return {
     decision,
     decisions,
+    recordRetest,
+    retests,
+    findingRecord,
     manifest,
     saveManifest,
     approvedManifest,
