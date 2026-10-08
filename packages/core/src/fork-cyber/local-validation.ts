@@ -6,6 +6,7 @@ import { ForkCyberDiagnostics } from "./diagnostics.js"
 import { ForkCyberKali } from "./kali.js"
 import { ForkCyberRoles } from "./roles.js"
 import { ForkCyberSurface } from "./surface.js"
+import { ForkCyberValidation } from "./validation.js"
 
 const Expected = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("value"), value: Schema.Json }),
@@ -63,7 +64,7 @@ export const run = Effect.fn(function* (
   const cases = yield* Effect.forEach(["healthy", "candidate"] as const, (name) =>
     Effect.gen(function* () {
       // Each case uses a fresh, offline container. Source never executes on the host.
-      const result = yield* ForkCyberKali.manager(store, profile, {
+      const attempt = yield* ForkCyberKali.manager(store, profile, {
         ...config,
         memory_mb: 256,
         cpus: 1,
@@ -98,9 +99,25 @@ export const run = Effect.fn(function* (
               ).pipe(Effect.mapError((error) => new Error(String(error))))
             }),
         },
-      )
-      if (!result.capture) return yield* Effect.fail(new Error("Missing local fixture observation"))
+      ).pipe(Effect.result)
       const expected = input[name].expected
+      // A run that fails may have left its container or hidden its effects. It is recorded as unknown, never as success.
+      if (attempt._tag === "Failure") {
+        const error = attempt.failure instanceof Error ? attempt.failure.message : String(attempt.failure)
+        return {
+          name,
+          expected,
+          observed: undefined,
+          matched: false,
+          execution: undefined,
+          completion_evidence: [],
+          error,
+          cleanup: error.includes("cleanup failed") ? ("failed" as const) : ("unknown" as const),
+          effects: "unknown" as const,
+        }
+      }
+      const result = attempt.success
+      if (!result.capture) return yield* Effect.fail(new Error("Missing local fixture observation"))
       const observed = result.capture
       const matched =
         expected.kind === "value"
@@ -115,9 +132,26 @@ export const run = Effect.fn(function* (
         matched,
         execution: result.execution,
         completion_evidence: result.completion_evidence,
+        error: undefined,
+        cleanup: "completed" as const,
+        effects: "known" as const,
       }
     }),
   )
+  const healthy = cases[0]!
+  const candidate = cases[1]!
+  const known = cases.every((item) => item.effects === "known")
+  // An unhealthy control or any unknown effect makes the run inconclusive; the candidate alone cannot decide.
+  const result = !known || !healthy.matched ? "inconclusive" : candidate.matched ? "reproduced" : "not_reproduced"
+  const validation = ForkCyberValidation.outcome({
+    validator: "cyber_local_validation",
+    pre_state: { healthy: { expected: healthy.expected, observed: healthy.observed ?? null, error: healthy.error ?? null } },
+    action: { candidate: { expected: candidate.expected, observed: candidate.observed ?? null, error: candidate.error ?? null } },
+    result,
+    basis: "The healthy control must match its expected result, then the candidate must match its expected result in a fresh offline container. The comparison is local to the supplied fixture.",
+    cleanup: ForkCyberValidation.worstCleanup(cases.map((item) => item.cleanup)),
+    effects: known ? "known" : "unknown",
+  })
   const capture = {
     format: "opencyber-local-validation-v1",
     identity: {
@@ -128,8 +162,9 @@ export const run = Effect.fn(function* (
       deployed_relation: "unverified",
     },
     cases,
-    healthy_control_passed: cases[0]!.matched,
-    candidate_reproduced: cases[0]!.matched && cases[1]!.matched,
+    contract: validation,
+    healthy_control_passed: healthy.matched,
+    candidate_reproduced: validation.oracle.result === "reproduced",
     network: "none",
     limits: { memory_mb: 256, node_heap_mb: 64, case_timeout_ms: input.timeout_ms ?? 2000, output_bytes: 65536 },
     limitations: [

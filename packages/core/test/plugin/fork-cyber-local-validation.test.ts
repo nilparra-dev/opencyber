@@ -93,6 +93,13 @@ dockerTest(
           )
           expect(result.healthy_control_passed).toBe(true)
           expect(result.candidate_reproduced).toBe(true)
+          expect(result.contract).toMatchObject({
+            format: "opencyber-validation-v1",
+            validator: "cyber_local_validation",
+            oracle: { result: "reproduced" },
+            cleanup: "completed",
+            effects: "known",
+          })
           expect(result.identity).toMatchObject({ kind: "local_minimal_fixture", deployed_relation: "unverified" })
           expect(result.completion_evidence).toHaveLength(1)
           expect(
@@ -104,6 +111,61 @@ dockerTest(
           })
           expect(yield* store.networkBudget(actor.owner, 1000)).toMatchObject({ reserved: 0, remaining: 1000 })
           expect(yield* store.coordination.eligible(actor.owner, "vfs")).toHaveLength(3)
+        }),
+      ),
+    )
+  },
+  60000,
+)
+
+dockerTest(
+  "a run that cannot start is recorded as unknown effects, never as a reproduction",
+  async () => {
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const tmp = yield* tmpdirScoped()
+          const store = yield* ForkCyberStore.open(path.join(tmp.path, "evidence.sqlite"))
+          const actor = { owner: "owner", session: "child", agent: "cyber-validate", manifest }
+          yield* store.coordination.run(actor, {
+            action: "create",
+            key: "unstartable",
+            asset: "fixture.cjs",
+            procedure: "Local recursive traversal with synthetic inputs",
+            phase: "cyber-validate",
+            hypothesis: "The run cannot start",
+          })
+          yield* store.coordination.run(actor, { action: "claim", key: "unstartable", revision: 1 })
+          yield* store.start({
+            owner: actor.owner,
+            session: actor.owner,
+            agent: "build",
+            id: "import",
+            tool: "fixture",
+            input: {},
+          })
+          const source = yield* store.artifact(
+            actor.owner,
+            "import",
+            "fixture.source",
+            Buffer.from("module.exports = input => input.depth;"),
+            "application/javascript",
+          )
+          yield* store.finish(actor.owner, "import", "completed", { artifact: source[0]!.id })
+          const result = yield* ForkCyberLocalValidation.run(
+            store,
+            tmp.path,
+            { image: `sha256:${"0".repeat(64)}`, network: { kind: "none" } },
+            actor,
+            { ...input, source: source[0]!.id },
+          )
+          expect(result.cases.map((item) => item.effects)).toEqual(["unknown", "unknown"])
+          expect(result.candidate_reproduced).toBe(false)
+          expect(result.contract).toMatchObject({
+            oracle: { result: "inconclusive" },
+            cleanup: "unknown",
+            effects: "unknown",
+          })
         }),
       ),
     )

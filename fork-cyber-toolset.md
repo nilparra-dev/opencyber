@@ -364,7 +364,8 @@ Updated with each merge. "Done" means the acceptance criteria in the work item's
 | OC-301 to OC-307 | Open | #71 to #77 and #72. Need the VM lab and credential brokering                                                                      |
 | OC-401 | Done    | #78: engagement declaration, operator approval, approvals that expire after 10 minutes. See fork-cyber-approval.md                      |
 | OC-403, OC-404 | Open | #89 and #90, created from this document                                                                                            |
-| OC-405 to OC-402 | Open | #79 and #80                                                                                                                       |
+| OC-405 | Done    | #79: one validator record (`validation.ts`) for `cyber_local_validation`: pre-state, action, oracle result, cleanup and effects. Failed runs and cleanup are unknown effects, never a reproduction |
+| OC-402 | Open    | #80                                                                                                                                     |
 
 Deviations from the tables above, recorded where they were made:
 
