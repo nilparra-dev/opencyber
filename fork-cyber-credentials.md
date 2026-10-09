@@ -22,7 +22,7 @@ Brokering gives directory and cloud identities a different path: the operator en
 
 ## Declaration
 
-Labels are declared in `rules_of_engagement.credentials` of the engagement manifest, so they are part of the approved revision. A declaration names the label, its kind (`directory_bind` or `cloud_key`), its typed targets and the actions allowed to use it. Rules the manifest enforces:
+Labels are declared in `rules_of_engagement.credentials` of the engagement manifest, so they are part of the approved revision. A declaration names the label, its kind (`directory_bind`, `cloud_key` or `database_login`), its typed targets and the actions allowed to use it. Rules the manifest enforces:
 
 - `read_only` must be `true`. Write-capable identities are refused.
 - Targets are `host`, `domain`, `cidr` or `cloud_resource`. A directory credential names the host it authenticates to. `url` and `service` wait for the work item that brings web identities.
@@ -50,7 +50,7 @@ The checks run in this order, against the approved revision of the engagement. T
 5. **Registered.** The operator registered the label (`not_configured`, with the `add` command as recovery). Revoked (`revoked`) and expired (`expired`) labels are `refused_by_policy`.
 6. **Opens.** The key file can be read and the row decrypts with it. Otherwise `tool_failure`, reasons `key_unavailable` or `unreadable`.
 
-Every outcome, granted or refused, is written to `cyber_credential_lease` and to `cyber_decision` before the result returns. A refused lease carries no value. A granted lease returns a Buffer, and the caller releases it when the execution ends, which zeroes the buffer.
+Every outcome, granted or refused, is written to `cyber_credential_lease` and to `cyber_decision` before the result returns. A refused lease carries no value. R2 grants are paced: one granted lease per label and target in any 60-second window, refused as `budget_exceeded` otherwise, so repeated attempts cannot outpace an account lockout. A granted lease returns a Buffer, and the caller releases it when the execution ends, which zeroes the buffer.
 
 ## Delivery
 
