@@ -12,6 +12,7 @@ import { ForkCyberFindings } from "./findings.js"
 import { ForkCyberPagination } from "./pagination.js"
 import { ForkCyberRedaction } from "./redaction.js"
 import { ForkCyberDiagnostics } from "./diagnostics.js"
+import { ForkCyberCredentials } from "./credentials.js"
 
 // Fork-owned database: no upstream migrations or session-table ownership.
 export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string) {
@@ -30,7 +31,7 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
   )
   yield* sql`PRAGMA foreign_keys = ON`
   const version = yield* sql<{ user_version: number }>`PRAGMA user_version`
-  if (![0, 1, 2, 3, 4, 5, 6, 7, 8, 9].includes(version[0]?.user_version ?? -1))
+  if (![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].includes(version[0]?.user_version ?? -1))
     return yield* Effect.fail(new Error("Unsupported OpenCyber evidence database version"))
   if (version[0]?.user_version === 0)
     yield* sql
@@ -225,6 +226,34 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
         PRIMARY KEY(owner, id))`
           yield* sql`CREATE INDEX IF NOT EXISTS validation_approval_subject ON validation_approval(owner, action, target, expires_at)`
           yield* sql`PRAGMA user_version = 9`
+        }),
+      )
+      .pipe(
+        Effect.retry({
+          while: (error) => error.reason._tag === "LockTimeoutError",
+          times: 3,
+          schedule: Schedule.spaced(25),
+        }),
+      )
+
+  // Credentials are sealed before they reach this table, so a database copy holds no plaintext. Leases are
+  // append-only, like decisions, and never hold a value.
+  if ((version[0]?.user_version ?? 0) < 10)
+    yield* sql
+      .withTransaction(
+        Effect.gen(function* () {
+          yield* sql`CREATE TABLE IF NOT EXISTS engagement_credential (
+        owner TEXT NOT NULL, label TEXT NOT NULL, kind TEXT NOT NULL CHECK (kind IN ('directory_bind', 'cloud_key')),
+        expires_at INTEGER NOT NULL, revoked_at INTEGER, nonce TEXT NOT NULL, ciphertext TEXT NOT NULL,
+        created_at INTEGER NOT NULL, PRIMARY KEY(owner, label))`
+          yield* sql`CREATE TABLE IF NOT EXISTS cyber_credential_lease (
+        seq INTEGER PRIMARY KEY AUTOINCREMENT, owner TEXT NOT NULL, label TEXT NOT NULL, action TEXT NOT NULL,
+        target TEXT, execution TEXT, outcome TEXT NOT NULL CHECK (outcome IN ('granted', 'refused')),
+        reason TEXT NOT NULL, created_at INTEGER NOT NULL)`
+          yield* sql`CREATE INDEX IF NOT EXISTS cyber_credential_lease_owner ON cyber_credential_lease(owner, seq)`
+          yield* sql`CREATE TRIGGER IF NOT EXISTS cyber_credential_lease_append_only BEFORE UPDATE ON cyber_credential_lease
+        BEGIN SELECT RAISE(ABORT, 'credential leases are append-only'); END`
+          yield* sql`PRAGMA user_version = 10`
         }),
       )
       .pipe(
@@ -941,6 +970,34 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
       WHERE owner = ${input.owner} AND action = ${input.action} AND target = ${input.target} AND expires_at > ${input.now}
       ORDER BY approved_at DESC, id LIMIT 1`
 
+  // The store receives sealed values only. A label cannot be redefined: rotation revokes it and registers a new one.
+  const putCredential = (input: {
+    owner: string
+    label: string
+    kind: ForkCyberCredentials.Kind
+    expires_at: number
+    created_at: number
+    nonce: string
+    ciphertext: string
+  }) =>
+    sql`INSERT INTO engagement_credential(owner, label, kind, expires_at, revoked_at, nonce, ciphertext, created_at)
+      VALUES (${input.owner}, ${input.label}, ${input.kind}, ${input.expires_at}, NULL, ${input.nonce}, ${input.ciphertext}, ${input.created_at})`
+
+  const credential = (owner: string, label: string) =>
+    sql<{
+      kind: string
+      expires_at: number
+      revoked_at: number | null
+      nonce: string
+      ciphertext: string
+    }>`SELECT kind, expires_at, revoked_at, nonce, ciphertext FROM engagement_credential
+      WHERE owner = ${owner} AND label = ${label}`
+
+  // Returns one row when the credential was revoked now, and none when the label is unknown or already revoked.
+  const revokeCredential = (owner: string, label: string, now: number) =>
+    sql<{ label: string }>`UPDATE engagement_credential SET revoked_at = ${now}
+      WHERE owner = ${owner} AND label = ${label} AND revoked_at IS NULL RETURNING label`
+
   const recordRetest = (owner: string, finding: string, execution: string) =>
     sql`INSERT INTO finding_retest VALUES (${owner}, ${finding}, ${execution}, ${Date.now()})`
 
@@ -972,6 +1029,8 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
         yield* sql`DELETE FROM note WHERE owner = ${owner}`
         yield* sql`DELETE FROM engagement WHERE owner = ${owner}`
         yield* sql`DELETE FROM engagement_approval WHERE owner = ${owner}`
+        yield* sql`DELETE FROM engagement_credential WHERE owner = ${owner}`
+        yield* sql`DELETE FROM cyber_credential_lease WHERE owner = ${owner}`
         yield* sql`DELETE FROM http_budget WHERE owner = ${owner}`
         yield* sql`DELETE FROM network_budget WHERE owner = ${owner}`
         yield* sql`DELETE FROM harness_attempt WHERE owner = ${owner}`
@@ -984,6 +1043,9 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
     recordRetest,
     grantApproval,
     activeApproval,
+    putCredential,
+    credential,
+    revokeCredential,
     retests,
     findingRecord,
     manifest,
