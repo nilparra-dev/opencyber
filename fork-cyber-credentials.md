@@ -54,12 +54,15 @@ Every outcome, granted or refused, is written to `cyber_credential_lease` and to
 
 ## Delivery
 
-- **Kali.** A lease becomes one entry in the job's `inputs`. Today `kali_run` accepts only stored artifacts there. A `lease` source feeds the same stdin loader, which writes the file with mode 0600 under a random name in the `/work` tmpfs. `argv` carries the path, never the value. The value leaves with the job container, and no artifact stores the input.
+- **Kali.** A lease reaches a job as a file, never as part of its `Run` input. The model-facing `kali_run` schema has no lease field, so only a typed domain action can pass one, through the Kali manager's `leases` argument. Each lease is written as one entry of the job's `inputs`, through the same stdin loader, with mode 0600 in the `/work` tmpfs. The file name must be a plain name, because it becomes an argv path. `argv` carries the path, never the value. The job's stored input, summary and artifacts never hold the value, and the job container is removed when the job ends.
 - **Host.** Cloud API calls made by the host process use the value for one call and then drop it. This is the preferred path for cloud: each Kali copy is one more place the value can end up.
+- **Lifetime.** The caller releases each lease after the job returns, which zeroes the buffer. A lease serves one job; the next action takes a new lease.
 
 ## Output
 
-Before any stdout, stderr, output file, artifact or tool result is stored or returned, the job's leased values are replaced with `[CREDENTIAL]`. The check covers the raw value and its base64 form. A tool that transforms the value (hashing, slicing, re-encoding) is outside this check. The lab test covers the cases the check claims to handle.
+Before any stdout, stderr, output file, artifact, error text or execution summary is stored or returned, the job's leased values are replaced with `[CREDENTIAL]`. The check covers the raw value and its standard base64 form. A tool that transforms the value (hashing, slicing, re-encoding, a different base64 layout) is outside this check.
+
+A captured stream stops at 2 MiB. When a capture reaches that limit, the last bytes that could start a match are dropped, so a value straddling the cut cannot survive as a prefix. Without leases, output is unchanged.
 
 ## Model-facing tool
 
