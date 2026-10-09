@@ -361,7 +361,8 @@ Updated with each merge. "Done" means the acceptance criteria in the work item's
 | OC-205 | Partial | #68, PR #92: `secrets` (offline, redacted). Open: `sast` and `sca`, which need pinned analyzers and advisory data                    |
 | OC-206 | Partial | #69, PR #96: `dockerfile_lint` and `runtime_review` (offline). Open: `image_scan` and `pull`                                          |
 | OC-207 | Partial | #70, PR #93: `iam_analyze` (offline, JSON pointers). Open: `iac_scan`                                                                 |
-| OC-301 to OC-306 | Open | #71 and #73 to #77. Need the VM lab. Brokering (OC-307) is built, so #73 to #75 need only the lab                                  |
+| OC-301 to OC-304, OC-306 | Open | #71, #73 to #75 and #77. Need the VM lab. Brokering (OC-307) is built, so #73 to #75 need only the lab |
+| OC-305 | Partial | #76: `cyber_database` `config_review` (offline, redis.conf and elasticsearch.yml) and `unauth_check` (one unauthenticated probe through Kali, redis and elasticsearch). Live labs need the Kali image. `fork-cyber-database.md` documents the rules. `auth_test` is OC-404 |
 | OC-307 | Done, with exceptions | #72: sealed storage and schema 10 (#108), the operator script (#109), the lease decision (#111), Kali delivery and output replacement (#112), and `cyber_credentials list` (this PR). Exceptions: web identities (decision 4) and wrapped base64 in output replacement; both are named in `fork-cyber-credentials.md` |
 | OC-401 | Done    | #78: engagement declaration, operator approval, approvals that expire after 10 minutes. See fork-cyber-approval.md                      |
 | OC-403, OC-404 | Open | #89 and #90, created from this document                                                                                            |
