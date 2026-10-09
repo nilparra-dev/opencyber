@@ -243,62 +243,66 @@ test("the decision function gives unauth_check R1 and config_review R0", () => {
   ).toBe("R0")
 })
 
-dockerTest("unauth_check reports exposure for Redis and Elasticsearch and never attempts a login", async () => {
-  await Effect.runPromise(
-    Effect.scoped(
-      Effect.gen(function* () {
-        const tmp = yield* tmpdirScoped()
-        const store = yield* ForkCyberStore.open(path.join(tmp.path, "database.sqlite"))
-        const octet = 20 + Math.floor(Math.random() * 200)
-        const subnet = `10.${octet}.0.0/29`
-        const live = `10.${octet}.0.2`
-        const name = `opencyber-database-${crypto.randomUUID()}`
-        yield* ForkCyberServicesLab.docker(["network", "create", "--internal", "--subnet", subnet, name])
-        yield* Effect.addFinalizer(() => ForkCyberServicesLab.docker(["network", "rm", name]).pipe(Effect.orDie))
-        const container = yield* ForkCyberServicesLab.docker([
-          "run",
-          "-d",
-          "--rm",
-          "--network",
-          name,
-          "--ip",
-          live,
-          "--entrypoint",
-          "python3",
-          image!,
-          "-u",
-          "-c",
-          LAB,
-        ])
-        yield* Effect.addFinalizer(() => ForkCyberServicesLab.docker(["rm", "-f", container]).pipe(Effect.orDie))
-        yield* Effect.promise(() => Bun.sleep(1500))
-        const config = Schema.decodeUnknownSync(ForkCyberKali.Config)({
-          image: image!,
-          network: { kind: "scoped", name },
-        })
-        const assessment = {
-          owner: "owner",
-          session: "session",
-          agent: "build",
-          manifest: { ...probeScope, scope: { domains: [], cidrs: [subnet], excluded: [] } },
-        }
-        const check = (engine: "redis" | "elasticsearch", port: number) =>
-          ForkCyberDatabase.runUnauthCheck(store, tmp.path, config, assessment, {
-            action: "unauth_check",
-            engine,
-            host: live,
-            port,
+dockerTest(
+  "unauth_check reports exposure for Redis and Elasticsearch and never attempts a login",
+  async () => {
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const tmp = yield* tmpdirScoped()
+          const store = yield* ForkCyberStore.open(path.join(tmp.path, "database.sqlite"))
+          const octet = 20 + Math.floor(Math.random() * 200)
+          const subnet = `10.${octet}.0.0/29`
+          const live = `10.${octet}.0.2`
+          const name = `opencyber-database-${crypto.randomUUID()}`
+          yield* ForkCyberServicesLab.docker(["network", "create", "--internal", "--subnet", subnet, name])
+          yield* Effect.addFinalizer(() => ForkCyberServicesLab.docker(["network", "rm", name]).pipe(Effect.orDie))
+          const container = yield* ForkCyberServicesLab.docker([
+            "run",
+            "-d",
+            "--rm",
+            "--network",
+            name,
+            "--ip",
+            live,
+            "--entrypoint",
+            "python3",
+            image!,
+            "-u",
+            "-c",
+            LAB,
+          ])
+          yield* Effect.addFinalizer(() => ForkCyberServicesLab.docker(["rm", "-f", container]).pipe(Effect.orDie))
+          yield* Effect.promise(() => Bun.sleep(1500))
+          const config = Schema.decodeUnknownSync(ForkCyberKali.Config)({
+            image: image!,
+            network: { kind: "scoped", name },
           })
-        const redis = yield* check("redis", 6379)
-        expect(redis).toMatchObject({ exposure: "unauthenticated_response", probe: { state: "answered" } })
-        expect(yield* check("redis", 6381)).toMatchObject({ exposure: "authentication_required" })
-        expect(yield* check("redis", 6380)).toMatchObject({ exposure: "not_observed", probe: { state: "closed" } })
-        expect(yield* check("elasticsearch", 9200)).toMatchObject({ exposure: "unauthenticated_response" })
-        expect(yield* check("elasticsearch", 9201)).toMatchObject({
-          exposure: "not_observed",
-          probe: { state: "closed" },
-        })
-      }),
-    ),
-  )
-})
+          const assessment = {
+            owner: "owner",
+            session: "session",
+            agent: "build",
+            manifest: { ...probeScope, scope: { domains: [], cidrs: [subnet], excluded: [] } },
+          }
+          const check = (engine: "redis" | "elasticsearch", port: number) =>
+            ForkCyberDatabase.runUnauthCheck(store, tmp.path, config, assessment, {
+              action: "unauth_check",
+              engine,
+              host: live,
+              port,
+            })
+          const redis = yield* check("redis", 6379)
+          expect(redis).toMatchObject({ exposure: "unauthenticated_response", probe: { state: "answered" } })
+          expect(yield* check("redis", 6381)).toMatchObject({ exposure: "authentication_required" })
+          expect(yield* check("redis", 6380)).toMatchObject({ exposure: "not_observed", probe: { state: "closed" } })
+          expect(yield* check("elasticsearch", 9200)).toMatchObject({ exposure: "unauthenticated_response" })
+          expect(yield* check("elasticsearch", 9201)).toMatchObject({
+            exposure: "not_observed",
+            probe: { state: "closed" },
+          })
+        }),
+      ),
+    )
+  },
+  240000,
+)
