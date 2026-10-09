@@ -28,7 +28,7 @@ export type Request = {
 export type Lease = { value: Buffer; release: () => void }
 
 type Verdict =
-  | { _tag: "Granted"; risk: ForkCyberDecision.Risk; lease: Lease }
+  | { _tag: "Granted"; risk: ForkCyberDecision.Risk; reason: string; lease: Lease }
   | { _tag: "Refused"; reason: string; risk?: ForkCyberDecision.Risk; failure: ForkCyberDiagnostics.Failure }
 
 // A lease is granted only when the approved engagement declares the label for this action and target, the target
@@ -101,8 +101,10 @@ const verify = Effect.fn("ForkCyberCredentialLease.verify")(function* (request: 
   const risk = riskOf(request.action)
   if (risk === undefined)
     return refuse("undeclared_action", "capability", "This action has no declared risk class.", undeclaredRecovery)
-  if (risk === "R2" || risk === "R3" || !ForkCyberDecision.permits(request.mode, request.agent, risk))
+  if (risk === "R3" || !ForkCyberDecision.permits(request.mode, request.agent, risk))
     return refuse("above_ceiling", "capability", "The action's risk class is above the leases allowed here.", ceilingRecovery, risk)
+  const reason = yield* grantReason(request, manifest, risk)
+  if (typeof reason !== "string") return reason
   if (!ForkCyberPolicy.allowed(request.mode, request.agent, toolOf(request.action)))
     return refuse("outside_role_or_mode", "capability", "This agent or mode does not permit the tool.", roleRecovery, risk)
   const row = (yield* request.store.credential(request.owner, request.label))[0]
@@ -129,13 +131,38 @@ const verify = Effect.fn("ForkCyberCredentialLease.verify")(function* (request: 
   return {
     _tag: "Granted",
     risk,
+    reason,
     lease: { value: value.success, release: () => value.success.fill(0) },
   } satisfies Verdict
 })
 
+// R1 leases follow the declaration alone. An R2 lease also needs the action in the engagement's validation list and an
+// active operator approval for this action and target. The approval is the one the permission prompt recorded.
+const grantReason = Effect.fn("ForkCyberCredentialLease.grantReason")(function* (
+  request: Request,
+  manifest: ForkCyberScope.Manifest,
+  risk: ForkCyberDecision.Risk,
+) {
+  if (risk !== "R2") return "declared"
+  const validated = (manifest.rules_of_engagement.validation?.actions ?? []).some((action) => action === request.action)
+  if (!validated)
+    return refuse("not_declared", "capability", "The engagement does not validate this action.", validationRecovery, risk)
+  const active = (
+    yield* request.store.activeApproval({
+      owner: request.owner,
+      action: request.action,
+      target: request.target.value,
+      now: request.now,
+    })
+  )[0]
+  if (active === undefined)
+    return refuse("approval_required", "capability", "The operator has not approved this action on this target.", approvalRecovery, risk)
+  return `approved:${active.id}`
+})
+
 const record = Effect.fn("ForkCyberCredentialLease.record")(function* (request: Request, verdict: Verdict) {
   const granted = verdict._tag === "Granted"
-  const reason = granted ? "declared" : verdict.reason
+  const reason = verdict.reason
   const target = `${request.target.type}:${request.target.value}`
   yield* request.store.recordLease({
     owner: request.owner,
@@ -210,7 +237,11 @@ const declaredRecovery =
 const scopeRecovery = "Declare only targets that the recorded scope includes."
 const undeclaredRecovery = "Use an action whose tool has a declared risk class."
 const ceilingRecovery =
-  "Credential leases are read-only (R1) in this work item. Write-capable and R2 use waits for its own work item."
+  "Credential leases are read-only (R1), or R2 for an action the engagement validates. R3 and write-capable use is refused."
+const validationRecovery =
+  "Declare the action in the engagement's validation list and get that revision approved; R2 leases need it."
+const approvalRecovery =
+  "The operator approves this action on this target in the permission prompt. Approvals expire after ten minutes."
 const roleRecovery = "Use an agent and mode that permit this tool."
 const registerRecovery = "Register the label with script/fork-cyber-credential.ts add, then retry."
 const revokedRecovery = "A revoked label stays unusable. Register a new label and declare it."
