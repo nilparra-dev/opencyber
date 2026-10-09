@@ -1,6 +1,6 @@
 # Credential brokering (OC-307)
 
-Design for issue [#72](https://github.com/nilparra-dev/opencyber/issues/72). Status: design only, no code. [fork-cyber-toolset.md](fork-cyber-toolset.md) sets the rules (R-6, D-4) and section 10 records the status.
+Design for issue [#72](https://github.com/nilparra-dev/opencyber/issues/72). Status: steps 1 and 2 of the build order are merged (#108, #109). Leases, delivery and the model-facing list are not built yet. [fork-cyber-toolset.md](fork-cyber-toolset.md) sets the rules (R-6, D-4) and section 10 records the status.
 
 ## Problem
 
