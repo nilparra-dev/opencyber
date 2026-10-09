@@ -6,6 +6,11 @@ import { Cause, Effect, Exit, Schema } from "effect"
 import { ForkCyberStore } from "./store.js"
 import { ForkCyberScope } from "./scope.js"
 import { ForkCyberNetwork } from "./network.js"
+import { ForkCyberCredentialOutput } from "./credential-output.js"
+
+// A leased value written into the job as one file. Only the caller holds the value; it is never part of `Run`,
+// so the stored execution input cannot carry it.
+type Leased = { name: string; value: Buffer }
 
 const integer = (minimum: number, maximum: number) =>
   Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum, maximum }))
@@ -128,9 +133,14 @@ export function manager(store: Store, profile: string, configuration: Config) {
         files: readonly { name: string; artifact: string; bytes: number }[]
       }) => Effect.Effect<Capture, Error>
     },
+    leases: readonly Leased[] = [],
   ) =>
     Effect.uninterruptibleMask((restore) =>
       Effect.gen(function* () {
+        // File names become argv paths under /work, so they must be plain names.
+        yield* Effect.forEach(leases, (lease) => Schema.decodeUnknownEffect(FileName)(lease.name))
+        const values = leases.map((lease) => lease.value)
+        const leased = leases.map((lease) => ({ name: lease.name, base64: lease.value.toString("base64") }))
         const config =
           input.network === "none" ? { ...configuration, network: { kind: "none" as const } } : configuration
         if (assessment.manifest.derived) return yield* Effect.fail(new Error("Kali requires an explicit engagement"))
@@ -202,6 +212,12 @@ export function manager(store: Store, profile: string, configuration: Config) {
           })
           const stdout: Buffer[] = []
           const stderr: Buffer[] = []
+          // Every captured stream passes through here before it is stored or returned.
+          const captured = (chunks: Buffer[]) => {
+            const bytes = Buffer.concat(chunks)
+            return ForkCyberCredentialOutput.scrub(bytes, values, bytes.length >= limit)
+          }
+          const text = <E>(cause: Cause.Cause<E>) => ForkCyberCredentialOutput.scrubText(Cause.pretty(cause), values)
           const guards: string[] = []
           const execute = Effect.gen(function* () {
             const containers = yield* status(owner)
@@ -278,7 +294,7 @@ export function manager(store: Store, profile: string, configuration: Config) {
               .toString()
               .trim()
             yield* command(["start", environment])
-            yield* command(["exec", "-i", environment, "python3", "-I", "-c", INPUTS], JSON.stringify(inputs))
+            yield* command(["exec", "-i", environment, "python3", "-I", "-c", INPUTS], JSON.stringify([...inputs, ...leased]))
             const inventory = yield* command(["exec", environment, "cat", "/opt/opencyber/packages.txt"])
             yield* store.artifact(owner, id, "kali.inventory", inventory.stdout, "text/plain")
             const result = yield* restore(
@@ -304,8 +320,10 @@ export function manager(store: Store, profile: string, configuration: Config) {
             const artifacts = yield* Effect.forEach(input.outputs ?? [], (file) =>
               Effect.gen(function* () {
                 const output = yield* command(["exec", environment, "python3", "-I", "-c", OUTPUT, file])
-                const rows = yield* store.artifact(owner, id, "kali.file", output.stdout, "application/octet-stream")
-                return { name: file, artifact: rows[0]!.id, bytes: output.stdout.length }
+                // The OUTPUT script refuses files over 2 MiB, so the bytes are never a truncated capture.
+                const bytes = ForkCyberCredentialOutput.scrub(output.stdout, values, false)
+                const rows = yield* store.artifact(owner, id, "kali.file", bytes, "application/octet-stream")
+                return { name: file, artifact: rows[0]!.id, bytes: bytes.length }
               }),
             )
             return {
@@ -330,14 +348,14 @@ export function manager(store: Store, profile: string, configuration: Config) {
             owner,
             id,
             "kali.stdout",
-            Buffer.concat(stdout),
+            captured(stdout),
             "application/octet-stream",
           )
           const errors = yield* store.artifact(
             owner,
             id,
             "kali.stderr",
-            Buffer.concat(stderr),
+            captured(stderr),
             "application/octet-stream",
           )
           // Cancellation/timeout must kill descendants, including processes detached from `timeout`.
@@ -348,9 +366,9 @@ export function manager(store: Store, profile: string, configuration: Config) {
             stderr: errors[0]!.id,
             ...(Exit.isSuccess(result)
               ? result.value
-              : { error: Cause.pretty(result.cause), output_may_be_truncated: true }),
-            ...(Exit.isFailure(removed) ? { cleanup_error: Cause.pretty(removed.cause) } : {}),
-            ...(Exit.isFailure(counters) ? { network_capture_error: Cause.pretty(counters.cause) } : {}),
+              : { error: text(result.cause), output_may_be_truncated: true }),
+            ...(Exit.isFailure(removed) ? { cleanup_error: text(removed.cause) } : {}),
+            ...(Exit.isFailure(counters) ? { network_capture_error: text(counters.cause) } : {}),
           }
           const finished = yield* store.finish(
             owner,
@@ -366,22 +384,22 @@ export function manager(store: Store, profile: string, configuration: Config) {
           )
           if (Exit.isFailure(result))
             return yield* Effect.fail(
-              new Error(`Kali execution ${id} failed; evidence ${finished[0]!.id}. ${Cause.pretty(result.cause)}`),
+              new Error(`Kali execution ${id} failed; evidence ${finished[0]!.id}. ${text(result.cause)}`),
             )
           if (Exit.isFailure(removed))
             return yield* Effect.fail(
-              new Error(`Kali cleanup failed; evidence ${finished[0]!.id}. ${Cause.pretty(removed.cause)}`),
+              new Error(`Kali cleanup failed; evidence ${finished[0]!.id}. ${text(removed.cause)}`),
             )
           if (Exit.isFailure(counters))
             return yield* Effect.fail(
-              new Error(`Kali network audit failed; evidence ${finished[0]!.id}. ${Cause.pretty(counters.cause)}`),
+              new Error(`Kali network audit failed; evidence ${finished[0]!.id}. ${text(counters.cause)}`),
             )
           return {
             execution: id,
             stdout: output[0]!.id,
             stderr: errors[0]!.id,
-            stdout_excerpt: excerpt(Buffer.concat(stdout)),
-            stderr_excerpt: excerpt(Buffer.concat(stderr)),
+            stdout_excerpt: excerpt(captured(stdout)),
+            stderr_excerpt: excerpt(captured(stderr)),
             ...result.value,
             evidence: finished[0]!.id,
             completion_evidence:
