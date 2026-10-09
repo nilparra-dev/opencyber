@@ -46,10 +46,11 @@ test("installation progress replaces checking while the update job is still pend
     app.renderer.start()
     await app.waitForFrame((frame) => frame.includes("Checking for updates"))
     setState({ type: "installing", version: "2.0.0" })
+    // fork: OpenCyber wording in update messages (F-030)
     await app.waitForFrame(
       (frame) =>
-        frame.includes("Updating OpenCode") &&
-        frame.includes("Installing OpenCode 2.0.0") &&
+        frame.includes("Updating OpenCyber") &&
+        frame.includes("Installing OpenCyber 2.0.0") &&
         !frame.includes("Checking"),
     )
     expect(app.captureCharFrame()).not.toContain("Skip")
