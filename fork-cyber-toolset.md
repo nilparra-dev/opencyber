@@ -308,7 +308,7 @@ Each decision was accepted with its recommendation (#81). Outcomes:
 - **D-1** applied in #55: the scope manifest validates all ten kinds and records six. `repo_path` and `container_image` are refused by manifests until OC-205 and OC-206 record them.
 - **D-2** applied in #57 and extended by OC-401: R2 is refused outside assessment mode. Inside it, only actions the engagement declares run, each after an operator approval for that action and target.
 - **D-3** kept: the VM tier waits for the W1 milestone.
-- **D-4** kept as the design: credential custody belongs to the OpenCyber service. OC-307 has a design in `fork-cyber-credentials.md` and no code yet.
+- **D-4** kept as the design: credential custody belongs to the OpenCyber service. OC-307 has a design in `fork-cyber-credentials.md` and its first two steps are merged (section 10).
 - **D-5** kept as the design: passive OSINT needs an engagement declaration. OC-203 will check it before `certificates`.
 - **D-6** deferred: the three `http_*` tools stay separate until OC-108 measurements exist. Measuring needs model runs, and those need a budget decision.
 - **D-7** accepted: W2 and W3 issues stay public. They hold acceptance criteria, not exploit payloads. Review any detail beyond that before publishing it.
@@ -362,7 +362,7 @@ Updated with each merge. "Done" means the acceptance criteria in the work item's
 | OC-206 | Partial | #69, PR #96: `dockerfile_lint` and `runtime_review` (offline). Open: `image_scan` and `pull`                                          |
 | OC-207 | Partial | #70, PR #93: `iam_analyze` (offline, JSON pointers). Open: `iac_scan`                                                                 |
 | OC-301 to OC-306 | Open | #71 and #73 to #77. Need the VM lab; #73 to #75 also need brokering (OC-307)                                                       |
-| OC-307 | Designed | #72: design in `fork-cyber-credentials.md`. No code yet; four owner decisions are open there                                  |
+| OC-307 | Partial | #72, PRs #108 and #109: sealed storage, schema 10 and the operator script. Open: leases, delivery to Kali, output replacement and `cyber_credentials`. Design and owner decisions in `fork-cyber-credentials.md` |
 | OC-401 | Done    | #78: engagement declaration, operator approval, approvals that expire after 10 minutes. See fork-cyber-approval.md                      |
 | OC-403, OC-404 | Open | #89 and #90, created from this document                                                                                            |
 | OC-405 | Done    | #79: one validator record (`validation.ts`) for `cyber_local_validation`: pre-state, action, oracle result, cleanup and effects. Failed runs and cleanup are unknown effects, never a reproduction |
