@@ -1,0 +1,32 @@
+rules:
+  - id: opencyber.javascript.eval-non-literal
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: eval or the Function constructor runs a non-literal string.
+    metadata:
+      cwe: "CWE-95: Eval Injection"
+    patterns:
+      - pattern-either:
+          - pattern: eval($X)
+          - pattern: new Function($X)
+      - pattern-not: eval("...")
+
+  - id: opencyber.javascript.child-process-exec
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: child_process.exec passes its command to a shell.
+    metadata:
+      cwe: "CWE-78: OS Command Injection"
+    pattern-either:
+      - pattern: require("child_process").exec($X, ...)
+      - pattern: child_process.exec($X, ...)
+
+  - id: opencyber.javascript.inner-html-assignment
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: A non-literal value is assigned to innerHTML, which can inject markup.
+    metadata:
+      cwe: "CWE-79: Cross-site Scripting"
+    patterns:
+      - pattern: $E.innerHTML = $X
+      - pattern-not: $E.innerHTML = "..."
