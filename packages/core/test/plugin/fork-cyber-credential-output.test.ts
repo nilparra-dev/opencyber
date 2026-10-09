@@ -48,3 +48,21 @@ test("error text is scrubbed by the same rule", () => {
   const text = `docker exited 1: ${secret.toString()} was printed`
   expect(ForkCyberCredentialOutput.scrubText(text, [secret])).toBe("docker exited 1: [CREDENTIAL] was printed")
 })
+
+// Printed by `base64 -w 76` and `base64 -w 64` (openssl) for the value below; the wrapped text is the tool's own output.
+const wrappedValue = "seeded-wrapped-base64-secret-for-the-output-test-0123456789-abcdef-XYZ"
+const wrapped64 = "c2VlZGVkLXdyYXBwZWQtYmFzZTY0LXNlY3JldC1mb3ItdGhlLW91dHB1dC10ZXN0\nLTAxMjM0NTY3ODktYWJjZGVmLVhZWg=="
+const wrapped76 = "c2VlZGVkLXdyYXBwZWQtYmFzZTY0LXNlY3JldC1mb3ItdGhlLW91dHB1dC10ZXN0LTAxMjM0NTY3\nODktYWJjZGVmLVhZWg=="
+
+test("replaces a value printed as base64 wrapped at 64 or 76 columns, with LF or CRLF line ends", () => {
+  const value = Buffer.from(wrappedValue)
+  for (const printed of [wrapped64, wrapped76, wrapped64.replace(/\n/g, "\r\n"), wrapped76.replace(/\n/g, "\r\n")]) {
+    const scrubbed = ForkCyberCredentialOutput.scrub(Buffer.from(`head\n${printed}\n`), [value], false)
+    expect(scrubbed.toString("utf8")).toBe("head\n[CREDENTIAL]\n")
+  }
+})
+
+test("an empty leased value changes nothing and cannot match everywhere", () => {
+  const output = Buffer.from("plain output")
+  expect(ForkCyberCredentialOutput.scrub(output, [Buffer.alloc(0)], false)).toBe(output)
+})

@@ -1,6 +1,6 @@
 # Credential brokering (OC-307)
 
-Design for issue [#72](https://github.com/nilparra-dev/opencyber/issues/72). Status: all five steps of the build order are built, in #108, #109, #111, #112 and the PR for step 5. Two items stay open: decision 4 (web identities) and the wrapped base64 gap under Limits. [fork-cyber-toolset.md](fork-cyber-toolset.md) sets the rules (R-6, D-4) and section 10 records the status.
+Design for issue [#72](https://github.com/nilparra-dev/opencyber/issues/72). Status: all five steps of the build order are built, in #108, #109, #111, #112 and the PR for step 5. One item stays open: decision 4 (web identities), under Limits. Issue #72 closes with the PR that adds the wrapped forms. [fork-cyber-toolset.md](fork-cyber-toolset.md) sets the rules (R-6, D-4) and section 10 records the status.
 
 ## Problem
 
@@ -60,7 +60,7 @@ Every outcome, granted or refused, is written to `cyber_credential_lease` and to
 
 ## Output
 
-Before any stdout, stderr, output file, artifact, error text or execution summary is stored or returned, the job's leased values are replaced with `[CREDENTIAL]`. The check covers the raw value and its standard base64 form. A tool that transforms the value (hashing, slicing, re-encoding, a different base64 layout) is outside this check.
+Before any stdout, stderr, output file, artifact, error text or execution summary is stored or returned, the job's leased values are replaced with `[CREDENTIAL]`. The check covers the raw value and its base64 form, on one line or wrapped at 64 columns (openssl) or 76 columns (coreutils `base64`), with LF or CRLF line ends. A tool that transforms the value some other way (hashing, slicing, another encoding) is outside this check.
 
 A captured stream stops at 2 MiB. When a capture reaches that limit, the last bytes that could start a match are dropped, so a value straddling the cut cannot survive as a prefix. Without leases, output is unchanged.
 
@@ -90,7 +90,6 @@ Schema version 9 becomes 10. The migration adds `engagement_credential` and `cyb
 - **Target types.** `cloud_resource` accepts only S3 ARNs. OC-304 (live cloud and Kubernetes RBAC) needs new target types before its resource filter can be scoped.
 - **Web session tokens.** `cyber_http` headers and the identity-matrix procedures pass cookies and bearer tokens through the model. OC-307 does not change that. See decision 4.
 - **Transformed values.** See Output.
-- **Wrapped base64.** Output replacement matches standard base64 on one line. The coreutils `base64` command wraps its output every 76 columns, so a value longer than 57 bytes can appear wrapped and go unmatched. This is an open gap; the fix is to add the wrapped forms to the replacement and test them against the `base64` command.
 - **Memory.** Buffers are zeroed on release. Strings created while a request is built are not.
 
 ## Decisions for the owner
