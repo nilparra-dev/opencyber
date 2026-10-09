@@ -3,6 +3,7 @@
 import { Schema, SchemaGetter } from "effect"
 import { BlockList, isIP } from "node:net"
 import { ForkCyberDiagnostics } from "./diagnostics.js"
+import { ForkCyberCredentials } from "./credentials.js"
 
 export const Host = Schema.String.check(
   Schema.makeFilter<string>(
@@ -140,6 +141,26 @@ export const Validation = Schema.Struct({
   actions: Schema.Array(ValidationAction).check(Schema.isMinLength(1), Schema.isMaxLength(8)),
 })
 
+// Credential identities an engagement may use (fork-cyber-credentials.md). A label names a secret the operator
+// registered. Targets are limited to kinds the scope already records; url and service wait for their own work item.
+export const CredentialTarget = Schema.Union([Typed.host, Typed.domain, Typed.cidr, Typed.cloud_resource])
+export type CredentialTarget = typeof CredentialTarget.Type
+// `tool` or `tool.action`, the same identifiers that approvals and risk declarations use.
+const CredentialAction = Schema.String.check(Schema.isPattern(/^[a-z_]+(\.[a-z_]+)?$/))
+export const Credential = Schema.Struct({
+  label: Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9-]{0,62}$/)),
+  kind: ForkCyberCredentials.Kind,
+  read_only: Schema.Literal(true),
+  targets: Schema.Array(CredentialTarget).check(Schema.isMinLength(1), Schema.isMaxLength(16)),
+  actions: Schema.Array(CredentialAction).check(Schema.isMinLength(1), Schema.isMaxLength(16)),
+})
+const Credentials = Schema.Array(Credential).check(
+  Schema.isMaxLength(16),
+  Schema.makeFilter<ReadonlyArray<typeof Credential.Type>>(
+    (list) => new Set(list.map((item) => item.label)).size === list.length || "Credential labels must be unique",
+  ),
+)
+
 export const Manifest = Schema.Struct({
   engagement: Text,
   authorized_by: Text,
@@ -154,6 +175,7 @@ export const Manifest = Schema.Struct({
     validation: Schema.optional(Validation),
     // Third-party lookups (certificate transparency) reveal interest in the target (R-9), so they need this declaration.
     passive_osint: Schema.optional(Schema.Boolean),
+    credentials: Schema.optional(Credentials),
   }),
   // Compatibility with existing session records. New manifests need no derived flag.
   derived: Schema.optional(Schema.Boolean),

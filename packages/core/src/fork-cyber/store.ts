@@ -985,7 +985,7 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
 
   const credential = (owner: string, label: string) =>
     sql<{
-      kind: string
+      kind: ForkCyberCredentials.Kind
       expires_at: number
       revoked_at: number | null
       nonce: string
@@ -1006,6 +1006,21 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
       expires_at: number
       revoked_at: number | null
     }>`SELECT label, kind, expires_at, revoked_at FROM engagement_credential WHERE owner = ${owner} ORDER BY label`
+
+  // Every lease, granted or refused, is recorded with the label and target. The row never holds a value.
+  const recordLease = (input: {
+    owner: string
+    label: string
+    action: string
+    target: string
+    execution: string
+    outcome: "granted" | "refused"
+    reason: string
+    created_at: number
+  }) =>
+    sql`INSERT INTO cyber_credential_lease(owner, label, action, target, execution, outcome, reason, created_at)
+      VALUES (${input.owner}, ${input.label}, ${input.action}, ${input.target}, ${input.execution}, ${input.outcome},
+        ${input.reason}, ${input.created_at})`
 
   const recordRetest = (owner: string, finding: string, execution: string) =>
     sql`INSERT INTO finding_retest VALUES (${owner}, ${finding}, ${execution}, ${Date.now()})`
@@ -1056,6 +1071,7 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
     credential,
     revokeCredential,
     credentials,
+    recordLease,
     retests,
     findingRecord,
     manifest,

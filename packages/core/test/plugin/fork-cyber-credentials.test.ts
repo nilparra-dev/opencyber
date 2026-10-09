@@ -18,7 +18,7 @@ test("seals a value so it opens only for the same engagement, label and kind", (
   const key = Buffer.alloc(32, 7)
   const sealed = ForkCyberCredentials.seal(key, binding, seeded)
   expect(JSON.stringify(sealed)).not.toContain(seeded)
-  expect(ForkCyberCredentials.open(key, binding, sealed)).toBe(seeded)
+  expect(ForkCyberCredentials.open(key, binding, sealed).toString("utf8")).toBe(seeded)
   expect(() => ForkCyberCredentials.open(key, { ...binding, owner: "owner-b" }, sealed)).toThrow()
   expect(() => ForkCyberCredentials.open(key, { ...binding, label: "other" }, sealed)).toThrow()
   expect(() => ForkCyberCredentials.open(key, { ...binding, kind: "cloud_key" }, sealed)).toThrow()
@@ -88,7 +88,9 @@ test("stores sealed credentials per engagement, refuses redefinition and revokes
         yield* store.putCredential(row)
         const [stored] = yield* store.credential("owner-a", "ad-reader")
         expect(stored?.ciphertext).toBe(sealed.ciphertext)
-        expect(ForkCyberCredentials.open(key, binding, { nonce: stored!.nonce, ciphertext: stored!.ciphertext })).toBe(
+        expect(
+          ForkCyberCredentials.open(key, binding, { nonce: stored!.nonce, ciphertext: stored!.ciphertext }).toString("utf8"),
+        ).toBe(
           seeded,
         )
         expect(yield* store.credential("owner-b", "ad-reader")).toEqual([])

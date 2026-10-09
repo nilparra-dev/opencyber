@@ -43,13 +43,13 @@ export function seal(key: Buffer, binding: Binding, value: string): Sealed {
   return { nonce: nonce.toString("base64"), ciphertext: body.toString("base64") }
 }
 
-// Throws when the key, the binding or the ciphertext does not match. Callers turn that into a typed refusal.
-export function open(key: Buffer, binding: Binding, sealed: Sealed): string {
+// Returns a Buffer so the caller can zero it. Throws when the key, the binding or the ciphertext does not match.
+export function open(key: Buffer, binding: Binding, sealed: Sealed): Buffer {
   const body = Buffer.from(sealed.ciphertext, "base64")
   const decipher = createDecipheriv(algorithm, key, Buffer.from(sealed.nonce, "base64"))
   decipher.setAAD(additional(binding))
   decipher.setAuthTag(body.subarray(-tagBytes))
-  return Buffer.concat([decipher.update(body.subarray(0, -tagBytes)), decipher.final()]).toString("utf8")
+  return Buffer.concat([decipher.update(body.subarray(0, -tagBytes)), decipher.final()])
 }
 
 // A row copied into another engagement, or relabelled, no longer authenticates.

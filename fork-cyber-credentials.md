@@ -1,6 +1,6 @@
 # Credential brokering (OC-307)
 
-Design for issue [#72](https://github.com/nilparra-dev/opencyber/issues/72). Status: steps 1 and 2 of the build order are merged (#108, #109). Leases, delivery and the model-facing list are not built yet. [fork-cyber-toolset.md](fork-cyber-toolset.md) sets the rules (R-6, D-4) and section 10 records the status.
+Design for issue [#72](https://github.com/nilparra-dev/opencyber/issues/72). Status: steps 1 and 2 of the build order are merged (#108, #109). Step 3, the lease decision, is in review. Delivery and the model-facing list are not built yet. [fork-cyber-toolset.md](fork-cyber-toolset.md) sets the rules (R-6, D-4) and section 10 records the status.
 
 ## Problem
 
@@ -22,7 +22,12 @@ Brokering gives directory and cloud identities a different path: the operator en
 
 ## Declaration
 
-Labels are declared in the engagement manifest, so they are part of the approved revision. A declaration names the label, its kind (`directory_bind` or `cloud_key`), its typed targets and the actions allowed to use it. `read_only` must be `true` in this work item; write-capable identities are refused.
+Labels are declared in `rules_of_engagement.credentials` of the engagement manifest, so they are part of the approved revision. A declaration names the label, its kind (`directory_bind` or `cloud_key`), its typed targets and the actions allowed to use it. Rules the manifest enforces:
+
+- `read_only` must be `true`. Write-capable identities are refused.
+- Targets are `host`, `domain`, `cidr` or `cloud_resource`. A directory credential names the host it authenticates to. `url` and `service` wait for the work item that brings web identities.
+- Each target must already be in the recorded scope. The lease checks this again, because scope can change between revisions.
+- Labels are unique within a manifest, and each action is `tool` or `tool.action`.
 
 ## Storage
 
@@ -36,12 +41,16 @@ Table `engagement_credential`: `owner`, `label`, `kind`, `expires_at`, `revoked_
 
 `lease({ owner, label, action, target, execution })` makes one decision before any value leaves storage:
 
-1. The manifest declares the label for this action and target. If not: `refused_by_policy` with reason `not_declared`.
-2. The label is registered, not expired and not revoked. If the operator has not registered it: `not_configured`, and the recovery step names the `add` command. If it is expired or revoked: `refused_by_policy`.
-3. The action's risk class is R1 or lower. R2 is refused with `above_ceiling`.
-4. The row decrypts. A failure is `tool_failure`.
+The checks run in this order, against the approved revision of the engagement. The first failure refuses the lease:
 
-Every outcome, allowed or refused, is written to `cyber_credential_lease` and to `cyber_decision`. A refused lease returns no value. The caller releases the value when the execution ends, and the buffer is zeroed then.
+1. **Declared.** The approved manifest declares the label for this action and target. Otherwise `refused_by_policy`, reason `not_declared`.
+2. **In scope.** The declared target is inside the recorded scope. Otherwise `outside_scope`, reason `outside_scope`.
+3. **Risk.** The action's tool has a declared risk class (`undeclared_action` otherwise, `refused_by_policy`). R2 and above, and anything the agent's ceiling or the mode does not permit, is `above_ceiling`.
+4. **Role.** The agent and mode permit the tool (`outside_role_or_mode`).
+5. **Registered.** The operator registered the label (`not_configured`, with the `add` command as recovery). Revoked (`revoked`) and expired (`expired`) labels are `refused_by_policy`.
+6. **Opens.** The key file can be read and the row decrypts with it. Otherwise `tool_failure`, reasons `key_unavailable` or `unreadable`.
+
+Every outcome, granted or refused, is written to `cyber_credential_lease` and to `cyber_decision` before the result returns. A refused lease carries no value. A granted lease returns a Buffer, and the caller releases it when the execution ends, which zeroes the buffer.
 
 ## Delivery
 
@@ -81,7 +90,7 @@ Schema version 9 becomes 10. The migration adds `engagement_credential` and `cyb
 ## Decisions for the owner
 
 1. **Key custody.** Recommendation: AES-256-GCM with a key file outside the evidence database, with the Windows limit documented. The alternative is the OS keychain. It needs a new dependency in `packages/core/package.json`, which is an upstream file, so it needs a ledger row. I would not do it in this work item.
-2. **Read-only leases without per-action approval.** Recommendation: an R1 lease needs only the manifest declaration in an approved revision. Write-capable or R2 use stays refused until OC-401 and OC-403 provide per-action approval.
+2. **Read-only leases without per-action approval. Decided by the owner:** an R1 lease needs only the manifest declaration in an approved revision. Write-capable or R2 use stays refused until OC-401 and OC-403 provide per-action approval.
 3. **Lifetime.** Recommendation: `expires_at` is required at registration, with a maximum of 30 days. A lease lasts at most as long as the action's timeout.
 4. **Web identities.** Recommendation: move web session tokens onto leases in a separate issue. The host would inject the cookie or bearer token, and the model would pass only a label. OC-307 stays with directory and cloud identities, as #72 says.
 

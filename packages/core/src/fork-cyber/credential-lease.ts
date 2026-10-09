@@ -1,0 +1,178 @@
+export * as ForkCyberCredentialLease from "./credential-lease.js"
+
+import { Effect, Schema } from "effect"
+import { ForkCyberCredentials } from "./credentials.js"
+import { ForkCyberDecision } from "./decision.js"
+import { ForkCyberDiagnostics } from "./diagnostics.js"
+import { ForkCyberPolicy } from "./policy.js"
+import { ForkCyberScope } from "./scope.js"
+import { ForkCyberStore } from "./store.js"
+
+type Store = Effect.Success<ReturnType<typeof ForkCyberStore.open>>
+
+export type Request = {
+  store: Store
+  keyFile: string
+  owner: string
+  session: string
+  agent: string
+  mode: ForkCyberPolicy.Mode
+  label: string
+  action: string
+  target: ForkCyberScope.CredentialTarget
+  execution: string
+  now: number
+}
+
+// The plaintext stays a Buffer so release can zero it. Release is the caller's obligation: call it when the execution ends.
+export type Lease = { value: Buffer; release: () => void }
+
+type Verdict =
+  | { _tag: "Granted"; risk: ForkCyberDecision.Risk; lease: Lease }
+  | { _tag: "Refused"; reason: string; risk?: ForkCyberDecision.Risk; failure: ForkCyberDiagnostics.Failure }
+
+// A lease is granted only when the approved engagement declares the label for this action and target, the target
+// is in scope, the action is read-only and permitted, and the registered credential is usable and opens.
+// Every outcome is recorded before the result is returned, and a refusal never carries a value.
+export const lease = Effect.fn("ForkCyberCredentialLease.lease")(function* (request: Request) {
+  const verdict = yield* verify(request)
+  yield* record(request, verdict)
+  if (verdict._tag === "Refused") return yield* Effect.fail(verdict.failure)
+  return verdict.lease
+})
+
+const verify = Effect.fn("ForkCyberCredentialLease.verify")(function* (request: Request) {
+  const approved = (yield* request.store.approvedManifest(request.owner))[0]
+  if (approved === undefined)
+    return refuse("not_declared", "capability", "No approved engagement declares credentials.", declaredRecovery)
+  const manifest = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(ForkCyberScope.Manifest))(
+    approved.manifest,
+  ).pipe(Effect.orDie)
+  const declared = (manifest.rules_of_engagement.credentials ?? []).find((item) => item.label === request.label)
+  if (
+    declared === undefined ||
+    !declared.actions.includes(request.action) ||
+    !declared.targets.some((target) => sameTarget(target, request.target))
+  )
+    return refuse("not_declared", "capability", "The engagement does not declare this credential for this action and target.", declaredRecovery)
+  if (!inScope(manifest.scope, request.target))
+    return refuse("outside_scope", "scope", "The declared target is outside the recorded scope.", scopeRecovery)
+  const risk = riskOf(request.action)
+  if (risk === undefined)
+    return refuse("undeclared_action", "capability", "This action has no declared risk class.", undeclaredRecovery)
+  if (risk === "R2" || risk === "R3" || !ForkCyberDecision.permits(request.mode, request.agent, risk))
+    return refuse("above_ceiling", "capability", "The action's risk class is above the leases allowed here.", ceilingRecovery, risk)
+  if (!ForkCyberPolicy.allowed(request.mode, request.agent, toolOf(request.action)))
+    return refuse("outside_role_or_mode", "capability", "This agent or mode does not permit the tool.", roleRecovery, risk)
+  const row = (yield* request.store.credential(request.owner, request.label))[0]
+  if (row === undefined)
+    return refuse("not_configured", "configuration", "The operator has not registered this credential.", registerRecovery, risk)
+  if (row.revoked_at !== null)
+    return refuse("revoked", "capability", "The credential was revoked.", revokedRecovery, risk)
+  if (row.expires_at <= request.now)
+    return refuse("expired", "capability", "The credential has expired.", expiredRecovery, risk)
+  const key = yield* ForkCyberCredentials.loadKey(request.keyFile).pipe(Effect.result)
+  if (key._tag === "Failure")
+    return refuse("key_unavailable", "internal", "The credential key could not be read.", keyRecovery, risk)
+  const value = yield* Effect.try({
+    try: () =>
+      ForkCyberCredentials.open(
+        key.success,
+        { owner: request.owner, label: request.label, kind: row.kind },
+        { nonce: row.nonce, ciphertext: row.ciphertext },
+      ),
+    catch: () => "does not open",
+  }).pipe(Effect.result)
+  if (value._tag === "Failure")
+    return refuse("unreadable", "internal", "The credential does not open with the current key.", unreadableRecovery, risk)
+  return {
+    _tag: "Granted",
+    risk,
+    lease: { value: value.success, release: () => value.success.fill(0) },
+  } satisfies Verdict
+})
+
+const record = Effect.fn("ForkCyberCredentialLease.record")(function* (request: Request, verdict: Verdict) {
+  const granted = verdict._tag === "Granted"
+  const reason = granted ? "declared" : verdict.reason
+  const target = `${request.target.type}:${request.target.value}`
+  yield* request.store.recordLease({
+    owner: request.owner,
+    label: request.label,
+    action: request.action,
+    target,
+    execution: request.execution,
+    outcome: granted ? "granted" : "refused",
+    reason,
+    created_at: request.now,
+  })
+  yield* request.store.decision({
+    owner: request.owner,
+    session: request.session,
+    agent: request.agent,
+    tool: toolOf(request.action),
+    mode: request.mode,
+    risk: verdict.risk,
+    decision: granted ? "allow" : "deny",
+    reason: granted ? "credential_lease" : reason,
+    target,
+  })
+})
+
+function refuse(
+  reason: string,
+  kind: ForkCyberDiagnostics.Kind,
+  message: string,
+  recovery: string,
+  risk?: ForkCyberDecision.Risk,
+): Verdict {
+  return {
+    _tag: "Refused",
+    reason,
+    risk,
+    failure: new ForkCyberDiagnostics.Failure({
+      category: kind,
+      operation: "credential_lease",
+      message,
+      target_started: false,
+      effects: "not_started",
+      recovery,
+    }),
+  }
+}
+
+// Two targets name the same resource when their kinds match and their values match after normalization.
+function sameTarget(declared: ForkCyberScope.CredentialTarget, requested: ForkCyberScope.CredentialTarget) {
+  return declared.type === requested.type && ForkCyberScope.normalize(declared.value) === ForkCyberScope.normalize(requested.value)
+}
+
+function inScope(scope: ForkCyberScope.Manifest["scope"], target: ForkCyberScope.CredentialTarget) {
+  if (target.type === "cloud_resource") return (scope.resources ?? []).includes(target.value)
+  if (target.type === "cidr")
+    return scope.cidrs.some((entry) => ForkCyberScope.normalize(entry) === ForkCyberScope.normalize(target.value))
+  return [...scope.domains, ...scope.cidrs].some((entry) => ForkCyberScope.matches(target.value, entry))
+}
+
+// The action's tool owns its risk class. An action of a tool with no declaration has no class, and is refused.
+function riskOf(action: string) {
+  const [tool, name] = action.split(".")
+  const governed = ForkCyberDecision.declaration(tool)
+  return typeof governed === "string" ? governed : governed?.[name]
+}
+
+function toolOf(action: string) {
+  return action.split(".")[0]
+}
+
+const declaredRecovery =
+  "Declare the label, action and target in the engagement manifest, then get that revision approved."
+const scopeRecovery = "Declare only targets that the recorded scope includes."
+const undeclaredRecovery = "Use an action whose tool has a declared risk class."
+const ceilingRecovery =
+  "Credential leases are read-only (R1) in this work item. Write-capable and R2 use waits for its own work item."
+const roleRecovery = "Use an agent and mode that permit this tool."
+const registerRecovery = "Register the label with script/fork-cyber-credential.ts add, then retry."
+const revokedRecovery = "A revoked label stays unusable. Register a new label and declare it."
+const expiredRecovery = "Register a new label with a later expiry."
+const keyRecovery = "Check that the credential key file in the state directory exists and is readable."
+const unreadableRecovery = "The key or the stored row changed. Check the key file, then register the label again."
