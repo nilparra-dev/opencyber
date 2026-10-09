@@ -998,6 +998,15 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
     sql<{ label: string }>`UPDATE engagement_credential SET revoked_at = ${now}
       WHERE owner = ${owner} AND label = ${label} AND revoked_at IS NULL RETURNING label`
 
+  // Metadata only. Sealed values never leave the store through a listing.
+  const credentials = (owner: string) =>
+    sql<{
+      label: string
+      kind: string
+      expires_at: number
+      revoked_at: number | null
+    }>`SELECT label, kind, expires_at, revoked_at FROM engagement_credential WHERE owner = ${owner} ORDER BY label`
+
   const recordRetest = (owner: string, finding: string, execution: string) =>
     sql`INSERT INTO finding_retest VALUES (${owner}, ${finding}, ${execution}, ${Date.now()})`
 
@@ -1046,6 +1055,7 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
     putCredential,
     credential,
     revokeCredential,
+    credentials,
     retests,
     findingRecord,
     manifest,
