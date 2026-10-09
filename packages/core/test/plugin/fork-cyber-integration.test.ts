@@ -110,6 +110,14 @@ const context = Effect.fn(function* (
   return event.system.map((part) => part.text).join("\n")
 })
 
+it.live("cyber_credentials lists no credentials until an approved engagement declares some", () =>
+  Effect.gen(function* () {
+    const env = yield* project
+    const listed = yield* call(env.root.id, "cyber_credentials", { action: "list" }).pipe(env.provide)
+    expect(JSON.parse(listed)).toMatchObject({ declared: [] })
+  }),
+)
+
 it.live("stores the chosen delegation mode and applies it to context, compaction and generation", () =>
   Effect.gen(function* () {
     const env = yield* project

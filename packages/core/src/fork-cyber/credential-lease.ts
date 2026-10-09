@@ -41,13 +41,54 @@ export const lease = Effect.fn("ForkCyberCredentialLease.lease")(function* (requ
   return verdict.lease
 })
 
+// The model-facing tool takes one action. It lists declarations and their state, never a value.
+export const Action = Schema.Struct({ action: Schema.Literal("list") })
+
+const approvedManifest = Effect.fn("ForkCyberCredentialLease.approvedManifest")(function* (store: Store, owner: string) {
+  const approved = (yield* store.approvedManifest(owner))[0]
+  if (approved === undefined) return undefined
+  return yield* Schema.decodeUnknownEffect(Schema.fromJsonString(ForkCyberScope.Manifest))(approved.manifest).pipe(
+    Effect.orDie,
+  )
+})
+
+// Declared credentials of the approved revision, with their registration state. Expiry is a date, not a secret.
+export const catalog = Effect.fn("ForkCyberCredentialLease.catalog")(function* (input: {
+  store: Store
+  owner: string
+  now: number
+}) {
+  const manifest = yield* approvedManifest(input.store, input.owner)
+  const declared = manifest?.rules_of_engagement.credentials ?? []
+  return yield* Effect.forEach(declared, (item) =>
+    input.store.credential(input.owner, item.label).pipe(
+      Effect.map((rows) => {
+        const row = rows[0]
+        return {
+          label: item.label,
+          kind: item.kind,
+          read_only: item.read_only,
+          targets: item.targets,
+          actions: item.actions,
+          status: status(row, input.now),
+          expires_at: row === undefined ? null : new Date(row.expires_at).toISOString(),
+        }
+      }),
+    ),
+  )
+})
+
+function status(row: { expires_at: number; revoked_at: number | null } | undefined, now: number) {
+  if (row === undefined) return "not_registered"
+  if (row.revoked_at !== null) return "revoked"
+  if (row.expires_at <= now) return "expired"
+  return "available"
+}
+
 const verify = Effect.fn("ForkCyberCredentialLease.verify")(function* (request: Request) {
-  const approved = (yield* request.store.approvedManifest(request.owner))[0]
-  if (approved === undefined)
+  const manifest = yield* approvedManifest(request.store, request.owner)
+  if (manifest === undefined)
     return refuse("not_declared", "capability", "No approved engagement declares credentials.", declaredRecovery)
-  const manifest = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(ForkCyberScope.Manifest))(
-    approved.manifest,
-  ).pipe(Effect.orDie)
   const declared = (manifest.rules_of_engagement.credentials ?? []).find((item) => item.label === request.label)
   if (
     declared === undefined ||

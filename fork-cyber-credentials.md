@@ -1,6 +1,6 @@
 # Credential brokering (OC-307)
 
-Design for issue [#72](https://github.com/nilparra-dev/opencyber/issues/72). Status: steps 1 and 2 of the build order are merged (#108, #109). Step 3, the lease decision, is in review. Delivery and the model-facing list are not built yet. [fork-cyber-toolset.md](fork-cyber-toolset.md) sets the rules (R-6, D-4) and section 10 records the status.
+Design for issue [#72](https://github.com/nilparra-dev/opencyber/issues/72). Status: all five steps of the build order are built, in #108, #109, #111, #112 and the PR for step 5. Two items stay open: decision 4 (web identities) and the wrapped base64 gap under Limits. [fork-cyber-toolset.md](fork-cyber-toolset.md) sets the rules (R-6, D-4) and section 10 records the status.
 
 ## Problem
 
@@ -66,7 +66,9 @@ A captured stream stops at 2 MiB. When a capture reaches that limit, the last by
 
 ## Model-facing tool
 
-`cyber_credentials` has one action, `list`, which returns label, kind, targets, `read_only` and `expires_at`. It has no add, revoke or value action. Its description contains one literal example call.
+`cyber_credentials` has one action, `list`, and no add, revoke or value action. It lists the credentials the approved engagement declares: label, kind, `read_only`, targets, actions, `expires_at` and a status, which is `available`, `not_registered`, `revoked` or `expired`. Registration is the operator's step, so a model that sees `not_registered` knows to ask the operator rather than retry.
+
+The list reads the approved revision, the same one a lease reads, so the model never sees a credential that the lease would refuse for lack of approval. The result is read-only metadata and runs without an engagement execution record. The key of the list is `declared`, not `credentials`: the redaction layer replaces any value under a `credential` or `credentials` key, which would hide the list.
 
 ## Schema
 
@@ -88,6 +90,7 @@ Schema version 9 becomes 10. The migration adds `engagement_credential` and `cyb
 - **Target types.** `cloud_resource` accepts only S3 ARNs. OC-304 (live cloud and Kubernetes RBAC) needs new target types before its resource filter can be scoped.
 - **Web session tokens.** `cyber_http` headers and the identity-matrix procedures pass cookies and bearer tokens through the model. OC-307 does not change that. See decision 4.
 - **Transformed values.** See Output.
+- **Wrapped base64.** Output replacement matches standard base64 on one line. The coreutils `base64` command wraps its output every 76 columns, so a value longer than 57 bytes can appear wrapped and go unmatched. This is an open gap; the fix is to add the wrapped forms to the replacement and test them against the `base64` command.
 - **Memory.** Buffers are zeroed on release. Strings created while a request is built are not.
 
 ## Decisions for the owner

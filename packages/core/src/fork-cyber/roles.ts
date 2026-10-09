@@ -32,6 +32,7 @@ const read = [
   "cyber_tasks",
   "cyber_coverage",
   "cyber_capabilities",
+  "cyber_credentials",
   "cyber_report",
 ]
 const observe = [
