@@ -294,7 +294,10 @@ dockerTest("unauth_check reports exposure for Redis and Elasticsearch and never 
         expect(yield* check("redis", 6381)).toMatchObject({ exposure: "authentication_required" })
         expect(yield* check("redis", 6380)).toMatchObject({ exposure: "not_observed", probe: { state: "closed" } })
         expect(yield* check("elasticsearch", 9200)).toMatchObject({ exposure: "unauthenticated_response" })
-        expect(yield* check("elasticsearch", 9201)).toMatchObject({ exposure: "not_observed", probe: { state: "closed" } })
+        expect(yield* check("elasticsearch", 9201)).toMatchObject({
+          exposure: "not_observed",
+          probe: { state: "closed" },
+        })
       }),
     ),
   )
