@@ -1,6 +1,6 @@
 ARG KALI_BASE=kalilinux/kali-rolling@sha256:d1d7e581ed60b0bbf9cb8a4bc853526355978f3b943d3a1d7dc7ce209e4231b6
 FROM ${KALI_BASE}
-LABEL org.opencyber.kali.version="6"
+LABEL org.opencyber.kali.version="7"
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
     aapt android-framework-res binutils binwalk gcc libc6-dev ca-certificates curl dnsutils file git iproute2 jq libcap2-bin nmap openssl openssh-server python3 python3-pefile python3-pip python3-venv \
@@ -16,6 +16,8 @@ RUN python3 -m venv /opt/opencyber/venv && \
 # Curated offline Semgrep rules. Validated at build time, so a broken rule fails the image instead of a job.
 COPY rules/semgrep /opt/opencyber/rules/semgrep
 RUN SEMGREP_SEND_METRICS=off /opt/opencyber/venv/bin/semgrep --validate --metrics=off --config /opt/opencyber/rules/semgrep
+# The workload runs as UID/GID 1000. Without an account for it, Python pwd lookups fail and binwalk extraction aborts.
+RUN groupadd --gid 1000 opencyber && useradd --uid 1000 --gid 1000 --home-dir /work --no-create-home --shell /usr/sbin/nologin opencyber
 ENV HOME=/work TMPDIR=/tmp
 USER 1000:1000
 WORKDIR /work
