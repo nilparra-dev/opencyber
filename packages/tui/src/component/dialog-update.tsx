@@ -90,7 +90,7 @@ export function DialogUpdate(props: {
       <box flexDirection="row" justifyContent="space-between">
         <text attributes={TextAttributes.BOLD} fg={theme.text.base}>
           {state().type === "installing"
-            ? "Updating OpenCode"
+            ? "Updating OpenCyber"
             : state().type === "available" || state().type === "failed"
               ? "Update available"
               : "Update"}
@@ -108,14 +108,14 @@ export function DialogUpdate(props: {
               </Match>
               <Match when={current.type === "available"}>
                 <text fg={theme.text.muted}>
-                  An update is available. After installing, you'll be prompted to restart OpenCode.
+                  An update is available. After installing, you'll be prompted to restart OpenCyber.
                 </text>
               </Match>
               <Match when={current.type === "installing"}>
                 <Spinner shimmer={theme.text.base}>
                   {/* fork: releases read as `2.0.19 (Cyber)` instead of their `-cyber.N` tag (F-017) */}
                   {current.type === "installing"
-                    ? `Installing OpenCode ${current.display ?? current.version}…`
+                    ? `Installing OpenCyber ${current.display ?? current.version}…`
                     : ""}
                 </Spinner>
               </Match>
@@ -125,7 +125,7 @@ export function DialogUpdate(props: {
                 </text>
               </Match>
               <Match when={current.type === "current"}>
-                <text fg={theme.text.muted}>OpenCode is already up to date.</text>
+                <text fg={theme.text.muted}>OpenCyber is already up to date.</text>
               </Match>
               <Match when={current.type === "unavailable"}>
                 <text fg={theme.text.muted} wrapMode="word">
