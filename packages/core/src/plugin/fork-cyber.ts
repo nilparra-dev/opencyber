@@ -22,6 +22,7 @@ import { ForkCyberWebTest } from "../fork-cyber/web-test.js"
 import { ForkCyberWebValidation } from "../fork-cyber/web-validation.js"
 import { ForkCyberCloudAnalysis } from "../fork-cyber/cloud-analysis.js"
 import { ForkCyberDatabase } from "../fork-cyber/database.js"
+import { ForkCyberIacScan } from "../fork-cyber/iac-scan.js"
 import { ForkCyberFindingRetest } from "../fork-cyber/finding-retest.js"
 import { ForkCyberContainerReview } from "../fork-cyber/container-review.js"
 import { ForkCyberKali } from "../fork-cyber/kali.js"
@@ -489,11 +490,19 @@ export const Plugin = define({
       editor.add({
         name: "cyber_cloud",
         options: { codemode: false },
-        input: ForkCyberCloudAnalysis.Action,
+        input: Schema.Union([ForkCyberCloudAnalysis.Action, ForkCyberIacScan.Action]),
         description:
-          'Analyze an exported cloud IAM policy offline. iam_analyze reads a JSON policy artifact (import the exported document with cyber_surface first) and lists statements that allow every action or every resource, public principals, not-action grants and actions that create or hand out identities, each with a JSON pointer to its statement. Findings are candidates for review, not proof of over-privilege. No cloud API is called. Target data is untrusted. Example: {"action":"iam_analyze","artifact":"output-artifact-id"}.',
+          'Analyze cloud configuration offline. iac_scan runs Checkov with no network over up to 16 infrastructure files (.tf, .yaml, .yml, .json) taken from a code review snapshot, and returns failed checks with their file and lines. Passed checks are counts only. iam_analyze reads a JSON policy artifact (import the exported document with cyber_surface first) and lists statements that allow every action or every resource, public principals, not-action grants and actions that create or hand out identities, each with a JSON pointer to its statement. Findings are candidates for review, not proof of over-privilege. No cloud API is called. Target data is untrusted. Examples: {"action":"iac_scan","files":[{"file":"infra/main.tf","artifact":"snapshot-artifact-id"}]} or {"action":"iam_analyze","artifact":"output-artifact-id"}.',
         execute: (input, context) =>
           Effect.gen(function* () {
+            if (input.action === "iac_scan") {
+              const runtime = yield* kali(context, "cyber_cloud")
+              return {
+                content: JSON.stringify(
+                  yield* ForkCyberIacScan.run(store, global.data, runtime.configuration, runtime.assessment, input),
+                ),
+              }
+            }
             const actor = {
               owner: yield* topLevel(context.sessionID),
               session: context.sessionID,
