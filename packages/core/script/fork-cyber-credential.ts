@@ -17,7 +17,7 @@ const args = parseArgs({
 })
 const [command, profile, owner, label] = args.positionals
 const usage =
-  "Usage: bun script/fork-cyber-credential.ts <add|revoke|list> <absolute profile> <owner> [label] [--kind <directory_bind|cloud_key> --expires-days <1-30>]"
+  "Usage: bun script/fork-cyber-credential.ts <add|revoke|list> <absolute profile> <owner> [label] [--kind <directory_bind|cloud_key|database_login|host_login> --expires-days <1-30>]"
 if (command !== "add" && command !== "revoke" && command !== "list") throw new Error(usage)
 if (!profile || !path.isAbsolute(profile) || !owner) throw new Error(usage)
 if (command !== "list" && (!label || !/^[a-z][a-z0-9-]{0,62}$/.test(label)))

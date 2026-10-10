@@ -25,7 +25,8 @@ export type Request = {
 }
 
 // The plaintext stays a Buffer so release can zero it. Release is the caller's obligation: call it when the execution ends.
-export type Lease = { value: Buffer; release: () => void }
+// `account` is the declared host login name; it is not secret and comes from the approved revision.
+export type Lease = { value: Buffer; release: () => void; account?: string }
 
 type Verdict =
   | { _tag: "Granted"; risk: ForkCyberDecision.Risk; reason: string; lease: Lease }
@@ -67,6 +68,7 @@ export const catalog = Effect.fn("ForkCyberCredentialLease.catalog")(function* (
         return {
           label: item.label,
           kind: item.kind,
+          account: item.account ?? null,
           read_only: item.read_only,
           targets: item.targets,
           actions: item.actions,
@@ -132,7 +134,7 @@ const verify = Effect.fn("ForkCyberCredentialLease.verify")(function* (request: 
     _tag: "Granted",
     risk,
     reason,
-    lease: { value: value.success, release: () => value.success.fill(0) },
+    lease: { value: value.success, release: () => value.success.fill(0), account: declared.account },
   } satisfies Verdict
 })
 
@@ -228,7 +230,10 @@ function inScope(scope: ForkCyberScope.Manifest["scope"], target: ForkCyberScope
   if (target.type === "cloud_resource") return (scope.resources ?? []).includes(target.value)
   if (target.type === "cidr")
     return scope.cidrs.some((entry) => ForkCyberScope.normalize(entry) === ForkCyberScope.normalize(target.value))
-  return [...scope.domains, ...scope.cidrs].some((entry) => ForkCyberScope.matches(target.value, entry))
+  // A port-scoped service entry also puts its host in scope. The host tool authorizes the port itself.
+  return [...scope.domains, ...scope.cidrs, ...(scope.services ?? []).map((entry) => entry.target)].some((entry) =>
+    ForkCyberScope.matches(target.value, entry),
+  )
 }
 
 // The action's tool owns its risk class. An action of a tool with no declaration has no class, and is refused.
