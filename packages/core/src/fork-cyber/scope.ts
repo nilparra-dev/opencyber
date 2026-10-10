@@ -132,6 +132,8 @@ export const ValidationAction = Schema.Literals([
   "cyber_surface.binary.execute",
   "cyber_web_test.validate.open_redirect",
   "cyber_web_test.validate.path_traversal",
+  "cyber_directory.auth_test",
+  "cyber_directory.crack",
 ])
 export type ValidationAction = typeof ValidationAction.Type
 
@@ -153,6 +155,9 @@ export const Credential = Schema.Struct({
   read_only: Schema.Literal(true),
   targets: Schema.Array(CredentialTarget).check(Schema.isMinLength(1), Schema.isMaxLength(16)),
   actions: Schema.Array(CredentialAction).check(Schema.isMinLength(1), Schema.isMaxLength(16)),
+  // The directory account a directory_bind label authenticates as. It is part of the approved revision, so the
+  // model cannot choose an account the engagement did not declare.
+  account: Schema.optional(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(512))),
 })
 const Credentials = Schema.Array(Credential).check(
   Schema.isMaxLength(16),
