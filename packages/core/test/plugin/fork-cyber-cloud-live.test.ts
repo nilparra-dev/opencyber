@@ -543,6 +543,18 @@ test("the output carries no secret value, and inventory pages its bucket list", 
   )
 })
 
+// A static check: the offline actions reference no host-side network API. Their Checkov job runs with network none,
+// which the IaC Docker laboratory verifies from the execution provenance.
+test("the offline cloud actions reference no network API", async () => {
+  const sources = await Promise.all(
+    ["cloud-analysis.ts", "iac-scan.ts"].map((name) =>
+      Bun.file(new URL(`../../src/fork-cyber/${name}`, import.meta.url)).text(),
+    ),
+  )
+  const network = /\bfetch\(|node:(net|http|https|dns|dgram|tls)|Bun\.(connect|serve|udpSocket)|WebSocket|ForkCyberHttp/
+  for (const source of sources) expect(network.test(source)).toBe(false)
+})
+
 test("the live client sends only GET requests and every action is a read", async () => {
   const source = await Bun.file(new URL("../../src/fork-cyber/cloud-live.ts", import.meta.url)).text()
   expect(/"(PUT|POST|PATCH|DELETE)"/.test(source)).toBe(false)
