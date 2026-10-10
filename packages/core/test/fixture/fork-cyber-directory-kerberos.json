@@ -1,0 +1,23 @@
+[
+  {
+    "sAMAccountName": "alice",
+    "userAccountControl": 4194816,
+    "servicePrincipalName": []
+  },
+  {
+    "sAMAccountName": "svc-sql",
+    "userAccountControl": 512,
+    "servicePrincipalName": ["MSSQLSvc/sql.lab.test:1433"],
+    "msDS-SupportedEncryptionTypes": 4
+  },
+  {
+    "sAMAccountName": "WS01$",
+    "userAccountControl": 4096,
+    "servicePrincipalName": ["HOST/ws01.lab.test"],
+    "msDS-SupportedEncryptionTypes": 28
+  },
+  {
+    "sAMAccountName": "bob",
+    "userAccountControl": 512
+  }
+]
