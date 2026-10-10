@@ -132,6 +132,7 @@ export const ValidationAction = Schema.Literals([
   "cyber_surface.binary.execute",
   "cyber_web_test.validate.open_redirect",
   "cyber_web_test.validate.path_traversal",
+  "cyber_database.auth_test",
 ])
 export type ValidationAction = typeof ValidationAction.Type
 

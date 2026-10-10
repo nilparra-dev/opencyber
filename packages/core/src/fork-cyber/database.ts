@@ -1,6 +1,7 @@
 export * as ForkCyberDatabase from "./database.js"
 
 import { Effect, Schema } from "effect"
+import { ForkCyberDatabaseAuth } from "./database-auth.js"
 import { ForkCyberDiagnostics } from "./diagnostics.js"
 import { ForkCyberHttp } from "./http.js"
 import { ForkCyberKali } from "./kali.js"
@@ -38,6 +39,11 @@ export const Action = Schema.Union([
     engine: Engine,
     artifact: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256)),
     ...page,
+  }),
+  // The value stays with the operator's registered label. Only the label name is accepted here.
+  Schema.Struct({
+    action: Schema.Literal("auth_test"),
+    ...ForkCyberDatabaseAuth.Input.fields,
   }),
 ])
 export type Action = typeof Action.Type
@@ -77,6 +83,28 @@ export const runUnauthCheck = Effect.fn(function* (
     engine: input.engine,
     exposure: exposure[probe.state],
     probe,
+  }
+})
+
+// R2. It runs only when the engagement declares cyber_database.auth_test and the operator approved this host (OC-401),
+// and the lease and its pacing decide the rest. The output names the label and the state, never the value.
+export const runAuthTest = Effect.fn(function* (input: Parameters<typeof ForkCyberDatabaseAuth.run>[0]) {
+  const report = (yield* ForkCyberDatabaseAuth.run(input)).capture!
+  return {
+    format: "opencyber-database-auth-v1",
+    action: "auth_test",
+    engine: report.engine,
+    host: ForkCyberScope.normalize(input.request.host),
+    port: report.port,
+    label: input.request.label,
+    state: report.state,
+    summary: `${report.engine} label ${input.request.label} on port ${report.port}: ${report.state}`,
+    artifact: report.artifact,
+    limitations: [
+      "One authentication attempt per call, with the declared label only.",
+      "not_required means the service accepted the request without a credential. It is not a finding by itself.",
+      "Each label is paced to one attempt per target each minute. Lockout thresholds of the target are not modelled.",
+    ],
   }
 })
 
