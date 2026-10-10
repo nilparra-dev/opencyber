@@ -179,7 +179,7 @@ test("refuses targets outside the recorded scope, write-capable actions and unde
             targets: [{ type: "cloud_resource", value: "arn:aws:s3:::other-bucket" }],
           }),
           declared({ label: "writer", actions: ["cyber_local_validation"] }),
-          declared({ label: "unclassified", actions: ["cyber_directory.ldap_enum"] }),
+          declared({ label: "unclassified", actions: ["cyber_unlisted.probe"] }),
         ])
         expect(
           yield* outcome(env, {
@@ -189,7 +189,7 @@ test("refuses targets outside the recorded scope, write-capable actions and unde
           }),
         ).toBe("outside_scope")
         expect(yield* outcome(env, { label: "writer", action: "cyber_local_validation" })).toBe("refused_by_policy")
-        expect(yield* outcome(env, { label: "unclassified", action: "cyber_directory.ldap_enum" })).toBe(
+        expect(yield* outcome(env, { label: "unclassified", action: "cyber_unlisted.probe" })).toBe(
           "refused_by_policy",
         )
         expect(leaseRows(env).map((row) => row.reason)).toEqual(["outside_scope", "above_ceiling", "undeclared_action"])
