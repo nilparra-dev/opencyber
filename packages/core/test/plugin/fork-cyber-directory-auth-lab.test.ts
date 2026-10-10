@@ -63,7 +63,15 @@ const docker = (args: string[], input?: string) =>
     return stdout.trim()
   })
 
-// The directory answers only after its base entry exists; the first search that succeeds means it is ready.
+// slapd writes its start-up messages to stderr, so readiness reads both streams of `docker logs`.
+const logs = (id: string) =>
+  Effect.tryPromise(async () => {
+    const child = Bun.spawn(["docker", "logs", id], { stdout: "pipe", stderr: "pipe" })
+    const [stdout, stderr] = await Promise.all([new Response(child.stdout).text(), new Response(child.stderr).text()])
+    return stdout + stderr
+  })
+
+// The directory is ready once the base entry answers a search after the final start.
 const startDirectory = Effect.gen(function* () {
   const id = yield* docker([
     "run",
@@ -80,6 +88,18 @@ const startDirectory = Effect.gen(function* () {
     ldap,
   ])
   yield* Effect.addFinalizer(() => docker(["rm", "-f", id]).pipe(Effect.orDie))
+  // The image bootstraps its configuration, then starts slapd again. A bind during that restart sees the server close
+  // the connection, so readiness waits for the final start before the directory is loaded and tested.
+  yield* logs(id).pipe(
+    Effect.filterOrFail(
+      (logs) => {
+        const bootstrapped = logs.indexOf("First start is done")
+        return bootstrapped !== -1 && logs.indexOf("slapd starting", bootstrapped) !== -1
+      },
+      () => new Error("Directory is still bootstrapping"),
+    ),
+    Effect.retry({ times: 240, schedule: Schedule.spaced(500) }),
+  )
   yield* docker([
     "exec",
     id,
