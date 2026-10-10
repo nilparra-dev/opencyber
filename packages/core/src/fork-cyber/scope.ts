@@ -37,7 +37,10 @@ export const NetworkBudget = Schema.Struct({
   Schema.makeFilter((value) => value.bytes_per_job <= value.bytes_total || "bytes_per_job must not exceed bytes_total"),
 )
 
-const S3Arn = Schema.String.check(Schema.isPattern(/^arn:aws:s3:::[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/))
+export const S3Arn = Schema.String.check(Schema.isPattern(/^arn:aws:s3:::[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/))
+// An AWS account is named by its root principal ARN. It is the target of account-level live reads.
+export const AccountArn = Schema.String.check(Schema.isPattern(/^arn:aws:iam::\d{12}:root$/))
+const CloudResource = Schema.Union([S3Arn, AccountArn])
 export const Domain = Schema.String.check(
   Schema.makeFilter<string>(
     (value) =>
@@ -65,7 +68,7 @@ const Typed = {
   cidr: Schema.Struct({ type: Schema.Literal("cidr"), value: Cidr }),
   url: Schema.Struct({ type: Schema.Literal("url"), value: Url }),
   service: Schema.Struct({ type: Schema.Literal("service"), value: Service }),
-  cloud_resource: Schema.Struct({ type: Schema.Literal("cloud_resource"), value: S3Arn }),
+  cloud_resource: Schema.Struct({ type: Schema.Literal("cloud_resource"), value: CloudResource }),
   repo_path: Schema.Struct({ type: Schema.Literal("repo_path"), value: RepoPath }),
   container_image: Schema.Struct({ type: Schema.Literal("container_image"), value: ImageDigest }),
   device: Schema.Struct({ type: Schema.Literal("device"), value: Host }),
@@ -81,7 +84,8 @@ export const enforcement = {
   cidr: "Kali egress policy and HTTP address matching.",
   url: "HTTP scheme, host and port; the path is not enforced. Recorded as a service entry.",
   service: "Kali egress policy per protocol and port.",
-  cloud_resource: "Exact S3 ARN before cyber_surface and identity-cloud calls. Live API filtering arrives with OC-304.",
+  cloud_resource:
+    "Exact S3 bucket or AWS account ARN. cyber_surface and identity-cloud check it before each call; cyber_cloud live actions check it before any request.",
   repo_path: "Code-review snapshot boundary. Refused by manifests until OC-205 records it.",
   container_image: "Pull by digest only. Refused by manifests until OC-206 records it.",
   device: "Host policy under the simulator-by-default rule. Refused by manifests until OC-301 records it.",
@@ -103,7 +107,7 @@ const Inclusions = Schema.Struct({
   excluded: Schema.Array(Target),
   services: Schema.optional(Schema.Array(Service).check(Schema.isMaxLength(64))),
   excluded_services: Schema.optional(Schema.Array(Service).check(Schema.isMaxLength(64))),
-  resources: Schema.optional(Schema.Array(S3Arn).check(Schema.isMaxLength(64))),
+  resources: Schema.optional(Schema.Array(CloudResource).check(Schema.isMaxLength(64))),
 })
 
 // Typed entries are recorded into the legacy lists while decoding, so every enforcement path reads one shape.
@@ -113,7 +117,7 @@ const Scope = Schema.Struct({
   targets: Schema.optional(
     Schema.Array(ManifestTarget).check(Schema.isMaxLength(128)).annotate({
       description:
-        "Typed scope entries: host, domain, cidr, url, service or cloud_resource (S3 bucket ARN). Exclusions stay in scope.excluded and scope.excluded_services.",
+        "Typed scope entries: host, domain, cidr, url, service or cloud_resource (S3 bucket or AWS account ARN). Exclusions stay in scope.excluded and scope.excluded_services.",
     }),
   ),
 }).pipe(
@@ -146,7 +150,7 @@ export const Validation = Schema.Struct({
 export const CredentialTarget = Schema.Union([Typed.host, Typed.domain, Typed.cidr, Typed.cloud_resource])
 export type CredentialTarget = typeof CredentialTarget.Type
 // `tool` or `tool.action`, the same identifiers that approvals and risk declarations use.
-const CredentialAction = Schema.String.check(Schema.isPattern(/^[a-z_]+(\.[a-z_]+)?$/))
+const CredentialAction = Schema.String.check(Schema.isPattern(/^[a-z_][a-z0-9_]*(\.[a-z_][a-z0-9_]*)?$/))
 export const Credential = Schema.Struct({
   label: Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9-]{0,62}$/)),
   kind: ForkCyberCredentials.Kind,
