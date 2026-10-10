@@ -2,6 +2,7 @@ import { expect, test } from "bun:test"
 import { Effect, Schema } from "effect"
 import path from "node:path"
 import { ForkCyberDatabase } from "@opencode/core/fork-cyber/database"
+import { ForkCyberCredentials } from "@opencode/core/fork-cyber/credentials"
 import { ForkCyberDecision } from "@opencode/core/fork-cyber/decision"
 import { ForkCyberHttp } from "@opencode/core/fork-cyber/http"
 import { ForkCyberKali } from "@opencode/core/fork-cyber/kali"
@@ -306,3 +307,126 @@ dockerTest(
   },
   240000,
 )
+
+const authRequest = { action: "auth_test" as const, engine: "redis" as const, host: "10.20.40.2", port: 6379 }
+const authRisk = { mode: "assessment" as const, agent: "cyber-exploit-net", tool: "cyber_database" }
+
+test("auth_test is R2: denied unless the engagement declares it, asked for approval once declared, and refused below R2", () => {
+  expect(
+    ForkCyberDecision.decide({ ...authRisk, input: { ...authRequest, label: "db-reader" }, declared: [] }),
+  ).toEqual({
+    decision: "deny",
+    reason: "not_declared",
+    risk: "R2",
+    action: "cyber_database.auth_test",
+  })
+  expect(
+    ForkCyberDecision.decide({
+      ...authRisk,
+      input: { ...authRequest, label: "db-reader" },
+      declared: ["cyber_database.auth_test"],
+    }),
+  ).toMatchObject({ decision: "ask", reason: "approval_required", risk: "R2", action: "cyber_database.auth_test" })
+  expect(
+    ForkCyberDecision.decide({
+      ...authRisk,
+      mode: "development",
+      input: { ...authRequest, label: "db-reader" },
+      declared: ["cyber_database.auth_test"],
+    }),
+  ).toMatchObject({ decision: "deny", reason: "above_ceiling" })
+  expect(
+    ForkCyberDecision.decide({
+      ...authRisk,
+      agent: "cyber-enum",
+      input: { ...authRequest, label: "db-reader" },
+      declared: ["cyber_database.auth_test"],
+    }),
+  ).toMatchObject({ decision: "deny", reason: "above_ceiling" })
+})
+
+test("auth_test takes a declared label and no value, and refuses malformed labels", () => {
+  const decode = Schema.decodeUnknownSync(ForkCyberDatabase.Action)
+  const parsed = decode({ ...authRequest, label: "db-reader", password: "not-used" })
+  expect(parsed).toMatchObject({ action: "auth_test", label: "db-reader" })
+  expect(parsed).not.toHaveProperty("password")
+  expect(() => decode({ ...authRequest, label: "Db Reader" })).toThrow()
+})
+
+const authScope = Schema.decodeUnknownSync(ForkCyberScope.Manifest)({
+  engagement: "database-auth-refusal",
+  authorized_by: "operator",
+  authorization_ref: "fixture",
+  scope: { domains: [], cidrs: ["10.20.40.0/29"], excluded: [] },
+  rules_of_engagement: {
+    no_dos: true,
+    max_rps: 10,
+    window: "test",
+    contact: "operator",
+    network: {
+      connections_per_second: 10,
+      packets_per_second: 1000,
+      bytes_per_job: 1024 * 1024,
+      bytes_total: 10 * 1024 * 1024,
+      duration_ms: 60000,
+    },
+    validation: { environment: "laboratory", actions: ["cyber_database.auth_test"] },
+    credentials: [
+      {
+        label: "db-reader",
+        kind: "database_login",
+        read_only: true,
+        targets: [{ type: "host", value: "10.20.40.2" }],
+        actions: ["cyber_database.auth_test"],
+      },
+    ],
+  },
+})
+// Never started: the refusal happens before any Kali run, so this image does not need to exist.
+const unstarted = Schema.decodeUnknownSync(ForkCyberKali.Config)({
+  image: `sha256:${"1".repeat(64)}`,
+  network: { kind: "scoped", name: "database-auth-refusal" },
+})
+
+test("a refused auth_test starts no Kali job and records the refusal", async () => {
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const tmp = yield* tmpdirScoped()
+        const store = yield* ForkCyberStore.open(path.join(tmp.path, "database.sqlite"))
+        const keyFile = path.join(tmp.path, "state", "credential.key")
+        const key = yield* ForkCyberCredentials.loadKey(keyFile)
+        const owner = "owner"
+        const now = Date.now()
+        const sealed = ForkCyberCredentials.seal(key, { owner, label: "db-reader", kind: "database_login" }, "unused")
+        yield* store.putCredential({
+          owner,
+          label: "db-reader",
+          kind: "database_login",
+          expires_at: now + 3_600_000,
+          created_at: now,
+          ...sealed,
+        })
+        yield* store.approveManifest(owner, authScope, 0)
+        const attempt = (label: string) =>
+          ForkCyberDatabase.runAuthTest({
+            store,
+            profile: tmp.path,
+            keyFile,
+            config: unstarted,
+            assessment: { owner, session: "session", agent: "build", mode: "assessment", manifest: authScope },
+            request: { engine: "redis", host: "10.20.40.2", port: 6379, label },
+            now,
+          }).pipe(Effect.flip)
+        const unapproved = yield* attempt("db-reader")
+        expect(String(unapproved)).toContain("has not approved")
+        const undeclared = yield* attempt("db-other")
+        expect(String(undeclared)).toContain("does not declare")
+        expect(yield* store.executions(owner)).toEqual([])
+        const decisions = yield* store.decisions(owner)
+        expect(decisions.map((row) => row.reason)).toEqual(["approval_required", "not_declared"])
+        expect(decisions.every((row) => row.decision === "deny")).toBe(true)
+      }),
+    ),
+  )
+})
