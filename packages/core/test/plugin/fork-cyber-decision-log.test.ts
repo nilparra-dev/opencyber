@@ -56,7 +56,7 @@ test("an existing version 6 evidence database gains the decision log on open", a
         const migrated = yield* ForkCyberStore.open(file)
         expect((yield* migrated.notes("owner"))[0]?.content).toBe("existing evidence")
         expect(yield* migrated.decisions("owner")).toEqual([])
-        expect(database.query("PRAGMA user_version").get()).toEqual({ user_version: 10 })
+        expect(database.query("PRAGMA user_version").get()).toEqual({ user_version: 11 })
       }),
     ),
   )

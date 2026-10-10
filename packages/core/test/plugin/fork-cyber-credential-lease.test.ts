@@ -315,3 +315,28 @@ test("an R2 lease needs the action validated by the engagement and an active app
     ),
   )
 })
+
+test("a second R2 lease for the same credential and host inside the pacing window is refused", async () => {
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const env = yield* environment
+        yield* register(env)
+        yield* env.store.approveManifest(owner, validated([declared({ actions: ["cyber_local_validation"] })]), 0)
+        yield* env.store.grantApproval({
+          owner,
+          id: "approved-2",
+          action: "cyber_local_validation",
+          target: "lab.test",
+          approver: "operator",
+          approved_at: now,
+          expires_at: now + day,
+        })
+        expect(yield* outcome(env, r2)).toBe("granted")
+        expect(yield* outcome(env, { ...r2, now: now + 30_000 })).toBe("budget_exceeded")
+        expect(yield* outcome(env, { ...r2, now: now + 61_000 })).toBe("granted")
+        expect(leaseRows(env).map((row) => row.reason)).toEqual(["approved:approved-2", "paced", "approved:approved-2"])
+      }),
+    ),
+  )
+})

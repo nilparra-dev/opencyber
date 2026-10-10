@@ -157,6 +157,16 @@ const grantReason = Effect.fn("ForkCyberCredentialLease.grantReason")(function* 
   )[0]
   if (active === undefined)
     return refuse("approval_required", "capability", "The operator has not approved this action on this target.", approvalRecovery, risk)
+  const recent = (
+    yield* request.store.recentLeases({
+      owner: request.owner,
+      label: request.label,
+      target: `${request.target.type}:${request.target.value}`,
+      since: request.now - pacingWindow,
+    })
+  )[0]
+  if (recent !== undefined)
+    return refuse("paced", "budget", "This credential was already tried on this target within the pacing window.", pacingRecovery, risk)
   return `approved:${active.id}`
 })
 
@@ -240,6 +250,9 @@ const ceilingRecovery =
   "Credential leases are read-only (R1), or R2 for an action the engagement validates. R3 and write-capable use is refused."
 const validationRecovery =
   "Declare the action in the engagement's validation list and get that revision approved; R2 leases need it."
+// One credential tries one target at most once per window, so repeated attempts cannot outpace an account lockout.
+const pacingWindow = 60_000
+const pacingRecovery = "Wait for the pacing window to pass before trying this credential on this target again."
 const approvalRecovery =
   "The operator approves this action on this target in the permission prompt. Approvals expire after ten minutes."
 const roleRecovery = "Use an agent and mode that permit this tool."
