@@ -366,7 +366,7 @@ Updated with each merge. "Done" means the acceptance criteria in the work item's
 | OC-401 | Done    | #78: engagement declaration, operator approval, approvals that expire after 10 minutes. See fork-cyber-approval.md                      |
 | OC-403, OC-404 | Open | #89 and #90, created from this document                                                                                            |
 | OC-405 | Done    | #79: one validator record (`validation.ts`) for `cyber_local_validation`: pre-state, action, oracle result, cleanup and effects. Failed runs and cleanup are unknown effects, never a reproduction |
-| OC-402 | Partial | #80: `cyber_web_test` `validate` for `open_redirect` and `path_traversal`. Each run compares one benign control with one probe, redirects are not followed, and a marker in every response is inconclusive. Open: SSRF (needs a callback in scope), XSS, SQL injection and command injection, which have no validator yet
+| OC-402 | Partial | #80: `cyber_web_test` `validate` for `open_redirect`, `path_traversal`, `sql_injection` and `command_injection`. Each run compares a benign control with its probes: redirects are not followed, a marker in every response is inconclusive, a true and a false condition must differ from each other and only the true one may match the control, and a shell-computed product of fresh operands must be absent from the control. No data is extracted. Open: SSRF (needs a callback in scope) and XSS (needs browser confirmation), which have no validator yet
 
 Deviations from the tables above, recorded where they were made:
 
