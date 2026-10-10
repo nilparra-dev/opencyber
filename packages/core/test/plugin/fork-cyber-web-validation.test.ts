@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test"
 import { Effect, Schema } from "effect"
 import path from "node:path"
+import { ForkCyberBrowser } from "@opencode/core/fork-cyber/browser"
+import { ForkCyberDecision } from "@opencode/core/fork-cyber/decision"
 import { ForkCyberStore } from "@opencode/core/fork-cyber/store"
 import { ForkCyberWebValidation } from "@opencode/core/fork-cyber/web-validation"
 import { tmpdirScoped } from "../fixture/tmpdir"
@@ -14,15 +16,41 @@ const manifest = {
 }
 const actor = { owner: "owner", session: "child", agent: "cyber-validate", manifest }
 
-// A laboratory with one vulnerable and one safe route per class, and one page that echoes everything.
-function lab() {
+// A laboratory with one vulnerable and one safe route per class, and one page that echoes everything. `seen` records
+// every request the target receives, so a refused validation can be shown to send none.
+function lab(seen: string[] = []) {
   return Bun.serve({
     hostname: "127.0.0.1",
     port: 0,
-    fetch(request) {
+    async fetch(request) {
       const url = new URL(request.url)
+      seen.push(url.pathname)
       const next = url.searchParams.get("next") ?? "/"
       const name = url.searchParams.get("name") ?? ""
+      // Server-side fetch of a caller-supplied URL: the vulnerable route fetches it, the guarded one refuses loopback.
+      if (url.pathname === "/fetch") {
+        const target = url.searchParams.get("url") ?? ""
+        await fetch(target).catch(() => undefined)
+        return new Response("fetched")
+      }
+      if (url.pathname === "/fetch-guarded") {
+        const target = new URL(url.searchParams.get("url") ?? "", "http://127.0.0.1/")
+        if (target.hostname === "127.0.0.1" || target.hostname === "localhost")
+          return new Response("blocked", { status: 403 })
+        await fetch(target).catch(() => undefined)
+        return new Response("fetched")
+      }
+      // Names the URL in its body without requesting it: a string in a response is not a callback.
+      if (url.pathname === "/fetch-echo") return new Response(`fetching ${url.searchParams.get("url")}`)
+      // Text context without escaping executes the injected element; a textarea keeps the markup as text.
+      if (url.pathname === "/xss")
+        return new Response(`<p>Hello ${name}</p>`, { headers: { "content-type": "text/html" } })
+      if (url.pathname === "/xss-textarea")
+        return new Response(`<textarea>${name}</textarea>`, { headers: { "content-type": "text/html" } })
+      if (url.pathname === "/xss-escaped")
+        return new Response(`<p>Hello ${name.replace(/[<>"'&]/g, (char) => `&#${char.charCodeAt(0)};`)}</p>`, {
+          headers: { "content-type": "text/html" },
+        })
       if (url.pathname === "/redirect") return new Response(null, { status: 302, headers: { location: next } })
       if (url.pathname === "/safe-redirect" && next.startsWith("/") && !next.startsWith("//"))
         return new Response(null, { status: 302, headers: { location: next } })
@@ -300,8 +328,234 @@ test("command injection is reproduced only by a product the shell computed, neve
   )
 })
 
-test("validation schema refuses classes that are not implemented yet", () => {
+test("validation schema refuses unknown classes and SSRF without an http callback", () => {
   const decode = Schema.decodeUnknownSync(ForkCyberWebValidation.Validate)
-  for (const value of ["xss", "ssrf"])
-    expect(() => decode({ action: "validate", class: value, url: "http://127.0.0.1:1/", parameter: "q" })).toThrow()
+  const base = { action: "validate", url: "http://127.0.0.1:1/", parameter: "q" }
+  expect(() => decode({ ...base, class: "rce" })).toThrow()
+  expect(() => decode({ ...base, class: "ssrf" })).toThrow("ssrf requires an http callback URL")
+  expect(() => decode({ ...base, class: "ssrf", callback: "https://127.0.0.1:9/" })).toThrow()
+  expect(() => decode({ ...base, class: "ssrf", callback: "not a url" })).toThrow()
+  expect(decode({ ...base, class: "xss" }).class).toBe("xss")
+  expect(decode({ ...base, class: "ssrf", callback: "http://127.0.0.1:9/" }).class).toBe("ssrf")
+})
+
+// Free loopback port for a callback listener. The port is released before the validation binds it.
+function freePort() {
+  const probe = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response("") })
+  const port = probe.port!
+  probe.stop(true)
+  return port
+}
+
+test("SSRF is reproduced only when the target requests the callback listener with the probe's token", async () => {
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const server = lab()
+        yield* Effect.addFinalizer(() => Effect.sync(() => server.stop(true)))
+        const store = yield* setup
+        const url = `http://127.0.0.1:${server.port}`
+        const callback = `http://127.0.0.1:${freePort()}/`
+        const vulnerable = yield* ForkCyberWebValidation.run(store, resolve, {
+          action: "validate",
+          class: "ssrf",
+          url: `${url}/fetch`,
+          parameter: "url",
+          callback,
+        })
+        expect(vulnerable).toMatchObject({
+          validator: "cyber_web_test.validate.ssrf",
+          oracle: { result: "reproduced" },
+          effects: "known",
+          action: { callback: { host: "127.0.0.1", callbacks: 1, sources: ["127.0.0.1"] } },
+        })
+        expect(vulnerable.completion_evidence).toHaveLength(1)
+
+        const guarded = yield* ForkCyberWebValidation.run(store, resolve, {
+          action: "validate",
+          class: "ssrf",
+          url: `${url}/fetch-guarded`,
+          parameter: "url",
+          callback: `http://127.0.0.1:${freePort()}/`,
+        })
+        expect(guarded).toMatchObject({ oracle: { result: "not_reproduced" }, action: { callback: { callbacks: 0 } } })
+      }),
+    ),
+  )
+}, 30000)
+
+test("a callback URL echoed in a response is not SSRF, because no request reached the listener", async () => {
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const server = lab()
+        yield* Effect.addFinalizer(() => Effect.sync(() => server.stop(true)))
+        const store = yield* setup
+        const result = yield* ForkCyberWebValidation.run(store, resolve, {
+          action: "validate",
+          class: "ssrf",
+          url: `http://127.0.0.1:${server.port}/fetch-echo`,
+          parameter: "url",
+          callback: `http://127.0.0.1:${freePort()}/`,
+        })
+        expect(result.oracle.result).toBe("not_reproduced")
+      }),
+    ),
+  )
+}, 30000)
+
+test("SSRF with a callback outside the scope sends no traffic to the target or the listener", async () => {
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const seen: string[] = []
+        const server = lab(seen)
+        yield* Effect.addFinalizer(() => Effect.sync(() => server.stop(true)))
+        const store = yield* setup
+        const failure = yield* ForkCyberWebValidation.run(store, resolve, {
+          action: "validate",
+          class: "ssrf",
+          url: `http://127.0.0.1:${server.port}/fetch`,
+          parameter: "url",
+          callback: `http://198.51.100.10:${freePort()}/`,
+        }).pipe(Effect.flip)
+        expect(String(failure)).toContain("outside the recorded scope")
+        expect(seen).toEqual([])
+      }),
+    ),
+  )
+})
+
+test("SSRF is refused without a claimed validation task before any request", async () => {
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const seen: string[] = []
+        const server = lab(seen)
+        yield* Effect.addFinalizer(() => Effect.sync(() => server.stop(true)))
+        const tmp = yield* tmpdirScoped()
+        const store = yield* ForkCyberStore.open(path.join(tmp.path, "evidence.sqlite"))
+        const reconnaissance = () =>
+          Effect.succeed({ owner: actor.owner, session: actor.session, agent: "cyber-recon", manifest })
+        yield* ForkCyberWebValidation.run(store, reconnaissance, {
+          action: "validate",
+          class: "ssrf",
+          url: `http://127.0.0.1:${server.port}/fetch`,
+          parameter: "url",
+          callback: `http://127.0.0.1:${freePort()}/`,
+        }).pipe(Effect.flip)
+        expect(seen).toEqual([])
+      }),
+    ),
+  )
+})
+
+test("XSS without a configured browser is refused, never judged by the response text", async () => {
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const server = lab()
+        yield* Effect.addFinalizer(() => Effect.sync(() => server.stop(true)))
+        const store = yield* setup
+        const refused = yield* ForkCyberWebValidation.run(store, resolve, {
+          action: "validate",
+          class: "xss",
+          url: `http://127.0.0.1:${server.port}/xss`,
+          parameter: "name",
+        }).pipe(Effect.flip)
+        expect(String(refused)).toContain("cyber_browser must be configured")
+      }),
+    ),
+  )
+})
+
+const browserExecutable = process.env.OPENCYBER_TEST_BROWSER
+const browserTest = browserExecutable ? test : test.skip
+
+// XSS is judged by what a browser computes. The page text is compared, never the raw response.
+browserTest(
+  "XSS is reproduced only when the browser runs the injected script, and reflected markup is not XSS",
+  async () => {
+    await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          const server = lab()
+          yield* Effect.addFinalizer(() => Effect.sync(() => server.stop(true)))
+          const store = yield* setup
+          const browser = yield* ForkCyberBrowser.make(store)
+          const browse = (action: typeof ForkCyberBrowser.Action.Type) =>
+            browser.run({ executable: browserExecutable! }, resolve, action)
+          const url = `http://127.0.0.1:${server.port}`
+          const vulnerable = yield* ForkCyberWebValidation.run(
+            store,
+            resolve,
+            { action: "validate", class: "xss", url: `${url}/xss`, parameter: "name" },
+            browse,
+          )
+          expect(vulnerable).toMatchObject({
+            validator: "cyber_web_test.validate.xss",
+            oracle: { result: "reproduced" },
+            effects: "known",
+          })
+          expect(vulnerable.completion_evidence).toHaveLength(1)
+
+          // The payload's text is in the response of a textarea and of an escaped page, but the browser never runs it.
+          for (const route of ["/xss-textarea", "/xss-escaped"]) {
+            const body = yield* Effect.promise(() =>
+              fetch(`${url}${route}?name=${encodeURIComponent(`"'><svg/onload=document.body.append(`)}`).then(
+                (response) => response.text(),
+              ),
+            )
+            expect(body).toContain("document.body.append(")
+            const inert = yield* ForkCyberWebValidation.run(
+              store,
+              resolve,
+              { action: "validate", class: "xss", url: `${url}${route}`, parameter: "name" },
+              browse,
+            )
+            expect(inert.oracle.result).toBe("not_reproduced")
+          }
+        }),
+      ),
+    )
+  },
+  60000,
+)
+
+test("SSRF and XSS need their own declared, approved action", () => {
+  const ssrf = {
+    action: "validate",
+    class: "ssrf",
+    url: "https://app.example.test/fetch",
+    parameter: "url",
+    callback: "http://127.0.0.1:9/",
+  }
+  const xss = { action: "validate", class: "xss", url: "https://app.example.test/xss", parameter: "name" }
+  expect(ForkCyberDecision.actionID("cyber_web_test", ssrf)).toBe("cyber_web_test.validate.ssrf")
+  expect(ForkCyberDecision.actionID("cyber_web_test", xss)).toBe("cyber_web_test.validate.xss")
+  const declared = ["cyber_web_test.validate.xss"]
+  expect(
+    ForkCyberDecision.decide({
+      mode: "assessment",
+      agent: "cyber-validate",
+      tool: "cyber_web_test",
+      input: ssrf,
+      declared,
+    }),
+  ).toMatchObject({
+    decision: "deny",
+    reason: "not_declared",
+  })
+  expect(
+    ForkCyberDecision.decide({
+      mode: "assessment",
+      agent: "cyber-validate",
+      tool: "cyber_web_test",
+      input: xss,
+      declared,
+    }),
+  ).toMatchObject({
+    decision: "ask",
+    reason: "approval_required",
+  })
 })
