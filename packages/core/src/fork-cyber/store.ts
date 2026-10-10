@@ -31,7 +31,7 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
   )
   yield* sql`PRAGMA foreign_keys = ON`
   const version = yield* sql<{ user_version: number }>`PRAGMA user_version`
-  if (![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].includes(version[0]?.user_version ?? -1))
+  if (![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].includes(version[0]?.user_version ?? -1))
     return yield* Effect.fail(new Error("Unsupported OpenCyber evidence database version"))
   if (version[0]?.user_version === 0)
     yield* sql
@@ -254,6 +254,30 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
           yield* sql`CREATE TRIGGER IF NOT EXISTS cyber_credential_lease_append_only BEFORE UPDATE ON cyber_credential_lease
         BEGIN SELECT RAISE(ABORT, 'credential leases are append-only'); END`
           yield* sql`PRAGMA user_version = 10`
+        }),
+      )
+      .pipe(
+        Effect.retry({
+          while: (error) => error.reason._tag === "LockTimeoutError",
+          times: 3,
+          schedule: Schedule.spaced(25),
+        }),
+      )
+
+  // SQLite cannot widen a CHECK constraint in place, so the table is rebuilt. Rows keep their sealed values.
+  if ((version[0]?.user_version ?? 0) < 11)
+    yield* sql
+      .withTransaction(
+        Effect.gen(function* () {
+          yield* sql`CREATE TABLE engagement_credential_v11 (
+        owner TEXT NOT NULL, label TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('directory_bind', 'cloud_key', 'database_login')),
+        expires_at INTEGER NOT NULL, revoked_at INTEGER, nonce TEXT NOT NULL, ciphertext TEXT NOT NULL,
+        created_at INTEGER NOT NULL, PRIMARY KEY(owner, label))`
+          yield* sql`INSERT INTO engagement_credential_v11 SELECT * FROM engagement_credential`
+          yield* sql`DROP TABLE engagement_credential`
+          yield* sql`ALTER TABLE engagement_credential_v11 RENAME TO engagement_credential`
+          yield* sql`PRAGMA user_version = 11`
         }),
       )
       .pipe(
@@ -1022,6 +1046,13 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
       VALUES (${input.owner}, ${input.label}, ${input.action}, ${input.target}, ${input.execution}, ${input.outcome},
         ${input.reason}, ${input.created_at})`
 
+  // A granted lease is an attempt. The pacing window reads these rows, so it counts attempts, not outcomes.
+  const recentLeases = (input: { owner: string; label: string; target: string; since: number }) =>
+    sql<{ seq: number }>`SELECT seq FROM cyber_credential_lease
+      WHERE owner = ${input.owner} AND label = ${input.label} AND target = ${input.target}
+        AND outcome = 'granted' AND created_at > ${input.since}
+      LIMIT 1`
+
   const recordRetest = (owner: string, finding: string, execution: string) =>
     sql`INSERT INTO finding_retest VALUES (${owner}, ${finding}, ${execution}, ${Date.now()})`
 
@@ -1072,6 +1103,7 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
     revokeCredential,
     credentials,
     recordLease,
+    recentLeases,
     retests,
     findingRecord,
     manifest,
