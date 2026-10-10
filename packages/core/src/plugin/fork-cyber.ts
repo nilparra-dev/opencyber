@@ -21,6 +21,7 @@ import { ForkCyberHttpDiscovery } from "../fork-cyber/http-discovery.js"
 import { ForkCyberWebTest } from "../fork-cyber/web-test.js"
 import { ForkCyberWebValidation } from "../fork-cyber/web-validation.js"
 import { ForkCyberCloudAnalysis } from "../fork-cyber/cloud-analysis.js"
+import { ForkCyberDatabase } from "../fork-cyber/database.js"
 import { ForkCyberIacScan } from "../fork-cyber/iac-scan.js"
 import { ForkCyberFindingRetest } from "../fork-cyber/finding-retest.js"
 import { ForkCyberContainerReview } from "../fork-cyber/container-review.js"
@@ -1066,6 +1067,52 @@ export const Plugin = define({
               ),
             }
           }).pipe(Effect.mapError((error) => ForkCyberDiagnostics.toolError(error, "cyber_tool"))),
+      })
+      editor.add({
+        name: "cyber_database",
+        options: { codemode: false },
+        input: ForkCyberDatabase.Action,
+        description:
+          'Assess database services. unauth_check sends one unauthenticated request to redis or elasticsearch through the scoped Kali probe (R1). It never attempts a login, and auth_required means the service asked for one and none was sent. config_review reads an exported redis.conf or elasticsearch.yml artifact offline (R0) and reports exposure settings with the line that holds each one. auth_test (R2) makes one login attempt with a declared credential label, only when the engagement declares cyber_database.auth_test and the operator approves this host. It returns the state, never the value. Secret values are never echoed. Requires an explicit engagement; unauth_check and auth_test also need an active worker claim and a scoped Kali network. Example: {"action":"config_review","engine":"redis","artifact":"output-artifact-id"}.',
+        execute: (input, context) =>
+          Effect.gen(function* () {
+            if (input.action === "config_review")
+              return yield* ForkCyberDatabase.runConfigReview(
+                store,
+                {
+                  owner: yield* topLevel(context.sessionID),
+                  session: context.sessionID,
+                  agent: context.agent,
+                },
+                input,
+              )
+            const runtime = yield* kali(context, "cyber_database")
+            if (input.action === "auth_test")
+              return {
+                content: JSON.stringify(
+                  yield* ForkCyberDatabase.runAuthTest({
+                    store,
+                    profile: global.data,
+                    keyFile: path.join(global.state, "opencyber", "credential.key"),
+                    config: runtime.configuration,
+                    assessment: { ...runtime.assessment, mode: cyberMode },
+                    request: input,
+                    now: Date.now(),
+                  }),
+                ),
+              }
+            return {
+              content: JSON.stringify(
+                yield* ForkCyberDatabase.runUnauthCheck(
+                  store,
+                  global.data,
+                  runtime.configuration,
+                  runtime.assessment,
+                  input,
+                ),
+              ),
+            }
+          }).pipe(Effect.mapError((error) => ForkCyberDiagnostics.toolError(error, "cyber_database"))),
       })
       editor.add({
         name: "cyber_local_validation",
