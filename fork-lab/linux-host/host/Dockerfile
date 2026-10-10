@@ -9,5 +9,5 @@ RUN apt-get update && apt-get install -y --no-install-recommends openssh-server 
     rm -rf /var/lib/apt/lists/*
 COPY variants/ /opt/lab/variants/
 RUN sh /opt/lab/variants/common.sh && sh "/opt/lab/variants/${VARIANT}.sh" && rm -rf /opt/lab/variants
-COPY entrypoint.sh /usr/local/bin/lab-entrypoint
+COPY --chmod=0755 entrypoint.sh /usr/local/bin/lab-entrypoint
 ENTRYPOINT ["/usr/local/bin/lab-entrypoint"]
