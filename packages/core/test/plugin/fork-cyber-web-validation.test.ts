@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import { Effect } from "effect"
+import { Effect, Schema } from "effect"
 import path from "node:path"
 import { ForkCyberStore } from "@opencode/core/fork-cyber/store"
 import { ForkCyberWebValidation } from "@opencode/core/fork-cyber/web-validation"
@@ -32,6 +32,24 @@ function lab() {
           ? new Response("lab-host-marker\n")
           : new Response("missing", { status: 404 })
       if (url.pathname === "/echo") return new Response(`static lab-host-marker page, value ${name}${next}`)
+      // The vulnerable query splices the id into SQL: a quote closes the literal and the condition is evaluated.
+      if (url.pathname === "/sql") {
+        const id = url.searchParams.get("id") ?? ""
+        const matches = id.split("'")[0] === "42" && !id.includes("'1'='2")
+        return new Response(matches ? "record 42: widget" : "no record")
+      }
+      if (url.pathname === "/sql-safe")
+        return new Response(url.searchParams.get("id") === "42" ? "record 42: widget" : "no record")
+      if (url.pathname === "/sql-unstable") {
+        const id = url.searchParams.get("id") ?? ""
+        return new Response(id.includes("'1'='2") ? "no record" : `record 42: ${crypto.randomUUID()}`)
+      }
+      // The shell expands $(expr a \* b) in place, as an unquoted command substitution would.
+      if (url.pathname === "/cmd")
+        return new Response(
+          `hello ${name.replace(/\$\(expr (\d+) \\\* (\d+)\)/g, (_, left: string, right: string) => String(Number(left) * Number(right)))}`,
+        )
+      if (url.pathname === "/cmd-echo") return new Response(`hello ${name}`)
       return new Response("not found", { status: 404 })
     },
   })
@@ -182,4 +200,108 @@ test("validation needs a claimed cyber-validate task and refuses other roles bef
       }),
     ),
   )
+})
+
+test("SQL injection is reproduced only when the true condition matches the control and the false condition changes it", async () => {
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const server = lab()
+        yield* Effect.addFinalizer(() => Effect.sync(() => server.stop(true)))
+        const store = yield* setup
+        const url = `http://127.0.0.1:${server.port}`
+        const vulnerable = yield* ForkCyberWebValidation.run(store, resolve, {
+          action: "validate",
+          class: "sql_injection",
+          url: `${url}/sql`,
+          parameter: "id",
+          control: "42",
+        })
+        expect(vulnerable).toMatchObject({
+          validator: "cyber_web_test.validate.sql_injection",
+          oracle: { result: "reproduced" },
+          effects: "known",
+        })
+        expect(vulnerable.action).toMatchObject({ truthy: { status: 200 }, falsy: { status: 200 } })
+        expect(vulnerable.completion_evidence).toHaveLength(1)
+
+        const safe = yield* ForkCyberWebValidation.run(store, resolve, {
+          action: "validate",
+          class: "sql_injection",
+          url: `${url}/sql-safe`,
+          parameter: "id",
+          control: "42",
+        })
+        expect(safe.oracle.result).toBe("not_reproduced")
+      }),
+    ),
+  )
+})
+
+test("SQL injection is inconclusive when the page is not stable or the control is not a valid baseline", async () => {
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const server = lab()
+        yield* Effect.addFinalizer(() => Effect.sync(() => server.stop(true)))
+        const store = yield* setup
+        const url = `http://127.0.0.1:${server.port}`
+        const unstable = yield* ForkCyberWebValidation.run(store, resolve, {
+          action: "validate",
+          class: "sql_injection",
+          url: `${url}/sql-unstable`,
+          parameter: "id",
+          control: "42",
+        })
+        expect(unstable.oracle.result).toBe("inconclusive")
+
+        const invalidControl = yield* ForkCyberWebValidation.run(store, resolve, {
+          action: "validate",
+          class: "sql_injection",
+          url: `${url}/sql`,
+          parameter: "id",
+          control: "7",
+        })
+        expect(invalidControl.oracle.result).toBe("inconclusive")
+      }),
+    ),
+  )
+})
+
+test("command injection is reproduced only by a product the shell computed, never by an echoed request", async () => {
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const server = lab()
+        yield* Effect.addFinalizer(() => Effect.sync(() => server.stop(true)))
+        const store = yield* setup
+        const url = `http://127.0.0.1:${server.port}`
+        const vulnerable = yield* ForkCyberWebValidation.run(store, resolve, {
+          action: "validate",
+          class: "command_injection",
+          url: `${url}/cmd`,
+          parameter: "name",
+        })
+        expect(vulnerable).toMatchObject({
+          validator: "cyber_web_test.validate.command_injection",
+          oracle: { result: "reproduced" },
+          effects: "known",
+        })
+
+        const echoed = yield* ForkCyberWebValidation.run(store, resolve, {
+          action: "validate",
+          class: "command_injection",
+          url: `${url}/cmd-echo`,
+          parameter: "name",
+        })
+        expect(echoed.oracle.result).toBe("not_reproduced")
+      }),
+    ),
+  )
+})
+
+test("validation schema refuses classes that are not implemented yet", () => {
+  const decode = Schema.decodeUnknownSync(ForkCyberWebValidation.Validate)
+  for (const value of ["xss", "ssrf"])
+    expect(() => decode({ action: "validate", class: value, url: "http://127.0.0.1:1/", parameter: "q" })).toThrow()
 })

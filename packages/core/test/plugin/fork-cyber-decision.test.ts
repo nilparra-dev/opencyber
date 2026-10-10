@@ -160,6 +160,18 @@ describe("decisions", () => {
     })
   })
 
+  test("SQL injection and command injection need their own declarations and never ride on another class", () => {
+    const sql = { action: "validate", class: "sql_injection", url: "https://app.example.test/item", parameter: "id" }
+    const command = { action: "validate", class: "command_injection", url: "https://app.example.test/run", parameter: "q" }
+    expect(ForkCyberDecision.actionID("cyber_web_test", sql)).toBe("cyber_web_test.validate.sql_injection")
+    expect(ForkCyberDecision.actionID("cyber_web_test", command)).toBe("cyber_web_test.validate.command_injection")
+    const declared = ["cyber_web_test.validate.open_redirect", "cyber_web_test.validate.sql_injection"]
+    const decide = (input: unknown) =>
+      ForkCyberDecision.decide({ mode: "assessment", agent: "cyber-exploit-web", tool: "cyber_web_test", input, declared })
+    expect(decide(sql).decision).toBe("ask")
+    expect(decide(command)).toMatchObject({ decision: "deny", reason: "not_declared" })
+  })
+
   test("web validation is refused for reconnaissance and for development mode", () => {
     const input = {
       action: "validate",
