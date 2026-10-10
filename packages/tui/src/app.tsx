@@ -980,7 +980,7 @@ function App() {
         ? [
             {
               name: "opencode.update",
-              title: "Update OpenCode",
+              title: "Update OpenCyber", // fork: brand name in update messages (F-030)
               slash: { name: "update" },
               run: () => updater.open?.("manual"),
               category: "System",
