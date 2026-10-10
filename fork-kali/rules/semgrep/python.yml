@@ -1,0 +1,60 @@
+rules:
+  - id: opencyber.python.subprocess-shell-true
+    languages: [python]
+    severity: WARNING
+    message: subprocess runs with shell=True, so argument text is interpreted by a shell.
+    metadata:
+      cwe: "CWE-78: OS Command Injection"
+    pattern: subprocess.$F(..., shell=True, ...)
+
+  - id: opencyber.python.os-system
+    languages: [python]
+    severity: WARNING
+    message: os.system passes its argument to a shell.
+    metadata:
+      cwe: "CWE-78: OS Command Injection"
+    pattern: os.system(...)
+
+  - id: opencyber.python.eval-non-literal
+    languages: [python]
+    severity: WARNING
+    message: eval or exec runs a non-literal expression.
+    metadata:
+      cwe: "CWE-95: Eval Injection"
+    patterns:
+      - pattern-either:
+          - pattern: eval($X)
+          - pattern: exec($X)
+      - pattern-not: eval("...")
+      - pattern-not: exec("...")
+
+  - id: opencyber.python.yaml-load-unsafe
+    languages: [python]
+    severity: WARNING
+    message: yaml.load without a safe loader can construct arbitrary Python objects.
+    metadata:
+      cwe: "CWE-502: Deserialization of Untrusted Data"
+    patterns:
+      - pattern: yaml.load($X, ...)
+      - pattern-not: yaml.load($X, Loader=yaml.SafeLoader)
+      - pattern-not: yaml.load($X, Loader=yaml.CSafeLoader)
+
+  - id: opencyber.python.sql-string-building
+    languages: [python]
+    severity: WARNING
+    message: A SQL statement is built from a formatted or concatenated string instead of parameters.
+    metadata:
+      cwe: "CWE-89: SQL Injection"
+    pattern-either:
+      - pattern: $C.execute(f"...")
+      - pattern: $C.execute("..." + $X)
+      - pattern: $C.execute("..." % $X)
+      - pattern: $C.execute("...".format(...))
+
+  - id: opencyber.python.tls-verify-disabled
+    languages: [python]
+    severity: WARNING
+    message: A requests call disables certificate verification.
+    metadata:
+      cwe: "CWE-295: Improper Certificate Validation"
+    pattern: requests.$M(..., verify=False, ...)
