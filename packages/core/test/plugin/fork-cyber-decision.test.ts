@@ -43,7 +43,7 @@ describe("declarations", () => {
     expect(classes).not.toContain("R3")
   })
 
-  test("R2 actions are exactly the database credential test, local validation, the surface binary and web validation", () => {
+  test("R2 actions are exactly the database and directory credential tests, local validation, the surface binary and web validation", () => {
     const r2 = [...granted].flatMap((tool) => {
       const governed = ForkCyberDecision.declaration(tool)
       if (governed === undefined) return []
@@ -54,6 +54,8 @@ describe("declarations", () => {
     })
     expect(r2.sort()).toEqual([
       "cyber_database:auth_test",
+      "cyber_directory:auth_test",
+      "cyber_directory:crack",
       "cyber_local_validation",
       "cyber_surface:binary.execute",
       "cyber_web_test:validate",

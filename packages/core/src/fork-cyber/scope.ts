@@ -148,6 +148,8 @@ export const ValidationAction = Schema.Literals([
   "cyber_web_test.validate.xss",
   "cyber_web_test.validate.ssrf",
   "cyber_database.auth_test",
+  "cyber_directory.auth_test",
+  "cyber_directory.crack",
 ])
 export type ValidationAction = typeof ValidationAction.Type
 
@@ -171,11 +173,14 @@ export const Credential = Schema.Struct({
   read_only: Schema.Literal(true),
   targets: Schema.Array(CredentialTarget).check(Schema.isMinLength(1), Schema.isMaxLength(16)),
   actions: Schema.Array(CredentialAction).check(Schema.isMinLength(1), Schema.isMaxLength(16)),
-  account: Schema.optional(Account),
+  // The account a host_login or directory_bind label authenticates as. It is part of the approved revision, so the
+  // model cannot choose an account the engagement did not declare. Host accounts are simple names; directory accounts may be distinguished names.
+  account: Schema.optional(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(512))),
 }).check(
   Schema.makeFilter((value) => {
-    if ((value.kind === "host_login") !== (value.account !== undefined))
-      return "account is required for host_login and not allowed for other kinds"
+    if ((value.kind === "host_login" || value.kind === "directory_bind") !== (value.account !== undefined))
+      return "account is required for host_login and directory_bind and not allowed for other kinds"
+    if (value.kind === "host_login" && !Schema.is(Account)(value.account)) return "host_login accounts must be simple names"
     if (value.kind === "host_login" && value.targets.some((target) => target.type !== "host"))
       return "host_login targets must be hosts"
     if (value.kind !== "host_login" && value.actions.some((action) => action.startsWith("cyber_host.")))

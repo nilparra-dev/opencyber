@@ -47,6 +47,7 @@ import { ForkCyberOt } from "../fork-cyber/ot.js"
 import { Permission } from "../permission.js"
 import { ForkCyberPolicy } from "../fork-cyber/policy.js"
 import { ForkCyberDecision } from "../fork-cyber/decision.js"
+import { ForkCyberDirectoryAuth } from "../fork-cyber/directory-auth.js"
 import { ForkCyberCredentialLease } from "../fork-cyber/credential-lease.js"
 import { ForkCyberFindings } from "../fork-cyber/findings.js"
 import { ForkCyberEnvironment } from "../fork-cyber/environment.js"
@@ -1122,9 +1123,8 @@ export const Plugin = define({
       editor.add({
         name: "cyber_directory",
         options: { codemode: false },
-        input: ForkCyberDirectory.Action,
-        description:
-          'Assess a directory service: ldap_enum reads the rootDSE, then what an anonymous session and an optional brokered credential can see; password_policy reads pwdPolicy objects and lists review candidates; collect returns a bounded, allowlisted read of one subtree. kerberos_config and adcs_templates review an exported JSON artifact offline (R0). Live actions need a scoped engagement with network budgets and, for workers, an active claim. A credential is a registered label only; its value is never returned. Only bind, search, unbind and StartTLS are sent. Example: {"action":"ldap_enum","host":"dc.lab.example.test","port":389}.',
+        input: Schema.Union([ForkCyberDirectory.Action, ForkCyberDirectoryAuth.Action]),
+        description: `Assess a directory service: ldap_enum reads the rootDSE, then what an anonymous session and an optional brokered credential can see; password_policy reads pwdPolicy objects and lists review candidates; collect returns a bounded, allowlisted read of one subtree. kerberos_config and adcs_templates review an exported JSON artifact offline (R0). Live actions need a scoped engagement with network budgets and, for workers, an active claim. A credential is a registered label only; its value is never returned. Only bind, search, unbind and StartTLS are sent. Example: {"action":"ldap_enum","host":"dc.lab.example.test","port":389}. auth_test (R2, assessment only) makes one LDAP simple bind as the account declared for a credential label, against a host in scope; the password is leased from the operator's registry and is never returned. Three attempts per label and host are allowed in thirty minutes. crack (R2) tests supplied hashes offline against a supplied wordlist and returns per-hash cracked status only; plaintext is withheld. Each R2 action must be declared in rules_of_engagement.validation and approved by the operator for its target. Example: {"action":"auth_test","label":"lab-alice","host":"ldap.lab.test"}.`,
         execute: (input, context) =>
           Effect.gen(function* () {
             if (input.action === "procedures") return { content: JSON.stringify(ForkCyberDirectory.procedures) }
@@ -1139,6 +1139,32 @@ export const Plugin = define({
                 ),
               }
             const runtime = yield* kali(context, "cyber_directory")
+            if (input.action === "auth_test")
+              return {
+                content: JSON.stringify(
+                  yield* ForkCyberDirectoryAuth.authTest({
+                    store,
+                    profile: global.data,
+                    keyFile: path.join(global.state, "opencyber", "credential.key"),
+                    config: runtime.configuration,
+                    assessment: { ...runtime.assessment, mode: cyberMode },
+                    request: input,
+                    now: Date.now(),
+                  }),
+                ),
+              }
+            if (input.action === "crack")
+              return {
+                content: JSON.stringify(
+                  yield* ForkCyberDirectoryAuth.crack({
+                    store,
+                    profile: global.data,
+                    config: runtime.configuration,
+                    assessment: { ...runtime.assessment, mode: cyberMode },
+                    request: input,
+                  }),
+                ),
+              }
             return {
               content: JSON.stringify(
                 yield* ForkCyberDirectory.live({
@@ -1153,7 +1179,7 @@ export const Plugin = define({
                 }),
               ),
             }
-          }).pipe(Effect.mapError((error) => ForkCyberDiagnostics.toolError(error, "cyber_tool"))),
+          }).pipe(Effect.mapError((error) => ForkCyberDiagnostics.toolError(error, "cyber_directory"))),
       })
       editor.add({
         name: "cyber_services",

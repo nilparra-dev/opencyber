@@ -1077,6 +1077,12 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
         AND outcome = 'granted' AND created_at > ${input.since}
       LIMIT 1`
 
+  // Every granted lease counts, whatever its outcome: a rejected attempt still adds a failure at the target.
+  const leaseAttempts = (input: { owner: string; label: string; target: string; since: number }) =>
+    sql<{ attempts: number }>`SELECT COUNT(*) AS attempts FROM cyber_credential_lease
+      WHERE owner = ${input.owner} AND label = ${input.label} AND target = ${input.target}
+        AND outcome = 'granted' AND created_at > ${input.since}`
+
   const recordRetest = (owner: string, finding: string, execution: string) =>
     sql`INSERT INTO finding_retest VALUES (${owner}, ${finding}, ${execution}, ${Date.now()})`
 
@@ -1128,6 +1134,7 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
     credentials,
     recordLease,
     recentLeases,
+    leaseAttempts,
     retests,
     findingRecord,
     manifest,
