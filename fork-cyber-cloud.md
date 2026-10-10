@@ -19,7 +19,7 @@ Findings are candidates for review, not proof of over-privilege. Documents large
 
 ## iac_scan
 
-Runs Checkov 3.3.26 over up to 16 infrastructure files from a code review snapshot. Each source names a source artifact that the snapshot produced. The job never reads a host path, so a file is scanned only if it was captured first.
+Runs Checkov 3.3.26 over up to 16 infrastructure files from a code review snapshot. Each source names a file label and an artifact that a completed `cyber_code_review` snapshot recorded together. An HTTP response, an operator import or a label the snapshot did not record is refused before a job starts. The job never reads a host path, so a file is scanned only if it was captured first.
 
 - Accepted extensions: `.tf`, `.yaml`, `.yml`, `.json`. Other extensions and parent segments (`..`) are refused before a job starts.
 - The staged files total at most 2 MiB. The job runs in `opencyber-kali:6` with `network: none`. The execution's provenance records that policy, so a reviewer can confirm it.
@@ -39,4 +39,4 @@ Example:
 
 ### Laboratory
 
-`packages/core/test/plugin/fork-cyber-iac.test.ts` stages a public-read S3 bucket and a private one. Only the public bucket raises CKV_AWS_20, and the report names each file by its snapshot label. The Docker test runs only when `OPENCYBER_TEST_KALI_IMAGE` points at image 6. The validation tests run without Docker.
+`packages/core/test/plugin/fork-cyber-iac.test.ts` captures a public-read S3 bucket and a private one with `cyber_code_review` snapshot. Only the public bucket raises CKV_AWS_20, and the report names each file by its snapshot label. The Docker test runs only when `OPENCYBER_TEST_KALI_IMAGE` is set to the image ID of version 6 (`docker image inspect --format '{{.Id}}' opencyber-kali:6`), because the Kali config requires a `sha256:` digest. The validation tests run without Docker. The refusal tests (non-snapshot artifact, mismatched label) and the configuration test also run without Docker.
