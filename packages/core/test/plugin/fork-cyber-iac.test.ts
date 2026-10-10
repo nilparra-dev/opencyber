@@ -48,6 +48,7 @@ const snapshot = Effect.fn(function* (
     { owner: "owner", session: "session", agent: "build", directory, permission: () => Effect.void },
     { action: "snapshot", files: [...files] },
   )
+  if (!("files" in result)) return yield* Effect.fail(new Error("The snapshot returned no files"))
   return result.files
 })
 
