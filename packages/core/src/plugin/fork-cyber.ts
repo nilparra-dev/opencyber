@@ -36,6 +36,7 @@ import { ForkCyberCodeReview } from "../fork-cyber/code-review.js"
 import { ForkCyberSast } from "../fork-cyber/sast.js"
 import { ForkCyberImagePull } from "../fork-cyber/image-pull.js"
 import { ForkCyberServices } from "../fork-cyber/services.js"
+import { ForkCyberHost } from "../fork-cyber/host.js"
 import { ForkCyberModules } from "../fork-cyber/modules.js"
 import { ForkCyberSurface } from "../fork-cyber/surface.js"
 import { ForkCyberServiceValidation } from "../fork-cyber/service-validation.js"
@@ -1139,6 +1140,47 @@ export const Plugin = define({
               ),
             }
           }).pipe(Effect.mapError((error) => ForkCyberDiagnostics.toolError(error, "cyber_tool"))),
+      })
+      // fork: cyber_host (OC-302) audits one declared host with a brokered read-only login.
+      editor.add({
+        name: "cyber_host",
+        options: { codemode: false },
+        input: ForkCyberHost.Action,
+        description:
+          "Read Linux host audit procedures, or audit one in-scope host or report privilege-escalation conditions over SSH with a declared host_login credential. audit checks SSH daemon settings, login aging and account file modes. privesc_config reports SUID binaries outside the baseline, sudo NOPASSWD rules, file capabilities and group/world-writable cron files. Each remote command is a fixed read-only string; no exploitation or writes. Requires an approved engagement with the host and port in scope, and a credential declared for that action. Findings are observations and candidates. Example: {\"action\":\"audit\",\"host\":\"127.0.0.1\",\"port\":2201,\"label\":\"lab-audit\"}.",
+        execute: (input, context) =>
+          Effect.gen(function* () {
+            if (input.action === "procedures") return { content: JSON.stringify(ForkCyberHost.procedures) }
+            const manifest = yield* engagement(context.sessionID)
+            if (manifest.status !== "ready" || manifest.value.derived)
+              return yield* Effect.fail(new Error("Host audits require a valid, explicit engagement"))
+            const owner = yield* topLevel(context.sessionID)
+            yield* permission.assert({
+              action: "cyber_host",
+              resources: [owner],
+              save: [owner],
+              sessionID: context.sessionID,
+              agent: context.agent,
+              source: { type: "tool", messageID: context.messageID, id: context.id },
+            })
+            return {
+              content: JSON.stringify(
+                yield* ForkCyberHost.run(
+                  store,
+                  {
+                    owner,
+                    session: context.sessionID,
+                    agent: context.agent,
+                    mode: cyberMode,
+                    manifest: manifest.value,
+                    keyFile: path.join(global.state, "opencyber", "credential.key"),
+                    execution: executionID(context),
+                  },
+                  input,
+                ),
+              ),
+            }
+          }).pipe(Effect.mapError((error) => ForkCyberDiagnostics.toolError(error, "cyber_host"))),
       })
       editor.add({
         name: "cyber_database",
