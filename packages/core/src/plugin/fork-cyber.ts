@@ -39,6 +39,7 @@ import { ForkCyberOt } from "../fork-cyber/ot.js"
 import { Permission } from "../permission.js"
 import { ForkCyberPolicy } from "../fork-cyber/policy.js"
 import { ForkCyberDecision } from "../fork-cyber/decision.js"
+import { ForkCyberCredentialLease } from "../fork-cyber/credential-lease.js"
 import { ForkCyberFindings } from "../fork-cyber/findings.js"
 import { ForkCyberEnvironment } from "../fork-cyber/environment.js"
 import { ForkCyberDiagnostics } from "../fork-cyber/diagnostics.js"
@@ -652,6 +653,28 @@ export const Plugin = define({
       }),
     )
 
+    yield* ctx.tool.transform((editor) =>
+      editor.add({
+        name: "cyber_credentials",
+        options: { codemode: false },
+        input: ForkCyberCredentialLease.Action,
+        description: `List the credentials this engagement declares: label, kind, read-only status, targets, actions, expiry and registration status. Values are never returned. A label is usable only for the action and target its declaration names, and each use is recorded. Example call: {"action":"list"}`,
+        execute: (_input, context) =>
+          Effect.gen(function* () {
+            const owner = yield* topLevel(context.sessionID)
+            const credentials = yield* ForkCyberCredentialLease.catalog({ store, owner, now: Date.now() })
+            return {
+              // The key is not `credentials`: the redaction layer replaces that key's value wholesale.
+              content: JSON.stringify({
+                declared: credentials,
+                restrictions:
+                  "The operator registers values with script/fork-cyber-credential.ts. A lease is granted only for the declared action and target, when the declaration is approved and the value is registered and current.",
+              }),
+            }
+          }).pipe(Effect.mapError((error) => ForkCyberDiagnostics.toolError(error, "cyber_credentials"))),
+      }),
+    )
+
     const administrative = new Set([
       "engagement",
       "notes",
@@ -672,6 +695,7 @@ export const Plugin = define({
       "cyber_artifacts",
       "cyber_discover",
       "cyber_report",
+      "cyber_credentials",
       "cyber_web_plan",
       "cyber_local_validation",
     ])

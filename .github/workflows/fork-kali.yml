@@ -25,7 +25,7 @@ jobs:
         working-directory: packages/core
         run: |
           export OPENCYBER_TEST_KALI_IMAGE="$(docker image inspect opencyber-kali:4 --format '{{.Id}}')"
-          bun test test/plugin/fork-cyber-kali.test.ts test/plugin/fork-cyber-network.test.ts test/plugin/fork-cyber-services.test.ts test/plugin/fork-cyber-credential-kali.test.ts
+          bun test test/plugin/fork-cyber-kali.test.ts test/plugin/fork-cyber-network.test.ts test/plugin/fork-cyber-services.test.ts test/plugin/fork-cyber-credential-kali.test.ts test/plugin/fork-cyber-database-auth.test.ts
           bun build --compile --format=esm --minify --bytecode test/fixture/fork-cyber-services-smoke.ts --outfile /tmp/opencyber-services-smoke
           cd /tmp
           ./opencyber-services-smoke
