@@ -66,6 +66,22 @@ bun test test/plugin/fork-cyber-sast.test.ts
 
 Without the variable the real-job case is skipped, and the schema, recipe-pin and decision cases still run.
 
+## Dependency advisories (sca)
+
+The `sca` action matches explicit `package-lock.json` files (npm lockfile version 2 or 3) and `requirements*.txt` files against the pinned advisory snapshot described in [fork-cyber-advisory.md](fork-cyber-advisory.md). Only exact pins are evaluated: `name==version` in requirements, and resolved versions in the npm lockfile. Requirement lines without `==` and option lines such as `-r` or `--index-url` count as `unpinned` and are not evaluated. Other manifests and lockfile formats are refused as `invalid_input`; `package.json` ranges, `bun.lock`, `Cargo.lock` and `go.sum` are not supported yet.
+
+```json
+{ "action": "sca", "files": ["package-lock.json", "requirements.txt"] }
+```
+
+Each file passes the same permission, path, size and UTF-8 checks as `snapshot`. The tool reads only the named files, runs no package manager and contacts no registry. Tests assert zero requests to a reachable registry named inside the lockfile.
+
+The output carries the snapshot identity in `advisory`, a per-file summary in `dependency_files` (packages, unpinned lines, evaluated and unevaluated counts), and `dependency_findings` with `dependency_finding_count`. At most 50 findings appear inline. When more exist, `dependency_next_offset` is 50, and the complete findings and unevaluated entries are in `results_artifact`. Each finding is a candidate for review; it does not establish that the vulnerable code path is reachable.
+
+The `sca` laboratory is `packages/core/test/fixture/fork-cyber-advisory`. Its vulnerable pins (`ocfx-parser` 1.4.2 and `ocfx-py` 0.9.0) report `OCFX-TEST-0001` and `OCFX-TEST-0002`, and its fixed pins (1.4.3 and 0.9.1) report nothing. The fixture snapshot is synthetic. The lab runs offline and needs no Docker.
+
+Lockfiles are read within the 512 KiB per-file limit. Transitive packages that the supplied lockfile does not contain are not visible to this action.
+
 ## Reproducible laboratory
 
 `packages/core/test/fixture/fork-cyber-code-review` contains a vulnerable SQLite query, its bound-parameter control, a local Semgrep rule and a report generated with Semgrep OSS 1.178.0. The rule detects query concatenation in this lab; it is not a general SQL-injection detector or a production rule pack. The tests execute only these controlled fixtures. They verify ordinary lookups in both implementations, demonstrate that the injection changes the vulnerable result set, and show that the control treats the same input as data.

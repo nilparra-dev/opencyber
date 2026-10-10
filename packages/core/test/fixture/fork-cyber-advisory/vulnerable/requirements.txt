@@ -1,0 +1,3 @@
+# Synthetic laboratory pins
+ocfx-py==0.9.0  # the vulnerable release
+requests>=2.0
