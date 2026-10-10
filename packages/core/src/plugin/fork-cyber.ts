@@ -29,6 +29,8 @@ import { ForkCyberBrowser } from "../fork-cyber/browser.js"
 import { ForkCyberCoordination } from "../fork-cyber/coordination.js"
 import { ForkCyberRoles } from "../fork-cyber/roles.js"
 import { ForkCyberCodeReview } from "../fork-cyber/code-review.js"
+import { ForkCyberSast } from "../fork-cyber/sast.js"
+import { ForkCyberImagePull } from "../fork-cyber/image-pull.js"
 import { ForkCyberServices } from "../fork-cyber/services.js"
 import { ForkCyberModules } from "../fork-cyber/modules.js"
 import { ForkCyberSurface } from "../fork-cyber/surface.js"
@@ -516,15 +518,33 @@ export const Plugin = define({
       editor.add({
         name: "cyber_container",
         options: { codemode: false },
-        input: ForkCyberContainerReview.Action,
+        input: Schema.Union([ForkCyberContainerReview.Action, ForkCyberImagePull.Action]),
         description:
-          'Review container configuration offline. dockerfile_lint reads a captured Dockerfile and reports unpinned or latest base images, root users, remote ADD, pipe-to-shell builds, credential-like build variables, SSH exposure and missing HEALTHCHECK. runtime_review reads an exported docker inspect JSON and reports privileged mode, host network or PID namespaces, the Docker socket, added capabilities, disabled security profiles, writable root filesystems, root users and credential-like environment names. Values are never reported. Findings are candidates; an empty result does not prove the image is hardened. No image is pulled or run. Example: {"action":"dockerfile_lint","artifact":"output-artifact-id"}.',
+          'Review container configuration offline. dockerfile_lint reads a captured Dockerfile and reports unpinned or latest base images, root users, remote ADD, pipe-to-shell builds, credential-like build variables, SSH exposure and missing HEALTHCHECK. runtime_review reads an exported docker inspect JSON and reports privileged mode, host network or PID namespaces, the Docker socket, added capabilities, disabled security profiles, writable root filesystems, root users and credential-like environment names. Values are never reported. Findings are candidates; an empty result does not prove the image is hardened. Neither action pulls or runs an image. pull (R1, assessment mode) fetches one image pinned by digest from a registry host and port recorded in the engagement; tag-only references are refused, and the digest and image ID are recorded. Examples: {"action":"dockerfile_lint","artifact":"output-artifact-id"} or {"action":"pull","image":"registry.example.test:5000/team/app@sha256:<64 hex>"}.',
         execute: (input, context) =>
           Effect.gen(function* () {
             const actor = {
               owner: yield* topLevel(context.sessionID),
               session: context.sessionID,
               agent: context.agent,
+            }
+            if (input.action === "pull") {
+              const manifest = yield* engagement(context.sessionID)
+              if (manifest.status !== "ready")
+                return yield* Effect.fail(new Error("Image pulls require a valid, explicitly recorded engagement"))
+              yield* permission.assert({
+                action: "cyber_container",
+                resources: [input.image],
+                save: [input.image],
+                sessionID: context.sessionID,
+                agent: context.agent,
+                source: { type: "tool", messageID: context.messageID, id: context.id },
+              })
+              return {
+                content: JSON.stringify(
+                  yield* ForkCyberImagePull.run(store, { ...actor, manifest: manifest.value }, input),
+                ),
+              }
             }
             return yield* ForkCyberContainerReview.runReview(store, actor, input)
           }).pipe(Effect.mapError((error) => ForkCyberDiagnostics.toolError(error, "cyber_container"))),
@@ -1085,35 +1105,43 @@ export const Plugin = define({
       editor.add({
         name: "cyber_code_review",
         options: { codemode: false },
-        input: ForkCyberCodeReview.Action,
+        input: Schema.Union([ForkCyberCodeReview.Action, ForkCyberSast.Action]),
         description:
-          "Read local review procedures, snapshot explicit project-relative UTF-8 files with hashes and line counts, scan explicit files offline for credential patterns (secrets; findings are redacted and carry a fingerprint, never the value), or import a local SARIF 2.1.0 report with source evidence. Does not execute a scanner or project code. Imported observations are candidates, not confirmed findings. Workers require an active phase task; each file must pass both review and read permissions.",
+          'Read local review procedures, snapshot explicit project-relative UTF-8 files with hashes and line counts, scan explicit files offline for credential patterns (secrets; findings are redacted and carry a fingerprint, never the value), import a local SARIF 2.1.0 report with source evidence, or run sast: the pinned Semgrep 1.178.0 from the Kali image over up to 16 explicit snapshot files with network none and the curated rules shipped in that image, storing the SARIF as an artifact. sast needs the Kali profile and an explicit engagement. Imported and sast observations are candidates, not confirmed findings. Workers require an active phase task; each file must pass both review and read permissions. Example: {"action":"sast","files":["src/accounts.py"]}.',
         execute: (input, context) =>
           Effect.gen(function* () {
-            const result = yield* ForkCyberCodeReview.run(
-              store,
-              {
-                owner: yield* topLevel(context.sessionID),
-                session: context.sessionID,
-                agent: context.agent,
-                directory: ctx.location.directory,
-                permission: (file) =>
-                  Effect.forEach(["cyber_code_review", "read"], (action) =>
-                    permission.assert({
-                      action,
-                      resources: [file],
-                      save: [file],
-                      sessionID: context.sessionID,
-                      agent: context.agent,
-                      source: { type: "tool", messageID: context.messageID, id: context.id },
-                    }),
-                  ).pipe(
-                    Effect.asVoid,
-                    Effect.mapError((error) => new Error(String(error))),
-                  ),
-              },
-              input,
-            )
+            const review = {
+              owner: yield* topLevel(context.sessionID),
+              session: context.sessionID,
+              agent: context.agent,
+              directory: ctx.location.directory,
+              permission: (file: string) =>
+                Effect.forEach(["cyber_code_review", "read"], (action) =>
+                  permission.assert({
+                    action,
+                    resources: [file],
+                    save: [file],
+                    sessionID: context.sessionID,
+                    agent: context.agent,
+                    source: { type: "tool", messageID: context.messageID, id: context.id },
+                  }),
+                ).pipe(
+                  Effect.asVoid,
+                  Effect.mapError((error) => new Error(String(error))),
+                ),
+            }
+            if (input.action === "sast") {
+              const runtime = yield* kali(context, "cyber_code_review")
+              const result = yield* ForkCyberSast.run(
+                store,
+                global.data,
+                runtime.configuration,
+                { ...review, manifest: runtime.assessment.manifest },
+                input,
+              )
+              return { content: ForkCyberRedaction.text(JSON.stringify(result)) }
+            }
+            const result = yield* ForkCyberCodeReview.run(store, review, input)
             return { content: JSON.stringify(result) }
           }).pipe(Effect.mapError((error) => ForkCyberDiagnostics.toolError(error, "cyber_tool"))),
       })

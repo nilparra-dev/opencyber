@@ -14,7 +14,7 @@ const location = Schema.Struct({
   index: Schema.optional(Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))),
   uriBaseId: Schema.optional(Schema.String),
 })
-const Report = Schema.Struct({
+export const Report = Schema.Struct({
   version: Schema.Literal("2.1.0"),
   runs: Schema.Array(
     Schema.Struct({
@@ -79,7 +79,7 @@ export const Action = Schema.Union([
 ])
 export type Action = typeof Action.Type
 type Store = Effect.Success<ReturnType<typeof ForkCyberStore.open>>
-type Assessment = {
+export type Assessment = {
   owner: string
   session: string
   agent: string
@@ -261,7 +261,7 @@ export const run = Effect.fn("ForkCyberCodeReview.run")(function* (
   return yield* Effect.fail(result.failure)
 })
 
-function parseReport(report: typeof Report.Type) {
+export function parseReport(report: typeof Report.Type) {
   return report.runs.flatMap((run) => {
     if (run.externalPropertyFileReferences && Object.keys(run.externalPropertyFileReferences).length)
       throw new Error("External SARIF properties are unsupported; produce a self-contained report")
