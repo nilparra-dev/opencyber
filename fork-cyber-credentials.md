@@ -1,6 +1,6 @@
 # Credential brokering (OC-307)
 
-Design for issue [#72](https://github.com/nilparra-dev/opencyber/issues/72). Status: all five steps of the build order are built, in #108, #109, #111, #112 and the PR for step 5. Two items stay open: decision 4 (web identities) and the wrapped base64 gap under Limits. [fork-cyber-toolset.md](fork-cyber-toolset.md) sets the rules (R-6, D-4) and section 10 records the status.
+Design for issue [#72](https://github.com/nilparra-dev/opencyber/issues/72). Status: all five steps of the build order are built, in #108, #109, #111, #112 and the PR for step 5. One item stays open: decision 4 (web identities), under Limits. Issue #72 closes with the PR that adds the wrapped forms. [fork-cyber-toolset.md](fork-cyber-toolset.md) sets the rules (R-6, D-4) and section 10 records the status.
 
 ## Problem
 
@@ -22,7 +22,7 @@ Brokering gives directory and cloud identities a different path: the operator en
 
 ## Declaration
 
-Labels are declared in `rules_of_engagement.credentials` of the engagement manifest, so they are part of the approved revision. A declaration names the label, its kind (`directory_bind` or `cloud_key`), its typed targets and the actions allowed to use it. Rules the manifest enforces:
+Labels are declared in `rules_of_engagement.credentials` of the engagement manifest, so they are part of the approved revision. A declaration names the label, its kind (`directory_bind`, `cloud_key` or `database_login`), its typed targets and the actions allowed to use it. Rules the manifest enforces:
 
 - `read_only` must be `true`. Write-capable identities are refused.
 - Targets are `host`, `domain`, `cidr` or `cloud_resource`. A directory credential names the host it authenticates to. `url` and `service` wait for the work item that brings web identities.
@@ -45,12 +45,12 @@ The checks run in this order, against the approved revision of the engagement. T
 
 1. **Declared.** The approved manifest declares the label for this action and target. Otherwise `refused_by_policy`, reason `not_declared`.
 2. **In scope.** The declared target is inside the recorded scope. Otherwise `outside_scope`, reason `outside_scope`.
-3. **Risk.** The action's tool has a declared risk class (`undeclared_action` otherwise, `refused_by_policy`). R2 and above, and anything the agent's ceiling or the mode does not permit, is `above_ceiling`.
+3. **Risk.** The action's tool has a declared risk class (`undeclared_action` otherwise, `refused_by_policy`). R3, and anything the agent's ceiling or the mode does not permit, is `above_ceiling`. An R2 action also needs the engagement's validation list to name it (`not_declared`) and an active operator approval for this action and target (`approval_required`). The approval is the one the permission prompt records, and it expires after ten minutes.
 4. **Role.** The agent and mode permit the tool (`outside_role_or_mode`).
 5. **Registered.** The operator registered the label (`not_configured`, with the `add` command as recovery). Revoked (`revoked`) and expired (`expired`) labels are `refused_by_policy`.
 6. **Opens.** The key file can be read and the row decrypts with it. Otherwise `tool_failure`, reasons `key_unavailable` or `unreadable`.
 
-Every outcome, granted or refused, is written to `cyber_credential_lease` and to `cyber_decision` before the result returns. A refused lease carries no value. A granted lease returns a Buffer, and the caller releases it when the execution ends, which zeroes the buffer.
+Every outcome, granted or refused, is written to `cyber_credential_lease` and to `cyber_decision` before the result returns. A refused lease carries no value. R2 grants are paced: one granted lease per label and target in any 60-second window, refused as `budget_exceeded` otherwise, so repeated attempts cannot outpace an account lockout. A granted lease returns a Buffer, and the caller releases it when the execution ends, which zeroes the buffer.
 
 ## Delivery
 
@@ -60,7 +60,7 @@ Every outcome, granted or refused, is written to `cyber_credential_lease` and to
 
 ## Output
 
-Before any stdout, stderr, output file, artifact, error text or execution summary is stored or returned, the job's leased values are replaced with `[CREDENTIAL]`. The check covers the raw value and its standard base64 form. A tool that transforms the value (hashing, slicing, re-encoding, a different base64 layout) is outside this check.
+Before any stdout, stderr, output file, artifact, error text or execution summary is stored or returned, the job's leased values are replaced with `[CREDENTIAL]`. The check covers the raw value and its base64 form, on one line or wrapped at 64 columns (openssl) or 76 columns (coreutils `base64`), with LF or CRLF line ends. A tool that transforms the value some other way (hashing, slicing, another encoding) is outside this check.
 
 A captured stream stops at 2 MiB. When a capture reaches that limit, the last bytes that could start a match are dropped, so a value straddling the cut cannot survive as a prefix. Without leases, output is unchanged.
 
@@ -90,13 +90,12 @@ Schema version 9 becomes 10. The migration adds `engagement_credential` and `cyb
 - **Target types.** `cloud_resource` accepts only S3 ARNs. OC-304 (live cloud and Kubernetes RBAC) needs new target types before its resource filter can be scoped.
 - **Web session tokens.** `cyber_http` headers and the identity-matrix procedures pass cookies and bearer tokens through the model. OC-307 does not change that. See decision 4.
 - **Transformed values.** See Output.
-- **Wrapped base64.** Output replacement matches standard base64 on one line. The coreutils `base64` command wraps its output every 76 columns, so a value longer than 57 bytes can appear wrapped and go unmatched. This is an open gap; the fix is to add the wrapped forms to the replacement and test them against the `base64` command.
 - **Memory.** Buffers are zeroed on release. Strings created while a request is built are not.
 
 ## Decisions for the owner
 
 1. **Key custody.** Recommendation: AES-256-GCM with a key file outside the evidence database, with the Windows limit documented. The alternative is the OS keychain. It needs a new dependency in `packages/core/package.json`, which is an upstream file, so it needs a ledger row. I would not do it in this work item.
-2. **Read-only leases without per-action approval. Decided by the owner:** an R1 lease needs only the manifest declaration in an approved revision. Write-capable or R2 use stays refused until OC-401 and OC-403 provide per-action approval.
+2. **Read-only leases without per-action approval. Decided by the owner:** an R1 lease needs only the manifest declaration in an approved revision. R2 use is allowed only for an action the engagement validates, and only with an active per-action approval (OC-401, in place since #78). Write-capable use stays refused; no work item provides it.
 3. **Lifetime.** Recommendation: `expires_at` is required at registration, with a maximum of 30 days. A lease lasts at most as long as the action's timeout.
 4. **Web identities.** Recommendation: move web session tokens onto leases in a separate issue. The host would inject the cookie or bearer token, and the model would pass only a label. OC-307 stays with directory and cloud identities, as #72 says.
 

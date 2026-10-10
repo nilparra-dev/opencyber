@@ -245,3 +245,98 @@ test("reports a tool failure when the stored credential does not open with the c
     ),
   )
 })
+
+const validated = (credentials: Declaration[]) => {
+  const manifest = engagement(credentials)
+  return {
+    ...manifest,
+    rules_of_engagement: {
+      ...manifest.rules_of_engagement,
+      validation: { environment: "laboratory" as const, actions: ["cyber_local_validation" as const] },
+    },
+  }
+}
+
+const r2 = { label: "ad-reader", action: "cyber_local_validation", agent: "cyber-validate" }
+
+test("an R2 lease needs the action validated by the engagement and an active approval for its target", async () => {
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const unvalidated = yield* environment
+        yield* register(unvalidated)
+        yield* approve(unvalidated, [declared({ actions: ["cyber_local_validation"] })])
+        expect(yield* outcome(unvalidated, r2)).toBe("refused_by_policy")
+        expect(leaseRows(unvalidated).map((row) => row.reason)).toEqual(["not_declared"])
+
+        const env = yield* environment
+        yield* register(env)
+        yield* env.store.approveManifest(owner, validated([declared({ actions: ["cyber_local_validation"] })]), 0)
+        expect(yield* outcome(env, r2)).toBe("refused_by_policy")
+        yield* env.store.grantApproval({
+          owner,
+          id: "expired",
+          action: "cyber_local_validation",
+          target: "lab.test",
+          approver: "operator",
+          approved_at: now - 2 * day,
+          expires_at: now - day,
+        })
+        yield* env.store.grantApproval({
+          owner,
+          id: "other-target",
+          action: "cyber_local_validation",
+          target: "other.test",
+          approver: "operator",
+          approved_at: now,
+          expires_at: now + day,
+        })
+        expect(yield* outcome(env, r2)).toBe("refused_by_policy")
+        yield* env.store.grantApproval({
+          owner,
+          id: "approved-1",
+          action: "cyber_local_validation",
+          target: "lab.test",
+          approver: "operator",
+          approved_at: now,
+          expires_at: now + day,
+        })
+        expect(yield* outcome(env, r2)).toBe("granted")
+        expect(leaseRows(env).map((row) => row.reason)).toEqual([
+          "approval_required",
+          "approval_required",
+          "approved:approved-1",
+        ])
+        expect(decisionRows(env).at(-1)).toMatchObject({ decision: "allow", risk: "R2" })
+
+        expect(yield* outcome(env, { ...r2, agent: "cyber-enum" })).toBe("refused_by_policy")
+        expect(leaseRows(env).at(-1)?.reason).toBe("above_ceiling")
+      }),
+    ),
+  )
+})
+
+test("a second R2 lease for the same credential and host inside the pacing window is refused", async () => {
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const env = yield* environment
+        yield* register(env)
+        yield* env.store.approveManifest(owner, validated([declared({ actions: ["cyber_local_validation"] })]), 0)
+        yield* env.store.grantApproval({
+          owner,
+          id: "approved-2",
+          action: "cyber_local_validation",
+          target: "lab.test",
+          approver: "operator",
+          approved_at: now,
+          expires_at: now + day,
+        })
+        expect(yield* outcome(env, r2)).toBe("granted")
+        expect(yield* outcome(env, { ...r2, now: now + 30_000 })).toBe("budget_exceeded")
+        expect(yield* outcome(env, { ...r2, now: now + 61_000 })).toBe("granted")
+        expect(leaseRows(env).map((row) => row.reason)).toEqual(["approved:approved-2", "paced", "approved:approved-2"])
+      }),
+    ),
+  )
+})

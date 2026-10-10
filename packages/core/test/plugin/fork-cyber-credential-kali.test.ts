@@ -14,8 +14,10 @@ const image = process.env.OPENCYBER_TEST_KALI_IMAGE
 const dockerTest = image ? test : test.skip
 const decode = Schema.decodeUnknownSync(ForkCyberKali.Config)
 
-const seeded = "seeded-kali-lease-secret-3c7e"
+// Longer than 57 bytes, so coreutils `base64` wraps it at 76 columns; the wrapped form is what the job prints.
+const seeded = "seeded-kali-lease-secret-3c7e-with-a-tail-long-enough-to-wrap-base64-output"
 const encoded = Buffer.from(seeded).toString("base64")
+const wrapped = (encoded.match(/.{1,76}/g) ?? []).join("\n")
 const owner = "owner"
 const now = Date.now()
 
@@ -125,6 +127,7 @@ dockerTest(
           )
           third.release()
           expect(encodedOutput.stdout_excerpt.preview).toContain("[CREDENTIAL]")
+          expect(encodedOutput.stdout_excerpt.preview).not.toContain(wrapped)
           expect(encodedOutput.stdout_excerpt.preview).not.toContain(encoded)
 
           // A job without a lease has no such file: each job starts from a fresh container.
