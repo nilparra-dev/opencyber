@@ -6,7 +6,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises"
 import path from "node:path"
 
 // Identity kinds an engagement can declare. OC-304 adds kinds when live cloud actions need them.
-export const Kind = Schema.Literals(["directory_bind", "cloud_key"])
+export const Kind = Schema.Literals(["directory_bind", "cloud_key", "database_login"])
 export type Kind = typeof Kind.Type
 
 export type Binding = { owner: string; label: string; kind: Kind }
