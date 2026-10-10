@@ -44,7 +44,7 @@ const declared: Readonly<Record<string, Declaration>> = {
   cyber_tasks: "R0",
   cyber_web_plan: "R0",
   cyber_cloud: "R0",
-  cyber_container: "R0",
+  cyber_container: { dockerfile_lint: "R0", runtime_review: "R0", pull: "R1" },
   finding_retest: "R1",
   cyber_web_test: { openapi: "R0", jwt: "R0", plan: "R0", graphql: "R1", validate: "R2" },
   engagement: "R0",

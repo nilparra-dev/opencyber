@@ -532,7 +532,7 @@ with os.fdopen(fd,'rb') as f:
 
 // Bound both CLI duration and retained bytes. Killing the client alone does not stop docker exec;
 // the manager removes the environment on failure, while GNU timeout also bounds normal jobs.
-function command(
+export function command(
   args: string[],
   input?: string,
   timeout = 30000,
