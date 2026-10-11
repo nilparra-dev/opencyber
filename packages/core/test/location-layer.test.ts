@@ -515,6 +515,7 @@ describe("LocationServiceMap", () => {
               "finding_retest",
               "cyber_container",
               "cyber_local_validation",
+              "cyber_host",
             ].includes(name)
           expect(blockedTools.filter(upstreamTool).sort()).toEqual([
             "edit",
