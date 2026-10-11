@@ -16,7 +16,7 @@ const owner = "owner-host"
 const session = "session-host"
 const agent = "primary"
 const execution = "execution-host"
-const now = Date.UTC(2026, 9, 10)
+const now = Date.now()
 const day = 86_400_000
 const labRoot = path.resolve(import.meta.dir, "../../../../fork-lab/linux-host/host/variants")
 const lab = (file: string) => readFileSync(path.join(labRoot, file), "utf8")
