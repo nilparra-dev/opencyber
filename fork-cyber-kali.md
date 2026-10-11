@@ -9,9 +9,11 @@ The implementation uses a fresh container per job, associated with the top-level
 Use Docker with Linux containers and a Docker CLI accessible to the OpenCyber service. Build from the repository root:
 
 ```sh
-docker build --tag opencyber-kali:5 fork-kali
-docker image inspect opencyber-kali:5 --format '{{.Id}}'
+docker build --tag opencyber-kali:6 fork-kali
+docker image inspect opencyber-kali:6 --format '{{.Id}}'
 ```
+
+Version 6 adds pinned analyzers for the typed tools: Semgrep 1.178.0 and Checkov 3.3.26 in `/opt/opencyber/venv`, with their versions in `/opt/opencyber/pip-freeze.txt`; the `python3-pefile` and `binwalk` packages from the Kali repository. Semgrep reads only the curated rules in `fork-kali/rules/semgrep`, which the build validates. The rules are a small reviewed set, not the full public rule registry, so an empty result does not prove that no weakness exists.
 
 The Dockerfile pins the official Kali base by digest. Its package repository is rolling, so a rebuild can install newer package versions. The resulting image ID and `/opt/opencyber/packages.txt` identify what actually ran; this is not a claim of bit-for-bit reproducible builds. Keep/export the built image if exact replay matters. The initial selection includes curl, nmap, DNS utilities, sqlmap, Python, jq, ripgrep and OpenSSL. Installed is not the same as allowed: `kali_run` runs only the binaries listed in [Binary allowlist and typed wrappers](#binary-allowlist-and-typed-wrappers). Extend the Dockerfile deliberately; the base image does not contain every Kali tool.
 
@@ -114,7 +116,7 @@ The Docker suite builds no mocks. It executes the selected Kali image, transfers
 PowerShell:
 
 ```powershell
-$env:OPENCYBER_TEST_KALI_IMAGE = docker image inspect opencyber-kali:5 --format '{{.Id}}'
+$env:OPENCYBER_TEST_KALI_IMAGE = docker image inspect opencyber-kali:6 --format '{{.Id}}'
 Set-Location packages/core
 bun test test/plugin/fork-cyber-kali.test.ts test/plugin/fork-cyber-network.test.ts
 ```

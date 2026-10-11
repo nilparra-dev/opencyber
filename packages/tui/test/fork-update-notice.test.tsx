@@ -39,13 +39,13 @@ test("the update notice and dialog show the human-facing release version", async
   expect(home).not.toContain("2.0.19-cyber.2")
 
   await setup.mockInput.typeText("/update")
-  await setup.waitForFrame((frame) => frame.includes("Update OpenCode"))
+  await setup.waitForFrame((frame) => frame.includes("Update OpenCyber"))
   setup.mockInput.pressEnter()
   await setup.waitForFrame((frame) => frame.includes("An update is available"))
 
   setup.mockInput.pressEnter()
   const installing = await setup.waitForFrame((frame) =>
-    frame.includes("Installing OpenCode 2.0.19 (Cyber)"),
+    frame.includes("Installing OpenCyber 2.0.19 (Cyber)"),
   )
   expect(installing).not.toContain("2.0.19-cyber.2")
   // The install keeps receiving the machine-readable release the CLI installs.
