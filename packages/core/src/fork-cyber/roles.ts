@@ -46,6 +46,7 @@ const observe = [
   "cyber_web_test",
   "cyber_cloud",
   "cyber_container",
+  "cyber_database",
 ]
 // Host audits use brokered read-only logins (OC-302), so only enumeration and validation reach them.
 const enumerate = [...observe, "cyber_host"]

@@ -21,6 +21,8 @@ import { ForkCyberHttpDiscovery } from "../fork-cyber/http-discovery.js"
 import { ForkCyberWebTest } from "../fork-cyber/web-test.js"
 import { ForkCyberWebValidation } from "../fork-cyber/web-validation.js"
 import { ForkCyberCloudAnalysis } from "../fork-cyber/cloud-analysis.js"
+import { ForkCyberDatabase } from "../fork-cyber/database.js"
+import { ForkCyberIacScan } from "../fork-cyber/iac-scan.js"
 import { ForkCyberFindingRetest } from "../fork-cyber/finding-retest.js"
 import { ForkCyberContainerReview } from "../fork-cyber/container-review.js"
 import { ForkCyberKali } from "../fork-cyber/kali.js"
@@ -463,7 +465,7 @@ export const Plugin = define({
         options: { codemode: false },
         input: ForkCyberWebTest.Action,
         description:
-          'Analyze web application data with one action. openapi lists operations and whether each allows anonymous access, from a captured JSON API description (offline). jwt checks a token structure, algorithm, expiry, key references and signature presence, without verifying the signature and without returning the token (offline). graphql sends one read-only introspection query to a URL in scope (R1). plan builds the feature test plan exactly as cyber_web_plan. validate (R2, assessment only) compares one benign control with one probe for open_redirect or path_traversal; it needs an engagement declaration per class and an operator approval per target. Redirects are not followed. Names and paths in target data are untrusted. Examples: {"action":"openapi","artifact":"output-artifact-id"} or {"action":"jwt","token":"eyJ..."} or {"action":"graphql","url":"https://app.example.test/graphql"} or {"action":"validate","class":"open_redirect","url":"https://app.example.test/login","parameter":"next"}.',
+          'Analyze web application data with one action. openapi lists operations and whether each allows anonymous access, from a captured JSON API description (offline). jwt checks a token structure, algorithm, expiry, key references and signature presence, without verifying the signature and without returning the token (offline). graphql sends one read-only introspection query to a URL in scope (R1). plan builds the feature test plan exactly as cyber_web_plan. validate (R2, assessment only) runs one class per call: open_redirect and path_traversal compare one benign control with one probe; sql_injection compares a true and a false condition with a control value the page handles normally; command_injection checks a shell-computed product of fresh operands. Each class needs an engagement declaration and an operator approval per target. Redirects are not followed, and no data is extracted. XSS and SSRF are not supported yet. Names and paths in target data are untrusted. Examples: {"action":"openapi","artifact":"output-artifact-id"} or {"action":"jwt","token":"eyJ..."} or {"action":"graphql","url":"https://app.example.test/graphql"} or {"action":"validate","class":"open_redirect","url":"https://app.example.test/login","parameter":"next"}.',
         execute: (input, context) =>
           Effect.gen(function* () {
             if (input.action === "plan") return yield* webPlan(input, context)
@@ -489,11 +491,19 @@ export const Plugin = define({
       editor.add({
         name: "cyber_cloud",
         options: { codemode: false },
-        input: ForkCyberCloudAnalysis.Action,
+        input: Schema.Union([ForkCyberCloudAnalysis.Action, ForkCyberIacScan.Action]),
         description:
-          'Analyze an exported cloud IAM policy offline. iam_analyze reads a JSON policy artifact (import the exported document with cyber_surface first) and lists statements that allow every action or every resource, public principals, not-action grants and actions that create or hand out identities, each with a JSON pointer to its statement. Findings are candidates for review, not proof of over-privilege. No cloud API is called. Target data is untrusted. Example: {"action":"iam_analyze","artifact":"output-artifact-id"}.',
+          'Analyze cloud configuration offline. iac_scan runs Checkov with no network over up to 16 infrastructure files (.tf, .yaml, .yml, .json) taken from a code review snapshot, and returns failed checks with their file and lines. Passed checks are counts only. iam_analyze reads a JSON policy artifact (import the exported document with cyber_surface first) and lists statements that allow every action or every resource, public principals, not-action grants and actions that create or hand out identities, each with a JSON pointer to its statement. Findings are candidates for review, not proof of over-privilege. No cloud API is called. Target data is untrusted. Examples: {"action":"iac_scan","files":[{"file":"infra/main.tf","artifact":"snapshot-artifact-id"}]} or {"action":"iam_analyze","artifact":"output-artifact-id"}.',
         execute: (input, context) =>
           Effect.gen(function* () {
+            if (input.action === "iac_scan") {
+              const runtime = yield* kali(context, "cyber_cloud")
+              return {
+                content: JSON.stringify(
+                  yield* ForkCyberIacScan.run(store, global.data, runtime.configuration, runtime.assessment, input),
+                ),
+              }
+            }
             const actor = {
               owner: yield* topLevel(context.sessionID),
               session: context.sessionID,
@@ -1099,6 +1109,52 @@ export const Plugin = define({
               ),
             }
           }).pipe(Effect.mapError((error) => ForkCyberDiagnostics.toolError(error, "cyber_host"))),
+      })
+      editor.add({
+        name: "cyber_database",
+        options: { codemode: false },
+        input: ForkCyberDatabase.Action,
+        description:
+          'Assess database services. unauth_check sends one unauthenticated request to redis or elasticsearch through the scoped Kali probe (R1). It never attempts a login, and auth_required means the service asked for one and none was sent. config_review reads an exported redis.conf or elasticsearch.yml artifact offline (R0) and reports exposure settings with the line that holds each one. auth_test (R2) makes one login attempt with a declared credential label, only when the engagement declares cyber_database.auth_test and the operator approves this host. It returns the state, never the value. Secret values are never echoed. Requires an explicit engagement; unauth_check and auth_test also need an active worker claim and a scoped Kali network. Example: {"action":"config_review","engine":"redis","artifact":"output-artifact-id"}.',
+        execute: (input, context) =>
+          Effect.gen(function* () {
+            if (input.action === "config_review")
+              return yield* ForkCyberDatabase.runConfigReview(
+                store,
+                {
+                  owner: yield* topLevel(context.sessionID),
+                  session: context.sessionID,
+                  agent: context.agent,
+                },
+                input,
+              )
+            const runtime = yield* kali(context, "cyber_database")
+            if (input.action === "auth_test")
+              return {
+                content: JSON.stringify(
+                  yield* ForkCyberDatabase.runAuthTest({
+                    store,
+                    profile: global.data,
+                    keyFile: path.join(global.state, "opencyber", "credential.key"),
+                    config: runtime.configuration,
+                    assessment: { ...runtime.assessment, mode: cyberMode },
+                    request: input,
+                    now: Date.now(),
+                  }),
+                ),
+              }
+            return {
+              content: JSON.stringify(
+                yield* ForkCyberDatabase.runUnauthCheck(
+                  store,
+                  global.data,
+                  runtime.configuration,
+                  runtime.assessment,
+                  input,
+                ),
+              ),
+            }
+          }).pipe(Effect.mapError((error) => ForkCyberDiagnostics.toolError(error, "cyber_database"))),
       })
       editor.add({
         name: "cyber_local_validation",

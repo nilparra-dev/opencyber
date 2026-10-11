@@ -101,7 +101,8 @@ export const run = Effect.fn("ForkCyberDatabaseAuth.run")(function* (input: {
   if (!ForkCyberRoles.allowed(assessment.agent, "cyber_database"))
     return yield* Effect.fail(new Error(`Phase ${assessment.agent} cannot execute cyber_database`))
   if (ForkCyberRoles.worker(assessment.agent)) yield* input.store.coordination.requireClaim(assessment)
-  if (input.config.network.kind !== "scoped") return yield* Effect.fail(new Error("Auth tests require a scoped Kali network"))
+  if (input.config.network.kind !== "scoped")
+    return yield* Effect.fail(new Error("Auth tests require a scoped Kali network"))
   const budget = assessment.manifest.rules_of_engagement.network
   if (!budget) return yield* Effect.fail(new Error("Auth tests require explicit network budgets"))
   const host = ForkCyberScope.normalize(request.host)
@@ -151,9 +152,10 @@ export const run = Effect.fn("ForkCyberDatabaseAuth.run")(function* (input: {
             if (result.exit_code !== 0 || file === undefined)
               return yield* Effect.fail(new Error(`Auth probe failed (exit ${result.exit_code})`))
             const bytes = yield* input.store.readArtifact(assessment.owner, file.artifact)
-            return yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Report))(bytes.bytes.toString()).pipe(
-              Effect.mapError((error) => new Error(String(error))),
-            )
+            const report = yield* Schema.decodeUnknownEffect(Schema.fromJsonString(Report))(
+              bytes.bytes.toString(),
+            ).pipe(Effect.mapError((error) => new Error(String(error))))
+            return { ...report, artifact: file.artifact }
           }),
       },
       [{ name, value: lease.value }],

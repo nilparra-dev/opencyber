@@ -43,7 +43,7 @@ describe("declarations", () => {
     expect(classes).not.toContain("R3")
   })
 
-  test("R2 actions are exactly the local validation tool and the surface binary execution", () => {
+  test("R2 actions are exactly the database credential test, local validation, the surface binary and web validation", () => {
     const r2 = [...granted].flatMap((tool) => {
       const governed = ForkCyberDecision.declaration(tool)
       if (governed === undefined) return []
@@ -52,7 +52,12 @@ describe("declarations", () => {
         .filter(([, risk]) => risk === "R2")
         .map(([action]) => `${tool}:${action}`)
     })
-    expect(r2.sort()).toEqual(["cyber_local_validation", "cyber_surface:binary.execute", "cyber_web_test:validate"])
+    expect(r2.sort()).toEqual([
+      "cyber_database:auth_test",
+      "cyber_local_validation",
+      "cyber_surface:binary.execute",
+      "cyber_web_test:validate",
+    ])
   })
 })
 
@@ -158,6 +163,18 @@ describe("decisions", () => {
       risk: "R2",
       action: "cyber_web_test.validate.open_redirect",
     })
+  })
+
+  test("SQL injection and command injection need their own declarations and never ride on another class", () => {
+    const sql = { action: "validate", class: "sql_injection", url: "https://app.example.test/item", parameter: "id" }
+    const command = { action: "validate", class: "command_injection", url: "https://app.example.test/run", parameter: "q" }
+    expect(ForkCyberDecision.actionID("cyber_web_test", sql)).toBe("cyber_web_test.validate.sql_injection")
+    expect(ForkCyberDecision.actionID("cyber_web_test", command)).toBe("cyber_web_test.validate.command_injection")
+    const declared = ["cyber_web_test.validate.open_redirect", "cyber_web_test.validate.sql_injection"]
+    const decide = (input: unknown) =>
+      ForkCyberDecision.decide({ mode: "assessment", agent: "cyber-exploit-web", tool: "cyber_web_test", input, declared })
+    expect(decide(sql).decision).toBe("ask")
+    expect(decide(command)).toMatchObject({ decision: "deny", reason: "not_declared" })
   })
 
   test("web validation is refused for reconnaissance and for development mode", () => {
