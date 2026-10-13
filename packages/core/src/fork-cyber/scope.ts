@@ -134,6 +134,9 @@ export const ValidationAction = Schema.Literals([
   "cyber_web_test.validate.path_traversal",
   "cyber_directory.auth_test",
   "cyber_directory.crack",
+  "cyber_database.auth_test",
+  "cyber_web_test.validate.sql_injection",
+  "cyber_web_test.validate.command_injection",
 ])
 export type ValidationAction = typeof ValidationAction.Type
 

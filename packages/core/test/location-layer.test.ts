@@ -502,6 +502,8 @@ describe("LocationServiceMap", () => {
               "cyber_coverage",
               "cyber_code_review",
               "cyber_services",
+              "cyber_database",
+              "cyber_directory",
               "cyber_surface",
               "cyber_capabilities",
               "cyber_artifacts",
