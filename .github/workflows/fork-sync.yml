@@ -114,7 +114,8 @@ jobs:
       # version, so consecutive releases always conflict on those lines. A
       # conflicted file the fork has not changed since the release the base
       # contains is taken whole from the new release (FORK.md 6.2); any other
-      # conflict is reported.
+      # conflict is reported. The release is merged against the newest release
+      # the base contains (merge_release), never against git's own merge base.
       - name: Merge
         id: merge
         if: steps.fetch.outputs.behind == 'true'
@@ -124,9 +125,12 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git checkout -B "$SYNC_BRANCH"
+          previous_release() {
+            git tag -l 'v2.*' --merged HEAD | grep -E "$UPSTREAM_TAG_PATTERN" | sort -V | tail -1
+          }
           take_release() {
             local prev conflicts f patch replayed=""
-            prev=$(git tag -l 'v2.*' --merged HEAD | grep -E "$UPSTREAM_TAG_PATTERN" | sort -V | tail -1)
+            prev=$(previous_release)
             [ -n "$prev" ] || return 1
             conflicts=$(git diff --name-only --diff-filter=U)
             [ -n "$conflicts" ] || return 1
@@ -171,11 +175,31 @@ jobs:
               fi
             } | git commit -q -F -
           }
+          # Upstream's release lineage can cross commits custom merged earlier. Git then merges
+          # against two merge bases at once, which builds a virtual base that is neither release,
+          # and unrelated files conflict. A bridge commit with the new release's tree and the
+          # previous release as its only parent pins the base to that release. The merge commit is
+          # then re-created with the real release as its second parent, so `git tag --merged` finds
+          # the release in later runs. `set -e` does not reach inside these calls, so each step
+          # checks its own status.
+          merge_release() {
+            local prev bridge c
+            prev=$(previous_release)
+            [ -n "$prev" ] || { echo "$SYNC_BRANCH contains no earlier upstream release" >&2; exit 1; }
+            bridge=$(git commit-tree "refs/tags/$UPSTREAM_TAG^{tree}" -p "$prev" -m "bridge to $UPSTREAM_TAG") || return 1
+            git merge --no-ff --no-edit "$bridge" -m "$msg" || take_release || return 1
+            c=$(git commit-tree "HEAD^{tree}" -p "HEAD^1" -p "refs/tags/$UPSTREAM_TAG" -m "$(git log -1 --format=%B HEAD)") || return 1
+            git reset -q --soft "$c"
+          }
           for ref in "origin/$FORK_BRANCH" "refs/tags/$UPSTREAM_TAG"; do
             if git merge-base --is-ancestor "$ref" HEAD; then continue; fi
-            if [ "$ref" = "origin/$FORK_BRANCH" ]; then msg="chore(fork): merge $FORK_BRANCH into $SYNC_BRANCH"; else msg="chore(fork): merge upstream $UPSTREAM_TAG"; fi
-            if git merge --no-ff --no-edit "$ref" -m "$msg"; then continue; fi
-            if [ "$ref" != "origin/$FORK_BRANCH" ] && take_release; then continue; fi
+            if [ "$ref" = "origin/$FORK_BRANCH" ]; then
+              msg="chore(fork): merge $FORK_BRANCH into $SYNC_BRANCH"
+              git merge --no-ff --no-edit "$ref" -m "$msg" && continue
+            else
+              msg="chore(fork): merge upstream $UPSTREAM_TAG"
+              merge_release && continue
+            fi
             echo "$ref" > "$RUNNER_TEMP/conflict-ref.txt"
             git diff --name-only --diff-filter=U > "$RUNNER_TEMP/conflicts.txt"
             git merge --abort
