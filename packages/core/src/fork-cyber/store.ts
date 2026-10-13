@@ -2,7 +2,7 @@ export * as ForkCyberStore from "./store.js"
 
 import { sqliteLayer } from "#sqlite"
 import { Context, Effect, Layer, Option, Schedule, Schema } from "effect"
-import { SqlClient } from "effect/unstable/sql"
+import { SqlClient } from "effect/sql"
 import { createHash } from "node:crypto"
 import { mkdir } from "node:fs/promises"
 import path from "node:path"

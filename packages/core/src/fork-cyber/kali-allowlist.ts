@@ -4,7 +4,7 @@ import { Option, Schema } from "effect"
 
 // Versioned with fork-kali/Dockerfile. Its org.opencyber.kali.version label must equal this value; a test
 // enforces it, so a recipe change cannot leave the allowlist behind.
-export const IMAGE_VERSION = 5
+export const IMAGE_VERSION = 6
 
 // Offline utilities that read or copy data and never contact a target. Excluded on purpose:
 // - interpreters and shells run arbitrary code (python3, sh, node, env, xargs);
