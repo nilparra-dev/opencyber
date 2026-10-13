@@ -236,6 +236,7 @@ fork-sync.yml ──► disables upstream workflows that are not fork-*
 - The newest release is found with `git ls-remote` on upstream's tags; when the base already contains it, the workflow answers from the GitHub compare API without cloning and finishes in seconds.
 - While a sync PR is open, the run builds on `sync-upstream` instead of rebuilding it from `custom`, so fixes pushed to the sync branch (section 6) are kept. It merges new `custom` commits into it (branch protection requires PRs to be up to date with `custom`, so otherwise auto-merge would stall) and then a newer release, if one appeared. A sync PR that already contains both is left alone.
 - Upstream tags each release on a side commit (`release: v2.X.Y`) that bumps the version in every `package.json` and in `bun.lock`, so release tags are not ancestors of each other and every sync conflicts on those lines. The merge step takes unchanged fork files from the new release, following section 6.2. For manifests and the lockfile changed by the fork, it replays the fork diff with a three-way merge so independent dependency additions survive changed context. An unresolved lockfile replay resets that file to the release and requests regeneration. Remaining manifest or code conflicts abort the merge and open the issue. Dependency installation and lockfile regeneration only run after a successful merge. The merge commit lists the resolved files.
+- Git merges against the common ancestors it finds. Upstream's release lineage can cross commits that `custom` merged in an earlier sync (the V1→V2 migration did), and then git merges against two bases at once and reports conflicts in files that neither side changed in that release (`modify/delete` on console files, for example). The release is therefore merged through a bridge commit whose only parent is the newest release the base contains (`merge_release` in the workflow, section 6.1 by hand). The merge commit is then re-created with the real release as its second parent, so `git tag --merged` still finds the release in later runs.
 - An open `fork-sync-conflict` issue is kept current by editing its body, not by adding a comment on every run.
 - The sync PR is updated by pushing `sync-upstream`, which is a bot branch. `custom` is **never** force-pushed.
 - The `publish` jobs only load a bundle and push, so their checkouts are blobless (`filter: blob:none`). The jobs that merge (`fork-sync`'s `sync`, `fork-resolve`) use full clones: in a blobless clone the merge fetches missing blobs lazily from `origin`, which does not serve upstream-only objects, and the merge fails with `upload-pack: not our ref`.
@@ -421,7 +422,9 @@ git fetch origin
 git fetch upstream --tags
 tag=$(git tag -l 'v2.*' | grep -E '^v2\.[0-9]+\.[0-9]+$' | sort -V | tail -1)   # the release named in the issue
 git checkout -B sync-upstream origin/custom
-git merge --no-ff "$tag" -m "chore(fork): merge upstream $tag"   # rerere reapplies known resolutions
+prev=$(git tag -l 'v2.*' --merged HEAD | grep -E '^v2\.[0-9]+\.[0-9]+$' | sort -V | tail -1)   # newest release custom already contains
+bridge=$(git commit-tree "$tag^{tree}" -p "$prev" -m "bridge to $tag")   # pins the merge base to $prev (see section 3)
+git merge --no-ff --no-edit "$bridge" -m "chore(fork): merge upstream $tag"   # rerere reapplies known resolutions
 git diff --name-only --diff-filter=U  # remaining conflicts
 ```
 
@@ -463,6 +466,7 @@ git grep -nE '^(<<<<<<<|>>>>>>>)( |$)' -- . ':!*.md'   # must be empty
 
 ```bash
 git commit --no-edit        # keeps the merge message
+c=$(git commit-tree "HEAD^{tree}" -p "HEAD^1" -p "$tag" -m "$(git log -1 --format=%B HEAD)") && git reset -q --soft "$c"   # the real release is the second parent
 git push --force origin sync-upstream
 gh pr create --base custom --head sync-upstream --title "chore(fork): sync upstream" --label fork-sync \
   --body "Resolves #<issue>. Upstream <tag>. Conflicts: <list>. Ledger changes: <if any>."
