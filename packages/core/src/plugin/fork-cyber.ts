@@ -32,6 +32,7 @@ import { ForkCyberCoordination } from "../fork-cyber/coordination.js"
 import { ForkCyberRoles } from "../fork-cyber/roles.js"
 import { ForkCyberCodeReview } from "../fork-cyber/code-review.js"
 import { ForkCyberServices } from "../fork-cyber/services.js"
+import { ForkCyberDirectory } from "../fork-cyber/directory.js"
 import { ForkCyberModules } from "../fork-cyber/modules.js"
 import { ForkCyberSurface } from "../fork-cyber/surface.js"
 import { ForkCyberServiceValidation } from "../fork-cyber/service-validation.js"
@@ -1041,6 +1042,42 @@ export const Plugin = define({
                   runtime.assessment,
                   input,
                 ),
+              ),
+            }
+          }).pipe(Effect.mapError((error) => ForkCyberDiagnostics.toolError(error, "cyber_tool"))),
+      })
+      editor.add({
+        name: "cyber_directory",
+        options: { codemode: false },
+        input: ForkCyberDirectory.Action,
+        description:
+          'Assess a directory service: ldap_enum reads the rootDSE, then what an anonymous session and an optional brokered credential can see; password_policy reads pwdPolicy objects and lists review candidates; collect returns a bounded, allowlisted read of one subtree. kerberos_config and adcs_templates review an exported JSON artifact offline (R0). Live actions need a scoped engagement with network budgets and, for workers, an active claim. A credential is a registered label only; its value is never returned. Only bind, search, unbind and StartTLS are sent. Example: {"action":"ldap_enum","host":"dc.lab.example.test","port":389}.',
+        execute: (input, context) =>
+          Effect.gen(function* () {
+            if (input.action === "procedures") return { content: JSON.stringify(ForkCyberDirectory.procedures) }
+            if (input.action === "kerberos_config" || input.action === "adcs_templates")
+              return {
+                content: JSON.stringify(
+                  yield* ForkCyberDirectory.offline({
+                    store,
+                    assessment: yield* httpAssessment(context, "cyber_directory"),
+                    request: input,
+                  }),
+                ),
+              }
+            const runtime = yield* kali(context, "cyber_directory")
+            return {
+              content: JSON.stringify(
+                yield* ForkCyberDirectory.live({
+                  store,
+                  profile: global.data,
+                  keyFile: path.join(global.state, "opencyber", "credential.key"),
+                  mode: cyberMode,
+                  config: runtime.configuration,
+                  assessment: runtime.assessment,
+                  request: input,
+                  now: Date.now(),
+                }),
               ),
             }
           }).pipe(Effect.mapError((error) => ForkCyberDiagnostics.toolError(error, "cyber_tool"))),
