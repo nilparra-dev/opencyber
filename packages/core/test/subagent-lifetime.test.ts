@@ -1,4 +1,5 @@
 import { describe, expect } from "bun:test"
+// fork: the parent opts into automatic delegation; manual admission is covered by tool-subagent tests (F-027).
 import { Effect, Layer } from "effect"
 import { LanguageModel } from "@opencode/ai"
 import { OpenAIChat } from "@opencode/ai/protocols"
@@ -18,6 +19,7 @@ import { SessionRunnerModel } from "@opencode/core/session/runner/model"
 import { Tool } from "@opencode/core/tool"
 import { LayerNode } from "@opencode/util/effect/layer-node"
 import { Global } from "@opencode/util/global"
+import { Delegation } from "@opencode/schema/delegation"
 import { tempGlobalLayer } from "./fixture/global"
 import { offlineModels } from "./fixture/models"
 import { tmpdirScoped } from "./fixture/tmpdir"
@@ -84,6 +86,7 @@ describe("subagent observer lifetime", () => {
             location: { directory: AbsolutePath.make(parentDir.path) },
             agent: Agent.ID.make("build"),
             model: Model.Ref.make({ id: Model.ID.make("parent"), providerID: Provider.ID.make("test") }),
+            metadata: { [Delegation.MetadataKey]: "automatic" },
           })
           const child = yield* sessions.create({ parentID: parent.id, agent: Agent.ID.make("reviewer") })
           yield* sessions.move({ sessionID: child.id, directory: AbsolutePath.make(childDir.path) })
