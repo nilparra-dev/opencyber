@@ -41,6 +41,7 @@ import { ForkCyberOt } from "../fork-cyber/ot.js"
 import { Permission } from "../permission.js"
 import { ForkCyberPolicy } from "../fork-cyber/policy.js"
 import { ForkCyberDecision } from "../fork-cyber/decision.js"
+import { ForkCyberDirectoryAuth } from "../fork-cyber/directory-auth.js"
 import { ForkCyberCredentialLease } from "../fork-cyber/credential-lease.js"
 import { ForkCyberFindings } from "../fork-cyber/findings.js"
 import { ForkCyberEnvironment } from "../fork-cyber/environment.js"
@@ -1067,6 +1068,43 @@ export const Plugin = define({
               ),
             }
           }).pipe(Effect.mapError((error) => ForkCyberDiagnostics.toolError(error, "cyber_tool"))),
+      })
+      // cyber_directory: R2 only. Each call needs an engagement declaration and an operator approval (OC-401).
+      editor.add({
+        name: "cyber_directory",
+        options: { codemode: false },
+        input: ForkCyberDirectoryAuth.Action,
+        description: `Test one directory account or an operator-supplied hash set (R2, assessment only). auth_test makes one LDAP simple bind as the account declared for a credential label, against a host in scope; the password is leased from the operator's registry and is never returned. Three attempts per label and host are allowed in thirty minutes. crack tests supplied hashes offline against a supplied wordlist and returns per-hash cracked status only; plaintext is withheld. Each action must be declared in rules_of_engagement.validation and approved by the operator for its target. Example: {"action":"auth_test","label":"lab-alice","host":"ldap.lab.test"}.`,
+        execute: (input, context) =>
+          Effect.gen(function* () {
+            const runtime = yield* kali(context, "cyber_directory")
+            const assessment = { ...runtime.assessment, mode: cyberMode }
+            if (input.action === "auth_test")
+              return {
+                content: JSON.stringify(
+                  yield* ForkCyberDirectoryAuth.authTest({
+                    store,
+                    profile: global.data,
+                    keyFile: path.join(global.state, "opencyber", "credential.key"),
+                    config: runtime.configuration,
+                    assessment,
+                    request: input,
+                    now: Date.now(),
+                  }),
+                ),
+              }
+            return {
+              content: JSON.stringify(
+                yield* ForkCyberDirectoryAuth.crack({
+                  store,
+                  profile: global.data,
+                  config: runtime.configuration,
+                  assessment,
+                  request: input,
+                }),
+              ),
+            }
+          }).pipe(Effect.mapError((error) => ForkCyberDiagnostics.toolError(error, "cyber_directory"))),
       })
       editor.add({
         name: "cyber_database",

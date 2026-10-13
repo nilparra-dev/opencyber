@@ -167,6 +167,22 @@ const grantReason = Effect.fn("ForkCyberCredentialLease.grantReason")(function* 
   )[0]
   if (recent !== undefined)
     return refuse("paced", "budget", "This credential was already tried on this target within the pacing window.", pacingRecovery, risk)
+  const attempts = (
+    yield* request.store.leaseAttempts({
+      owner: request.owner,
+      label: request.label,
+      target: `${request.target.type}:${request.target.value}`,
+      since: request.now - attemptWindow,
+    })
+  )[0]!.attempts
+  if (attempts >= attemptLimit)
+    return refuse(
+      "attempt_limit",
+      "budget",
+      "This credential has used its attempts on this target in the window.",
+      attemptRecovery,
+      risk,
+    )
   return `approved:${active.id}`
 })
 
@@ -253,6 +269,12 @@ const validationRecovery =
 // One credential tries one target at most once per window, so repeated attempts cannot outpace an account lockout.
 const pacingWindow = 60_000
 const pacingRecovery = "Wait for the pacing window to pass before trying this credential on this target again."
+// The target's lockout threshold is not known to the harness. Three granted attempts in thirty minutes stays below the
+// common thresholds of five; an engagement-specific threshold is an open decision (fork-cyber-directory-auth.md).
+const attemptWindow = 30 * 60_000
+const attemptLimit = 3
+const attemptRecovery =
+  "Wait until earlier attempts leave the thirty-minute window. Repeated attempts can lock the account; the operator decides whether to continue."
 const approvalRecovery =
   "The operator approves this action on this target in the permission prompt. Approvals expire after ten minutes."
 const roleRecovery = "Use an agent and mode that permit this tool."

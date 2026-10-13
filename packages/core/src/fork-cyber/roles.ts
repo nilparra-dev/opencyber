@@ -61,10 +61,10 @@ const assess = [
 
 // Exploitation phases split the assessment tools by surface, so each phase gets only its own surface.
 const web = ["http_replay", "cyber_browser", "finding_retest"]
-const network = ["kali_run", "kali_environment", "cyber_surface"]
+const network = ["kali_run", "kali_environment", "cyber_surface", "cyber_directory"]
 
 export function tools(agent: string) {
-  if (agent === "cyber-validate") return [...assess, "cyber_local_validation"]
+  if (agent === "cyber-validate") return [...assess, "cyber_local_validation", "cyber_directory"]
   if (agent === "cyber-report") return read
   if (agent === "cyber-code-review") return [...read, "cyber_code_review", "cyber_artifacts"]
   if (agent === "cyber-recon" || agent === "cyber-enum") return observe
