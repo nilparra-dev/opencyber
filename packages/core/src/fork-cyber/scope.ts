@@ -178,9 +178,9 @@ export const Credential = Schema.Struct({
   account: Schema.optional(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(512))),
 }).check(
   Schema.makeFilter((value) => {
-    if ((value.kind === "host_login" || value.kind === "directory_bind") !== (value.account !== undefined))
-      return "account is required for host_login and directory_bind and not allowed for other kinds"
-    if (value.kind === "host_login" && !Schema.is(Account)(value.account)) return "host_login accounts must be simple names"
+    if (value.kind === "host_login" && !Schema.is(Account)(value.account)) return "host_login needs a simple account name"
+    if (value.kind !== "host_login" && value.kind !== "directory_bind" && value.account !== undefined)
+      return "account is only for host_login and directory_bind credentials"
     if (value.kind === "host_login" && value.targets.some((target) => target.type !== "host"))
       return "host_login targets must be hosts"
     if (value.kind !== "host_login" && value.actions.some((action) => action.startsWith("cyber_host.")))

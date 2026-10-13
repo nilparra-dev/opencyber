@@ -189,6 +189,7 @@ const probe = (
   options: {
     port: number
     credential?: string
+    account?: string
   },
 ) =>
   Effect.tryPromise(async () => {
@@ -198,6 +199,7 @@ const probe = (
       port: options.port,
       timeout: 5,
       credential: options.credential,
+      account: options.account,
     })
     const child = Bun.spawn([python, "-I", "-c", ForkCyberDirectory.PROBE, JSON.stringify(args)], {
       cwd: directory,
@@ -364,10 +366,10 @@ labTest(
           const tmp = yield* tmpdirScoped()
           const exposed = yield* startDirectory("exposed")
           const request = { action: "ldap_enum" as const, host: "127.0.0.1", credential: "reader" }
-          const right = yield* credentialFile(tmp.path, "right.txt", `${aliceDn}\n${alicePassword}`)
-          const wrong = yield* credentialFile(tmp.path, "wrong.txt", `${aliceDn}\nnot-the-password`)
-          const accepted = yield* probe(tmp.path, request, { port: exposed, credential: right })
-          const rejected = yield* probe(tmp.path, request, { port: exposed, credential: wrong })
+          const right = yield* credentialFile(tmp.path, "right.txt", alicePassword)
+          const wrong = yield* credentialFile(tmp.path, "wrong.txt", "not-the-password")
+          const accepted = yield* probe(tmp.path, request, { port: exposed, credential: right, account: aliceDn })
+          const rejected = yield* probe(tmp.path, request, { port: exposed, credential: wrong, account: aliceDn })
           expect(accepted.report.credential).toMatchObject({ tls: "starttls", bind: { state: "accepted" } })
           expect(rejected.report.credential).toMatchObject({ tls: "starttls", bind: { state: "rejected" } })
           expect(rejected.report.credential?.search).toBeNull()
@@ -478,7 +480,7 @@ test("the probe sends only bind, search, unbind and StartTLS, and never a creden
       Effect.gen(function* () {
         const tmp = yield* tmpdirScoped()
         const secret = "fake-peer-secret-7d1a"
-        const credential = yield* credentialFile(tmp.path, "cred.txt", `cn=reader,${base}\n${secret}`)
+        const credential = yield* credentialFile(tmp.path, "cred.txt", secret)
         const request = { action: "ldap_enum" as const, host: "127.0.0.1", credential: "reader" }
         for (const variant of [
           { advertise: true, startTls: false },
@@ -486,7 +488,7 @@ test("the probe sends only bind, search, unbind and StartTLS, and never a creden
         ]) {
           const peer = fakeDirectory(variant)
           const port = yield* Effect.promise(() => peer.listen())
-          const outcome = yield* probe(tmp.path, request, { port, credential }).pipe(
+          const outcome = yield* probe(tmp.path, request, { port, credential, account: `cn=reader,${base}` }).pipe(
             Effect.ensuring(Effect.promise(() => peer.close())),
           )
           const operations = [...new Set(peer.recorded.map((item) => item.op))].sort((a, b) => a - b)
@@ -604,6 +606,7 @@ const engagement = (
 const declared = {
   label: "reader",
   kind: "directory_bind" as const,
+  account: aliceDn,
   read_only: true as const,
   targets: [{ type: "host" as const, value: "lab.test" }],
   actions: ["cyber_directory.ldap_enum"],
@@ -621,7 +624,7 @@ const register = (env: Effect.Success<typeof environment>, label: string) => {
   const sealed = ForkCyberCredentials.seal(
     env.key,
     { owner, label, kind: "directory_bind" },
-    `${aliceDn}\n${alicePassword}`,
+    alicePassword,
   )
   return env.store.putCredential({
     owner,
@@ -667,9 +670,9 @@ test("a credential lease for an undeclared directory action is refused before an
           execution: "execution-2",
           now,
         })
-        // The value is a bind DN, a line feed and the password; the probe reads it from the job file.
-        expect(granted.value.indexOf(10)).toBeGreaterThan(0)
-        expect(granted.value.toString()).toBe(`${aliceDn}\n${alicePassword}`)
+        // The value is the password; its bind DN is the declared account. The probe reads it from the job file.
+        expect(granted.account).toBe(aliceDn)
+        expect(granted.value.toString()).toBe(alicePassword)
         granted.release()
       }),
     ),

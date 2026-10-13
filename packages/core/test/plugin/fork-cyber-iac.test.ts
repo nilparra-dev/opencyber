@@ -139,7 +139,7 @@ test("the job is configured with no network, and the Kali recipe pins the Checko
   expect(source).toContain("'--skip-download'")
   const recipe = await readFile(path.resolve(import.meta.dir, "../../../../fork-kali/Dockerfile"), "utf8")
   expect(recipe).toContain("checkov==3.3.26")
-  expect(recipe).toContain('org.opencyber.kali.version="6"')
+  expect(recipe).toContain('org.opencyber.kali.version="7"')
 })
 
 dockerTest(

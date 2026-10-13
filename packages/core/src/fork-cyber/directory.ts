@@ -23,7 +23,7 @@ const Artifact = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(2
 const Connection = {
   host: ForkCyberScope.Host,
   port: Schema.optional(integer(1, 65535)),
-  // A registered label whose value is `bind DN`, a line feed and the password. Only the label is model-visible.
+  // A registered label whose value is the password. Its bind DN is the declared account, so only the approved revision can name it. Only the label is model-visible.
   credential: Schema.optional(Label),
   timeout_ms: Schema.optional(integer(1000, 30000)),
 }
@@ -255,7 +255,8 @@ def anonymous(contexts):
     return {'bind':{'result':code,'state':state_of(code)},'search':found}
 def credential(contexts,starttls):
     if not starttls: return {'tls':'unavailable','bind':None,'search':None}
-    name,password=open(args['credential'],'rb').read().split(bytes([10]),1)
+    name=args['account'].encode()
+    password=open(args['credential'],'rb').read()
     with connect() as sock:
         send(sock,0x77,tlv(128,STARTTLS.encode()))
         _,body=receive(sock)
@@ -322,12 +323,12 @@ export const live = Effect.fn("ForkCyberDirectory.live")(function* (input: {
           now: input.now,
         })
   return yield* Effect.gen(function* () {
-    if (lease !== undefined && lease.value.indexOf(10) < 0)
+    if (lease !== undefined && lease.account === undefined)
       return yield* Effect.fail(
         new ForkCyberDiagnostics.Failure({
           category: "configuration",
           operation: "credential_lease",
-          message: "The registered directory credential is not a bind DN, a line feed and a password.",
+          message: "The registered directory credential has no declared account.",
           target_started: false,
           effects: "not_started",
         }),
@@ -338,6 +339,7 @@ export const live = Effect.fn("ForkCyberDirectory.live")(function* (input: {
       port,
       timeout: Math.max(1, Math.ceil(timeout / 1000)),
       credential: lease === undefined ? undefined : `/work/${name}`,
+      account: lease?.account,
     })
     return yield* ForkCyberKali.manager(input.store, input.profile, input.config).run(
       assessment,
@@ -403,6 +405,7 @@ export function probeArguments(input: {
   port: number
   timeout: number
   credential?: string
+  account?: string
 }) {
   return {
     host: input.host,
@@ -410,6 +413,7 @@ export function probeArguments(input: {
     timeout: input.timeout,
     anonymous: input.request.action === "ldap_enum" || input.request.credential === undefined,
     credential: input.credential ?? null,
+    account: input.account ?? null,
     search: searchOf(input.request),
   }
 }

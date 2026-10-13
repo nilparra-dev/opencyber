@@ -25,7 +25,7 @@ A credential is never sent in cleartext. The probe sends it only after the serve
 
 ## Brokered identities
 
-`credential` names a label that the engagement declares for `cyber_directory.<action>` with `read_only: true`, a `host` target, and a directory kind. The lease is taken before the Kali job exists, so a refused lease starts no container. The registered value is the bind DN, a line feed and the password:
+`credential` names a label that the engagement declares for `cyber_directory.<action>` with `read_only: true`, a `host` target, and a directory kind. The lease is taken before the Kali job exists, so a refused lease starts no container. The registered value is the password. The bind DN comes from the declared account of the label, which the approved revision must name; a directory_bind label without one is refused:
 
 ```text
 uid=reader,ou=people,dc=lab,dc=example,dc=test
