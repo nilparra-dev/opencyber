@@ -1,0 +1,9 @@
+{
+  "format": "opencyber-package-inventory-v1",
+  "image": "registry.example.test/ocfx-app@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+  "packages": [
+    { "ecosystem": "npm", "name": "ocfx-parser", "version": "1.4.2" },
+    { "ecosystem": "PyPI", "name": "ocfx_py", "version": "0.9.0" },
+    { "ecosystem": "deb", "name": "libssl3", "version": "3.0.11-1" }
+  ]
+}

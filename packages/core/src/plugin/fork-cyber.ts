@@ -528,7 +528,7 @@ export const Plugin = define({
         options: { codemode: false },
         input: ForkCyberContainerReview.Action,
         description:
-          'Review container configuration offline. dockerfile_lint reads a captured Dockerfile and reports unpinned or latest base images, root users, remote ADD, pipe-to-shell builds, credential-like build variables, SSH exposure and missing HEALTHCHECK. runtime_review reads an exported docker inspect JSON and reports privileged mode, host network or PID namespaces, the Docker socket, added capabilities, disabled security profiles, writable root filesystems, root users and credential-like environment names. Values are never reported. Findings are candidates; an empty result does not prove the image is hardened. No image is pulled or run. Example: {"action":"dockerfile_lint","artifact":"output-artifact-id"}.',
+          'Review container configuration offline. dockerfile_lint reads a captured Dockerfile and reports unpinned or latest base images, root users, remote ADD, pipe-to-shell builds, credential-like build variables, SSH exposure and missing HEALTHCHECK. runtime_review reads an exported docker inspect JSON and reports privileged mode, host network or PID namespaces, the Docker socket, added capabilities, disabled security profiles, writable root filesystems, root users and credential-like environment names. Values are never reported. Findings are candidates; an empty result does not prove the image is hardened. No image is pulled or run. image_scan matches an offline package inventory artifact (opencyber-package-inventory-v1) for an image referenced by digest against the pinned advisory snapshot, reports the snapshot version, and refuses tag-only references with invalid_input. Example: {"action":"dockerfile_lint","artifact":"output-artifact-id"}.',
         execute: (input, context) =>
           Effect.gen(function* () {
             const actor = {
@@ -1143,7 +1143,7 @@ export const Plugin = define({
         options: { codemode: false },
         input: ForkCyberCodeReview.Action,
         description:
-          "Read local review procedures, snapshot explicit project-relative UTF-8 files with hashes and line counts, scan explicit files offline for credential patterns (secrets; findings are redacted and carry a fingerprint, never the value), or import a local SARIF 2.1.0 report with source evidence. Does not execute a scanner or project code. Imported observations are candidates, not confirmed findings. Workers require an active phase task; each file must pass both review and read permissions.",
+          "Read local review procedures, snapshot explicit project-relative UTF-8 files with hashes and line counts, scan explicit files offline for credential patterns (secrets; findings are redacted and carry a fingerprint, never the value), match explicit package-lock.json or requirements*.txt pins against the pinned advisory snapshot (sca; reports the snapshot version), or import a local SARIF 2.1.0 report with source evidence. Example: {\"action\":\"sca\",\"files\":[\"package-lock.json\"]}. Does not execute a scanner or project code. Imported observations are candidates, not confirmed findings. Workers require an active phase task; each file must pass both review and read permissions.",
         execute: (input, context) =>
           Effect.gen(function* () {
             const result = yield* ForkCyberCodeReview.run(
