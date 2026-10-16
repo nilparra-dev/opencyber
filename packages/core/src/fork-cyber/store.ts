@@ -31,7 +31,7 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
   )
   yield* sql`PRAGMA foreign_keys = ON`
   const version = yield* sql<{ user_version: number }>`PRAGMA user_version`
-  if (![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].includes(version[0]?.user_version ?? -1))
+  if (![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].includes(version[0]?.user_version ?? -1))
     return yield* Effect.fail(new Error("Unsupported OpenCyber evidence database version"))
   if (version[0]?.user_version === 0)
     yield* sql
@@ -278,6 +278,30 @@ export const open = Effect.fn("ForkCyberStore.open")(function* (filename: string
           yield* sql`DROP TABLE engagement_credential`
           yield* sql`ALTER TABLE engagement_credential_v11 RENAME TO engagement_credential`
           yield* sql`PRAGMA user_version = 11`
+        }),
+      )
+      .pipe(
+        Effect.retry({
+          while: (error) => error.reason._tag === "LockTimeoutError",
+          times: 3,
+          schedule: Schedule.spaced(25),
+        }),
+      )
+
+  // host_login (OC-302) joins the kinds the credential table accepts. Same rebuild as version 11.
+  if ((version[0]?.user_version ?? 0) < 12)
+    yield* sql
+      .withTransaction(
+        Effect.gen(function* () {
+          yield* sql`CREATE TABLE engagement_credential_v12 (
+        owner TEXT NOT NULL, label TEXT NOT NULL,
+        kind TEXT NOT NULL CHECK (kind IN ('directory_bind', 'cloud_key', 'database_login', 'host_login')),
+        expires_at INTEGER NOT NULL, revoked_at INTEGER, nonce TEXT NOT NULL, ciphertext TEXT NOT NULL,
+        created_at INTEGER NOT NULL, PRIMARY KEY(owner, label))`
+          yield* sql`INSERT INTO engagement_credential_v12 SELECT * FROM engagement_credential`
+          yield* sql`DROP TABLE engagement_credential`
+          yield* sql`ALTER TABLE engagement_credential_v12 RENAME TO engagement_credential`
+          yield* sql`PRAGMA user_version = 12`
         }),
       )
       .pipe(

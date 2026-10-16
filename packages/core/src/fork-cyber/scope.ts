@@ -150,13 +150,26 @@ export const CredentialTarget = Schema.Union([Typed.host, Typed.domain, Typed.ci
 export type CredentialTarget = typeof CredentialTarget.Type
 // `tool` or `tool.action`, the same identifiers that approvals and risk declarations use.
 const CredentialAction = Schema.String.check(Schema.isPattern(/^[a-z_]+(\.[a-z_]+)?$/))
+// The non-secret account a host login authenticates as. The model cannot choose it; only the approved declaration can.
+const Account = Schema.String.check(Schema.isPattern(/^[a-z_][a-z0-9_-]{0,31}$/))
 export const Credential = Schema.Struct({
   label: Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9-]{0,62}$/)),
   kind: ForkCyberCredentials.Kind,
   read_only: Schema.Literal(true),
   targets: Schema.Array(CredentialTarget).check(Schema.isMinLength(1), Schema.isMaxLength(16)),
   actions: Schema.Array(CredentialAction).check(Schema.isMinLength(1), Schema.isMaxLength(16)),
-})
+  account: Schema.optional(Account),
+}).check(
+  Schema.makeFilter((value) => {
+    if ((value.kind === "host_login") !== (value.account !== undefined))
+      return "account is required for host_login and not allowed for other kinds"
+    if (value.kind === "host_login" && value.targets.some((target) => target.type !== "host"))
+      return "host_login targets must be hosts"
+    if (value.kind !== "host_login" && value.actions.some((action) => action.startsWith("cyber_host.")))
+      return "cyber_host actions need a host_login credential"
+    return true
+  }),
+)
 const Credentials = Schema.Array(Credential).check(
   Schema.isMaxLength(16),
   Schema.makeFilter<ReadonlyArray<typeof Credential.Type>>(
