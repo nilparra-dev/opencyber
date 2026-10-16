@@ -18,6 +18,7 @@ type Declaration = Risk | Readonly<Record<string, Risk>>
 // are not governed by risk; the role and mode rules still apply to them.
 const declared: Readonly<Record<string, Declaration>> = {
   cyber_artifacts: "R0",
+  cyber_binary: { pe: "R0", firmware: "R0" },
   cyber_browser: "R1",
   cyber_capabilities: "R0",
   cyber_code_review: "R0",

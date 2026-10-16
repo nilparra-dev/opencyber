@@ -25,6 +25,7 @@ import { ForkCyberDatabase } from "../fork-cyber/database.js"
 import { ForkCyberIacScan } from "../fork-cyber/iac-scan.js"
 import { ForkCyberFindingRetest } from "../fork-cyber/finding-retest.js"
 import { ForkCyberContainerReview } from "../fork-cyber/container-review.js"
+import { ForkCyberBinary } from "../fork-cyber/binary.js"
 import { ForkCyberKali } from "../fork-cyber/kali.js"
 import { ForkCyberKaliAllowlist } from "../fork-cyber/kali-allowlist.js"
 import { ForkCyberBrowser } from "../fork-cyber/browser.js"
@@ -703,6 +704,7 @@ export const Plugin = define({
       "cyber_surface",
       "cyber_capabilities",
       "cyber_artifacts",
+      "cyber_binary",
       "cyber_discover",
       "cyber_report",
       "cyber_credentials",
@@ -1067,6 +1069,24 @@ export const Plugin = define({
               ),
             }
           }).pipe(Effect.mapError((error) => ForkCyberDiagnostics.toolError(error, "cyber_tool"))),
+      })
+      editor.add({
+        name: "cyber_binary",
+        options: { codemode: false },
+        input: ForkCyberBinary.Action,
+        description:
+          'Analyze one engagement artifact offline in a network-disabled Kali job. The sample is never executed. pe parses a Windows PE with pefile (version in tool.version) and returns sections with entropy and hashes, imports, overlay bytes and anomaly candidates. firmware runs a binwalk signature scan with single-level extraction and returns signatures and extracted file hashes, never extracted contents. Import the sample first with cyber_surface (module binary, action import). Needs an engagement and Kali. Page long results with offset and next_offset; the full report is in report_artifact. Anomalies and signatures are candidates, not verdicts. Example: {"action":"pe","artifact":"<artifact ID>"}.',
+        execute: (input, context) =>
+          Effect.gen(function* () {
+            const runtime = yield* kali(context, "cyber_binary")
+            return {
+              content: ForkCyberRedaction.text(
+                JSON.stringify(
+                  yield* ForkCyberBinary.run(store, global.data, runtime.configuration, runtime.assessment, input),
+                ),
+              ),
+            }
+          }).pipe(Effect.mapError((error) => ForkCyberDiagnostics.toolError(error, "cyber_binary"))),
       })
       editor.add({
         name: "cyber_database",

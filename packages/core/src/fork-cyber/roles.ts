@@ -41,6 +41,7 @@ const observe = [
   "http_discover",
   "cyber_services",
   "cyber_artifacts",
+  "cyber_binary",
   "cyber_discover",
   "cyber_web_plan",
   "cyber_web_test",
@@ -66,7 +67,7 @@ const network = ["kali_run", "kali_environment", "cyber_surface"]
 export function tools(agent: string) {
   if (agent === "cyber-validate") return [...assess, "cyber_local_validation"]
   if (agent === "cyber-report") return read
-  if (agent === "cyber-code-review") return [...read, "cyber_code_review", "cyber_artifacts"]
+  if (agent === "cyber-code-review") return [...read, "cyber_code_review", "cyber_artifacts", "cyber_binary"]
   if (agent === "cyber-recon" || agent === "cyber-enum") return observe
   if (agent === "cyber-exploit-web") return [...observe, ...web]
   if (agent === "cyber-exploit-net") return [...observe, ...network]
