@@ -55,7 +55,12 @@ const Url = Schema.String.check(
   }),
 )
 const RepoPath = Text.check(Schema.makeFilter<string>((value) => !value.includes("\0") || "Must not contain NUL bytes"))
-const ImageDigest = Schema.String.check(Schema.isPattern(/^[^\s@]+@sha256:[a-f0-9]{64}$/))
+const ImageDigest = Schema.String.check(
+  Schema.makeFilter<string>(
+    (value) =>
+      imageReference(value) !== undefined || "Expected a registry host, repository and sha256 digest, without a tag",
+  ),
+)
 const DirectoryName = Text.check(Schema.isMaxLength(255))
 
 // Typed targets name what an engagement may touch. Each kind is validated here; `enforcement` says where it is enforced.
@@ -83,7 +88,8 @@ export const enforcement = {
   service: "Kali egress policy per protocol and port.",
   cloud_resource: "Exact S3 ARN before cyber_surface and identity-cloud calls. Live API filtering arrives with OC-304.",
   repo_path: "Code-review snapshot boundary. Refused by manifests until OC-205 records it.",
-  container_image: "Pull by digest only. Refused by manifests until OC-206 records it.",
+  container_image:
+    "Explicit registry host and port, pinned by digest. Recorded as a service entry; pulls outside it are refused before Docker runs.",
   device: "Host policy under the simulator-by-default rule. Refused by manifests until OC-301 records it.",
   directory: "Bounded read-only directory account. Refused by manifests until OC-303 records it.",
 } satisfies Record<keyof typeof Typed, string>
@@ -95,6 +101,7 @@ const ManifestTarget = Schema.Union([
   Typed.url,
   Typed.service,
   Typed.cloud_resource,
+  Typed.container_image,
 ])
 
 const Inclusions = Schema.Struct({
@@ -245,10 +252,29 @@ export function webService(value: string) {
   }
 }
 
+// A digest-pinned image reference with an explicit registry host and no tag. Docker treats a first component
+// without a dot, colon or `localhost` as a Docker Hub repository, so such references are refused here.
+export function imageReference(value: string) {
+  const match = /^([^/@\s]+)\/([a-z0-9][a-z0-9._/-]*)@(sha256:[a-f0-9]{64})$/.exec(value)
+  if (!match) return undefined
+  const [, registry = "", repository = "", digest = ""] = match
+  const location = /^([^:]+)(?::(\d{1,5}))?$/.exec(registry)
+  if (!location) return undefined
+  const host = normalize(location[1] ?? "")
+  const port = location[2] === undefined ? 443 : Number(location[2])
+  const explicit = host.includes(".") || host === "localhost" || location[2] !== undefined
+  if (!explicit || !isHost(host) || port < 1 || port > 65535) return undefined
+  return { host, port, repository, digest }
+}
+
 function withTargets(scope: typeof Inclusions.Type, targets: readonly (typeof ManifestTarget.Type)[]) {
   const services = targets.flatMap((target) => {
     if (target.type === "url") return webService(target.value).services
     if (target.type === "service") return [target.value]
+    if (target.type === "container_image") {
+      const image = imageReference(target.value)!
+      return [{ target: image.host, protocol: "tcp" as const, ports: [image.port] }]
+    }
     return []
   })
   return {
