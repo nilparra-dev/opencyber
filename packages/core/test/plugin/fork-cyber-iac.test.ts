@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test"
 import { Effect, Schema } from "effect"
+import { mkdir, readFile, writeFile } from "node:fs/promises"
 import path from "node:path"
-import { ForkCyberHttp } from "@opencode/core/fork-cyber/http"
+import { ForkCyberCodeReview } from "@opencode/core/fork-cyber/code-review"
 import { ForkCyberIacScan } from "@opencode/core/fork-cyber/iac-scan"
 import { ForkCyberKali } from "@opencode/core/fork-cyber/kali"
 import { ForkCyberScope } from "@opencode/core/fork-cyber/scope"
@@ -35,14 +36,26 @@ const PRIVATE_BUCKET = `resource "aws_s3_bucket" "private" {
   acl    = "private"
 }
 `
-// Stores each document as an artifact, the way a code review snapshot does, and returns its artifact id.
-const snapshot = Effect.fn(function* (store: Effect.Success<ReturnType<typeof ForkCyberStore.open>>, body: string) {
-  const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response(body) })
-  yield* Effect.addFinalizer(() => Effect.sync(() => server.stop(true)))
-  const hops = yield* ForkCyberHttp.run(store, () => Effect.succeed(assessment), {
-    url: `http://127.0.0.1:${server.port}/snapshot`,
-  })
-  return hops[0]!.capture.response_body
+
+// Captures the files with cyber_code_review, the only producer of accepted sources, and returns what it recorded.
+const snapshot = Effect.fn(function* (
+  store: Effect.Success<ReturnType<typeof ForkCyberStore.open>>,
+  directory: string,
+  files: readonly string[],
+) {
+  const result = yield* ForkCyberCodeReview.run(
+    store,
+    { owner: "owner", session: "session", agent: "build", directory, permission: () => Effect.void },
+    { action: "snapshot", files: [...files] },
+  )
+  if (!("files" in result)) return yield* Effect.fail(new Error("The snapshot returned no files"))
+  return result.files
+})
+
+const repository = Effect.fn(function* (directory: string) {
+  yield* Effect.tryPromise(() => mkdir(path.join(directory, "infra"), { recursive: true }))
+  yield* Effect.tryPromise(() => writeFile(path.join(directory, "infra", "public.tf"), PUBLIC_BUCKET))
+  yield* Effect.tryPromise(() => writeFile(path.join(directory, "infra", "private.tf"), PRIVATE_BUCKET))
 })
 
 test("the schema refuses more than sixteen files, and a call with no files", () => {
@@ -85,6 +98,50 @@ test("unsupported extensions and parent segments are refused before any job star
   )
 })
 
+test("only files recorded by a cyber_code_review snapshot, under the same label, can be scanned", async () => {
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const tmp = yield* tmpdirScoped()
+        const store = yield* ForkCyberStore.open(path.join(tmp.path, "iac.sqlite"))
+        const repo = path.join(tmp.path, "repo")
+        yield* repository(repo)
+        const [captured] = yield* snapshot(store, repo, ["infra/public.tf"])
+        const relabelled = yield* ForkCyberIacScan.run(store, tmp.path, kali, assessment, {
+          action: "iac_scan",
+          files: [{ file: "infra/other.tf", artifact: captured!.artifact }],
+        }).pipe(Effect.flip)
+        expect(String(relabelled)).toContain("is not a source file recorded by a cyber_code_review snapshot")
+        // An input artifact of another execution is stored in the same table but is not a snapshot.
+        const id = crypto.randomUUID()
+        yield* store.start({
+          id,
+          owner: "owner",
+          session: "session",
+          tool: "cyber_code_review",
+          agent: "build",
+          input: { action: "procedures" },
+        })
+        const input = (yield* store.artifacts("owner", id))[0]!
+        const unrecorded = yield* ForkCyberIacScan.run(store, tmp.path, kali, assessment, {
+          action: "iac_scan",
+          files: [{ file: "infra/public.tf", artifact: input.id }],
+        }).pipe(Effect.flip)
+        expect(String(unrecorded)).toContain("is not a source file recorded by a cyber_code_review snapshot")
+      }),
+    ),
+  )
+})
+
+test("the job is configured with no network, and the Kali recipe pins the Checkov version it records", async () => {
+  const source = await Bun.file(new URL("../../src/fork-cyber/iac-scan.ts", import.meta.url)).text()
+  expect(source).toContain('network: { kind: "none" }')
+  expect(source).toContain("'--skip-download'")
+  const recipe = await readFile(path.resolve(import.meta.dir, "../../../../fork-kali/Dockerfile"), "utf8")
+  expect(recipe).toContain("checkov==3.3.26")
+  expect(recipe).toContain('org.opencyber.kali.version="6"')
+})
+
 dockerTest(
   "Checkov flags the public bucket only, with no network, and reports its own file labels",
   async () => {
@@ -93,14 +150,12 @@ dockerTest(
         Effect.gen(function* () {
           const tmp = yield* tmpdirScoped()
           const store = yield* ForkCyberStore.open(path.join(tmp.path, "iac.sqlite"))
-          const publicArtifact = yield* snapshot(store, PUBLIC_BUCKET)
-          const privateArtifact = yield* snapshot(store, PRIVATE_BUCKET)
+          const repo = path.join(tmp.path, "repo")
+          yield* repository(repo)
+          const captured = yield* snapshot(store, repo, ["infra/public.tf", "infra/private.tf"])
           const result = yield* ForkCyberIacScan.run(store, tmp.path, kali, assessment, {
             action: "iac_scan",
-            files: [
-              { file: "infra/public.tf", artifact: publicArtifact },
-              { file: "infra/private.tf", artifact: privateArtifact },
-            ],
+            files: captured.map((file) => ({ file: file.file, artifact: file.artifact })),
           })
           expect(result).toMatchObject({
             format: "opencyber-iac-scan-v1",

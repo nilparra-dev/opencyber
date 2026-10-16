@@ -1,6 +1,6 @@
 export * as ForkCyberIacScan from "./iac-scan.js"
 
-import { Effect, Schema } from "effect"
+import { Effect, Option, Schema } from "effect"
 import { ForkCyberDiagnostics } from "./diagnostics.js"
 import { ForkCyberKali } from "./kali.js"
 import { ForkCyberRoles } from "./roles.js"
@@ -74,6 +74,27 @@ const invalid = (message: string, recovery: string) =>
     recovery,
   })
 
+// The only accepted source is a file that a completed cyber_code_review snapshot recorded under this label. An HTTP
+// response or an operator import has no such record, so it cannot be scanned as repository content.
+const Snapshot = Schema.Struct({ files: Schema.Array(Source) })
+const snapshotFile = Effect.fn(function* (store: Store, owner: string, source: typeof Source.Type) {
+  const raw = yield* store.readArtifact(owner, source.artifact)
+  const output = (yield* store.artifacts(owner, raw.execution)).find((item) => item.kind === "output")
+  const capture = output === undefined ? undefined : yield* store.readArtifact(owner, output.id)
+  const recorded = Option.getOrUndefined(
+    Schema.decodeUnknownOption(Schema.fromJsonString(Snapshot))(capture?.bytes.toString() ?? ""),
+  )
+  const matched = recorded?.files.some((file) => file.file === source.file && file.artifact === source.artifact)
+  if (raw.kind !== "code-review.source" || !matched)
+    return yield* Effect.fail(
+      invalid(
+        `${source.file} is not a source file recorded by a cyber_code_review snapshot`,
+        "Capture the repository with cyber_code_review snapshot, then pass the returned file labels and artifact IDs.",
+      ),
+    )
+  return raw
+})
+
 // Static analysis of staged infrastructure files with no network. Results describe those files only.
 export const run = Effect.fn(function* (
   store: Store,
@@ -100,7 +121,7 @@ export const run = Effect.fn(function* (
     if (item.source.file.split("/").some((segment) => segment === ".." || segment === ""))
       return yield* Effect.fail(invalid("File labels must not contain empty or parent segments", "Use snapshot paths."))
   }
-  const contents = yield* Effect.forEach(input.files, (source) => store.readArtifact(assessment.owner, source.artifact))
+  const contents = yield* Effect.forEach(input.files, (source) => snapshotFile(store, assessment.owner, source))
   if (contents.reduce((bytes, content) => bytes + content.bytes.byteLength, 0) > ForkCyberKali.INPUT_LIMIT)
     return yield* Effect.fail(invalid("Infrastructure files exceed 2 MiB", "Scan fewer files in one call."))
   const names = staged.map((item) => ({ name: `src${item.index}${item.extension}`, file: item.source.file }))
