@@ -1,7 +1,7 @@
 export * as ForkCyberCoordination from "./coordination.js"
 
 import { Effect, Option, Schema } from "effect"
-import { SqlClient } from "effect/unstable/sql"
+import { SqlClient } from "effect/sql"
 import { ForkCyberRoles } from "./roles.js"
 import { ForkCyberPagination } from "./pagination.js"
 import { ForkCyberDiagnostics } from "./diagnostics.js"

@@ -1,7 +1,7 @@
 import { Global } from "@opencode/util/global"
 import { AppProcess } from "@opencode/util/process"
 import { Effect, FileSystem, Layer, Ref } from "effect"
-import { ChildProcess } from "effect/unstable/process"
+import { ChildProcess } from "effect/process"
 import path from "node:path"
 import { OPENCODE_LOCAL, OPENCODE_VERSION } from "../version"
 import { Updater } from "./updater"

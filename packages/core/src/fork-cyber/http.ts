@@ -11,6 +11,7 @@ import { ForkCyberDiagnostics } from "./diagnostics.js"
 import { ForkCyberRoles } from "./roles.js"
 
 const Method = Schema.Literals(["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"])
+const base64Body = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/
 export const Request = Schema.Struct({
   url: Schema.String.check(Schema.isMaxLength(8192)),
   method: Schema.optional(Method),
@@ -28,7 +29,8 @@ export const Request = Schema.Struct({
           Schema.isMaxLength(1398104, {
             toJsonSchema: () => ({ description: "Base64 request body, at most 1 MiB after decoding." }),
           }),
-          Schema.isPattern(/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/),
+          // Effect 4 leaves pattern filters out of JSON Schema unless the annotation supplies one.
+          Schema.isPattern(base64Body, { toJsonSchema: () => ({ pattern: base64Body.source }) }),
         ),
       }),
     ]),

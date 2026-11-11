@@ -7,7 +7,8 @@ import type { Session } from "@opencode/schema/session"
 import type { AbsolutePath } from "@opencode/schema/schema"
 import type { Project } from "@opencode/schema/project"
 import type { RelativePath } from "@opencode/schema/schema"
-import type { Brand } from "effect"
+import type { SessionsCursor } from "@opencode/protocol/groups/session"
+import type { Money } from "@opencode/schema/money"
 import type { Model } from "@opencode/schema/model"
 import type { DateTime } from "effect"
 import type { Permission } from "@opencode/schema/permission"
@@ -21,6 +22,9 @@ import type { FileDiff } from "@opencode/schema/file-diff"
 import type { InstructionEntry } from "@opencode/schema/instruction-entry"
 import type { Event } from "@opencode/schema/event"
 import type { EventLog } from "@opencode/schema/event-log"
+import type { Workspace } from "@opencode/schema/workspace"
+import type { Instruction } from "@opencode/schema/instruction"
+import type { Snapshot } from "@opencode/schema/snapshot"
 import type { Shell } from "@opencode/schema/shell"
 import type { Provider } from "@opencode/schema/provider"
 import type { Form } from "@opencode/schema/form"
@@ -121,14 +125,11 @@ export type SessionListInput = {
   readonly directory?: AbsolutePath | undefined
   readonly project?: Project.ID | undefined
   readonly subpath?: RelativePath | undefined
-  readonly cursor?: (string & Brand.Brand<"SessionsCursor">) | undefined
+  readonly cursor?: SessionsCursor | undefined
 }
 export type SessionListOutput = {
   readonly data: ReadonlyArray<Session.Info>
-  readonly cursor: {
-    readonly previous?: (string & Brand.Brand<"SessionsCursor">) | undefined
-    readonly next?: (string & Brand.Brand<"SessionsCursor">) | undefined
-  }
+  readonly cursor: { readonly previous?: SessionsCursor | undefined; readonly next?: SessionsCursor | undefined }
 }
 export type SessionListOperation<E = never> = (input?: SessionListInput) => Effect.Effect<SessionListOutput, E>
 
@@ -151,7 +152,7 @@ export type SessionStatsOutput = {
     readonly reasoning: number
     readonly cache: { readonly read: number; readonly write: number }
   }
-  readonly cost: number & Brand.Brand<"Money.USD">
+  readonly cost: Money.USD
   readonly tools:
     | { readonly mode: "none" }
     | {
@@ -192,7 +193,7 @@ export type SessionStatsOutput = {
       readonly reasoning: number
       readonly cache: { readonly read: number; readonly write: number }
     }
-    readonly cost: number & Brand.Brand<"Money.USD">
+    readonly cost: Money.USD
   }>
 }
 export type SessionStatsOperation<E = never> = (input?: SessionStatsInput) => Effect.Effect<SessionStatsOutput, E>
@@ -527,18 +528,12 @@ export type SessionLogOutput =
           readonly type: "session.created"
           readonly durable: { readonly aggregateID: string; readonly seq: Event.Seq; readonly version: Event.Version }
           readonly location?:
-            | {
-                readonly directory: AbsolutePath
-                readonly workspaceID?: (string & Brand.Brand<"Workspace.ID">) | undefined
-              }
+            | { readonly directory: AbsolutePath; readonly workspaceID?: Workspace.ID | undefined }
             | undefined
           readonly data: {
             readonly sessionID: Session.ID
             readonly projectID: Project.ID
-            readonly location: {
-              readonly directory: AbsolutePath
-              readonly workspaceID?: (string & Brand.Brand<"Workspace.ID">) | undefined
-            }
+            readonly location: { readonly directory: AbsolutePath; readonly workspaceID?: Workspace.ID | undefined }
             readonly subpath?: RelativePath | undefined
             readonly parentID?: Session.ID | undefined
             readonly slug: string
@@ -557,10 +552,7 @@ export type SessionLogOutput =
           readonly type: "session.agent.selected"
           readonly durable: { readonly aggregateID: string; readonly seq: Event.Seq; readonly version: Event.Version }
           readonly location?:
-            | {
-                readonly directory: AbsolutePath
-                readonly workspaceID?: (string & Brand.Brand<"Workspace.ID">) | undefined
-              }
+            | { readonly directory: AbsolutePath; readonly workspaceID?: Workspace.ID | undefined }
             | undefined
           readonly data: {
             readonly sessionID: Session.ID
@@ -575,10 +567,7 @@ export type SessionLogOutput =
           readonly type: "session.model.selected"
           readonly durable: { readonly aggregateID: string; readonly seq: Event.Seq; readonly version: Event.Version }
           readonly location?:
-            | {
-                readonly directory: AbsolutePath
-                readonly workspaceID?: (string & Brand.Brand<"Workspace.ID">) | undefined
-              }
+            | { readonly directory: AbsolutePath; readonly workspaceID?: Workspace.ID | undefined }
             | undefined
           readonly data: {
             readonly sessionID: Session.ID
@@ -593,17 +582,11 @@ export type SessionLogOutput =
           readonly type: "session.moved"
           readonly durable: { readonly aggregateID: string; readonly seq: Event.Seq; readonly version: Event.Version }
           readonly location?:
-            | {
-                readonly directory: AbsolutePath
-                readonly workspaceID?: (string & Brand.Brand<"Workspace.ID">) | undefined
-              }
+            | { readonly directory: AbsolutePath; readonly workspaceID?: Workspace.ID | undefined }
             | undefined
           readonly data: {
             readonly sessionID: Session.ID
-            readonly location: {
-              readonly directory: AbsolutePath
-              readonly workspaceID?: (string & Brand.Brand<"Workspace.ID">) | undefined
-            }
+            readonly location: { readonly directory: AbsolutePath; readonly workspaceID?: Workspace.ID | undefined }
             readonly projectID: Project.ID
             readonly subpath?: RelativePath | undefined
           }
@@ -615,10 +598,7 @@ export type SessionLogOutput =
           readonly type: "session.renamed"
           readonly durable: { readonly aggregateID: string; readonly seq: Event.Seq; readonly version: Event.Version }
           readonly location?:
-            | {
-                readonly directory: AbsolutePath
-                readonly workspaceID?: (string & Brand.Brand<"Workspace.ID">) | undefined
-              }
+            | { readonly directory: AbsolutePath; readonly workspaceID?: Workspace.ID | undefined }
             | undefined
           readonly data: { readonly sessionID: Session.ID; readonly title: string }
         }
@@ -629,10 +609,7 @@ export type SessionLogOutput =
           readonly type: "session.metadata.updated"
           readonly durable: { readonly aggregateID: string; readonly seq: Event.Seq; readonly version: Event.Version }
           readonly location?:
-            | {
-                readonly directory: AbsolutePath
-                readonly workspaceID?: (string & Brand.Brand<"Workspace.ID">) | undefined
-              }
+            | { readonly directory: AbsolutePath; readonly workspaceID?: Workspace.ID | undefined }
             | undefined
           readonly data: { readonly sessionID: Session.ID; readonly metadata: Session.Metadata }
         }
@@ -643,10 +620,7 @@ export type SessionLogOutput =
           readonly type: "session.permissions"
           readonly durable: { readonly aggregateID: string; readonly seq: Event.Seq; readonly version: Event.Version }
           readonly location?:
-            | {
-                readonly directory: AbsolutePath
-                readonly workspaceID?: (string & Brand.Brand<"Workspace.ID">) | undefined
-              }
+            | { readonly directory: AbsolutePath; readonly workspaceID?: Workspace.ID | undefined }
             | undefined
           readonly data: { readonly sessionID: Session.ID; readonly permissions: Permission.Ruleset }
         }
@@ -657,10 +631,7 @@ export type SessionLogOutput =
           readonly type: "session.viewed"
           readonly durable: { readonly aggregateID: string; readonly seq: Event.Seq; readonly version: Event.Version }
           readonly location?:
-            | {
-                readonly directory: AbsolutePath
-                readonly workspaceID?: (string & Brand.Brand<"Workspace.ID">) | undefined
-              }
+            | { readonly directory: AbsolutePath; readonly workspaceID?: Workspace.ID | undefined }
             | undefined
           readonly data: { readonly sessionID: Session.ID; readonly idle: number }
         }
@@ -671,10 +642,7 @@ export type SessionLogOutput =
           readonly type: "session.deleted"
           readonly durable: { readonly aggregateID: string; readonly seq: Event.Seq; readonly version: Event.Version }
           readonly location?:
-            | {
-                readonly directory: AbsolutePath
-                readonly workspaceID?: (string & Brand.Brand<"Workspace.ID">) | undefined
-              }
+            | { readonly directory: AbsolutePath; readonly workspaceID?: Workspace.ID | undefined }
             | undefined
           readonly data: { readonly sessionID: Session.ID }
         }
@@ -685,18 +653,13 @@ export type SessionLogOutput =
           readonly type: "session.forked"
           readonly durable: { readonly aggregateID: string; readonly seq: Event.Seq; readonly version: Event.Version }
           readonly location?:
-            | {
-                readonly directory: AbsolutePath
-                readonly workspaceID?: (string & Brand.Brand<"Workspace.ID">) | undefined
-              }
+            | { readonly directory: AbsolutePath; readonly workspaceID?: Workspace.ID | undefined }
             | undefined
           readonly data: {
             readonly sessionID: Session.ID
             readonly parentID: Session.ID
             readonly boundary: Session.ForkBoundary
-            readonly instructions?:
-              | { readonly [x: string & Brand.Brand<"Instruction.Key">]: string & Brand.Brand<"Instruction.Hash"> }
-              | undefined
+            readonly instructions?: { readonly [x: Instruction.Key]: Instruction.Hash } | undefined
             readonly instructionEntries?: InstructionEntry.Snapshot | undefined
           }
         }
@@ -707,10 +670,7 @@ export type SessionLogOutput =
           readonly type: "session.inbox.delivered"
           readonly durable: { readonly aggregateID: string; readonly seq: Event.Seq; readonly version: Event.Version }
           readonly location?:
-            | {
-                readonly directory: AbsolutePath
-                readonly workspaceID?: (string & Brand.Brand<"Workspace.ID">) | undefined
-              }
+            | { readonly directory: AbsolutePath; readonly workspaceID?: Workspace.ID | undefined }
             | undefined
           readonly data: { readonly sessionID: Session.ID; readonly inboxID: SessionMessage.ID }
         }
@@ -721,10 +681,7 @@ export type SessionLogOutput =
           readonly type: "session.inbox.enqueued"
           readonly durable: { readonly aggregateID: string; readonly seq: Event.Seq; readonly version: Event.Version }
           readonly location?:
-            | {
-                readonly directory: AbsolutePath
-                readonly workspaceID?: (string & Brand.Brand<"Workspace.ID">) | undefined
-              }
+            | { readonly directory: AbsolutePath; readonly workspaceID?: Workspace.ID | undefined }
             | undefined
           readonly data: {
             readonly sessionID: Session.ID
@@ -739,10 +696,7 @@ export type SessionLogOutput =
           readonly type: "session.inbox.cancelled"
           readonly durable: { readonly aggregateID: string; readonly seq: Event.Seq; readonly version: Event.Version }
           readonly location?:
-            | {
-                readonly directory: AbsolutePath
-                readonly workspaceID?: (string & Brand.Brand<"Workspace.ID">) | undefined
-              }
+            | { readonly directory: AbsolutePath; readonly workspaceID?: Workspace.ID | undefined }
             | undefined
           readonly data: { readonly sessionID: Session.ID; readonly inboxID: SessionMessage.ID }
         }
@@ -753,10 +707,7 @@ export type SessionLogOutput =
           readonly type: "session.inbox.delivery.changed"
           readonly durable: { readonly aggregateID: string; readonly seq: Event.Seq; readonly version: Event.Version }
           readonly location?:
-            | {
-                readonly directory: AbsolutePath
-                readonly workspaceID?: (string & Brand.Brand<"Workspace.ID">) | undefined
-              }
+            | { readonly directory: AbsolutePath; readonly workspaceID?: Workspace.ID | undefined }
             | undefined
           readonly data: {
             readonly sessionID: Session.ID
@@ -771,10 +722,7 @@ export type SessionLogOutput =
           readonly type: "session.execution.started"
           readonly durable: { readonly aggregateID: string; readonly seq: Event.Seq; readonly version: Event.Version }
           readonly location?:
-            | {
-                readonly directory: AbsolutePath
-                readonly workspaceID?: (string & Brand.Brand<"Workspace.ID">) | undefined
-              }
+            | { readonly directory: AbsolutePath; readonly workspaceID?: Workspace.ID | undefined }
             | undefined
           readonly data: { readonly sessionID: Session.ID }
         }
@@ -785,10 +733,7 @@ export type SessionLogOutput =
           readonly type: "session.execution.succeeded"
           readonly durable: { readonly aggregateID: string; readonly seq: Event.Seq; readonly version: Event.Version }
           readonly location?:
-            | {
-                readonly directory: AbsolutePath
-                readonly workspaceID?: (string & Brand.Brand<"Workspace.ID">) | undefined
-              }
+            | { readonly directory: AbsolutePath; readonly workspaceID?: Workspace.ID | undefined }
             | undefined
           readonly data: { readonly sessionID: Session.ID }
         }
@@ -799,10 +744,7 @@ export type SessionLogOutput =
           readonly type: "session.execution.failed"
           readonly durable: { readonly aggregateID: string; readonly seq: Event.Seq; readonly version: Event.Version }
           readonly location?:
-            | {
-                readonly directory: AbsolutePath
-                readonly workspaceID?: (string & Brand.Brand<"Workspace.ID">) | undefined
-              }
+            | { readonly directory: AbsolutePath; readonly workspaceID?: Workspace.ID | undefined }
             | undefined
           readonly data: {
             readonly sessionID: Session.ID
@@ -821,10 +763,7 @@ export type SessionLogOutput =
           readonly type: "session.execution.interrupted"
           readonly durable: { readonly aggregateID: string; readonly seq: Event.Seq; readonly version: Event.Version }
           readonly location?:
-            | {
-                readonly directory: AbsolutePath
-                readonly workspaceID?: (string & Brand.Brand<"Workspace.ID">) | undefined
-              }
+            | { readonly directory: AbsolutePath; readonly workspaceID?: Workspace.ID | undefined }
             | undefined
           readonly data: {
             readonly sessionID: Session.ID
@@ -838,14 +777,11 @@ export type SessionLogOutput =
           readonly type: "session.instructions.updated"
           readonly durable: { readonly aggregateID: string; readonly seq: Event.Seq; readonly version: Event.Version }
           readonly location?:
-            | {
-                readonly directory: AbsolutePath
-                readonly workspaceID?: (string & Brand.Brand<"Workspace.ID">) | undefined
-              }
+            | { readonly directory: AbsolutePath; readonly workspaceID?: Workspace.ID | undefined }
             | undefined
           readonly data: {
             readonly sessionID: Session.ID
-            readonly delta: { readonly [x: string]: (string & Brand.Brand<"Instruction.Hash">) | "removed" }
+            readonly delta: { readonly [x: string]: Instruction.Hash | "removed" }
             readonly text?: string | undefined
           }
         }
@@ -856,10 +792,7 @@ export type SessionLogOutput =
           readonly type: "session.synthetic"
           readonly durable: { readonly aggregateID: string; readonly seq: Event.Seq; readonly version: Event.Version }
           readonly location?:
-            | {
-                readonly directory: AbsolutePath
-                readonly workspaceID?: (string & Brand.Brand<"Workspace.ID">) | undefined
-              }
+            | { readonly directory: AbsolutePath; readonly workspaceID?: Workspace.ID | undefined }
             | undefined
           readonly data: {
             readonly sessionID: Session.ID
@@ -875,10 +808,7 @@ export type SessionLogOutput =
           readonly type: "session.skill.activated"
           readonly durable: { readonly aggregateID: string; readonly seq: Event.Seq; readonly version: Event.Version }
           readonly location?:
-            | {
-                readonly directory: AbsolutePath
-                readonly workspaceID?: (string & Brand.Brand<"Workspace.ID">) | undefined
-              }
+            | { readonly directory: AbsolutePath; readonly workspaceID?: Workspace.ID | undefined }
             | undefined
           readonly data: {
             readonly sessionID: Session.ID
@@ -894,10 +824,7 @@ export type SessionLogOutput =
           readonly type: "session.shell.started"
           readonly durable: { readonly aggregateID: string; readonly seq: Event.Seq; readonly version: Event.Version }
           readonly location?:
-            | {
-                readonly directory: AbsolutePath
-                readonly workspaceID?: (string & Brand.Brand<"Workspace.ID">) | undefined
-              }
+            | { readonly directory: AbsolutePath; readonly workspaceID?: Workspace.ID | undefined }
             | undefined
           readonly data: { readonly sessionID: Session.ID; readonly shell: Shell.Info }
         }
@@ -908,10 +835,7 @@ export type SessionLogOutput =
           readonly type: "session.shell.ended"
           readonly durable: { readonly aggregateID: string; readonly seq: Event.Seq; readonly version: Event.Version }
           readonly location?:
-            | {
-                readonly directory: AbsolutePath
-                readonly workspaceID?: (string & Brand.Brand<"Workspace.ID">) | undefined
-              }
+            | { readonly directory: AbsolutePath; readonly workspaceID?: Workspace.ID | undefined }
             | undefined
           readonly data: {
             readonly sessionID: Session.ID
@@ -931,17 +855,14 @@ export type SessionLogOutput =
           readonly type: "session.step.started"
           readonly durable: { readonly aggregateID: string; readonly seq: Event.Seq; readonly version: Event.Version }
           readonly location?:
-            | {
-                readonly directory: AbsolutePath
-                readonly workspaceID?: (string & Brand.Brand<"Workspace.ID">) | undefined
-              }
+            | { readonly directory: AbsolutePath; readonly workspaceID?: Workspace.ID | undefined }
             | undefined
           readonly data: {
             readonly sessionID: Session.ID
             readonly assistantMessageID: SessionMessage.ID
             readonly agent: Agent.ID
             readonly model: Model.Ref
-            readonly snapshot?: (string & Brand.Brand<"Snapshot.ID">) | undefined
+            readonly snapshot?: Snapshot.ID | undefined
             readonly started: number
           }
         }
@@ -952,10 +873,7 @@ export type SessionLogOutput =
           readonly type: "session.step.streamed"
           readonly durable: { readonly aggregateID: string; readonly seq: Event.Seq; readonly version: Event.Version }
           readonly location?:
-            | {
-                readonly directory: AbsolutePath
-                readonly workspaceID?: (string & Brand.Brand<"Workspace.ID">) | undefined
-              }
+            | { readonly directory: AbsolutePath; readonly workspaceID?: Workspace.ID | undefined }
             | undefined
           readonly data: { readonly sessionID: Session.ID; readonly assistantMessageID: SessionMessage.ID }
         }
@@ -966,10 +884,7 @@ export type SessionLogOutput =
           readonly type: "session.step.ended"
           readonly durable: { readonly aggregateID: string; readonly seq: Event.Seq; readonly version: Event.Version }
           readonly location?:
-            | {
-                readonly directory: AbsolutePath
-                readonly workspaceID?: (string & Brand.Brand<"Workspace.ID">) | undefined
-              }
+            | { readonly directory: AbsolutePath; readonly workspaceID?: Workspace.ID | undefined }
             | undefined
           readonly data: {
             readonly sessionID: Session.ID
@@ -977,14 +892,14 @@ export type SessionLogOutput =
             readonly finish: "stop" | "length" | "tool-calls" | "content-filter" | "error" | "unknown"
             readonly rawFinish?: string | undefined
             readonly providerState?: SessionMessage.ProviderState | undefined
-            readonly cost: number & Brand.Brand<"Money.USD">
+            readonly cost: Money.USD
             readonly tokens: {
               readonly input: number
               readonly output: number
               readonly reasoning: number
               readonly cache: { readonly read: number; readonly write: number }
             }
-            readonly snapshot?: (string & Brand.Brand<"Snapshot.ID">) | undefined
+            readonly snapshot?: Snapshot.ID | undefined
             readonly files?: ReadonlyArray<RelativePath> | undefined
           }
         }
@@ -995,10 +910,7 @@ export type SessionLogOutput =
           readonly type: "session.step.failed"
           readonly durable: { readonly aggregateID: string; readonly seq: Event.Seq; readonly version: Event.Version }
           readonly location?:
-            | {
-                readonly directory: AbsolutePath
-                readonly workspaceID?: (string & Brand.Brand<"Workspace.ID">) | undefined
-              }
+            | { readonly directory: AbsolutePath; readonly workspaceID?: Workspace.ID | undefined }
             | undefined
           readonly data: {
             readonly sessionID: Session.ID
@@ -1012,7 +924,7 @@ export type SessionLogOutput =
             readonly finish?: "content-filter" | undefined
             readonly rawFinish?: string | undefined
             readonly providerState?: SessionMessage.ProviderState | undefined
-            readonly cost?: (number & Brand.Brand<"Money.USD">) | undefined
+            readonly cost?: Money.USD | undefined
             readonly tokens?:
               | {
                   readonly input: number
@@ -1021,7 +933,7 @@ export type SessionLogOutput =
                   readonly cache: { readonly read: number; readonly write: number }
                 }
               | undefined
-            readonly snapshot?: (string & Brand.Brand<"Snapshot.ID">) | undefined
+            readonly snapshot?: Snapshot.ID | undefined
             readonly files?: ReadonlyArray<RelativePath> | undefined
           }
         }
@@ -1032,10 +944,7 @@ export type SessionLogOutput =
           readonly type: "session.text.started"
           readonly durable: { readonly aggregateID: string; readonly seq: Event.Seq; readonly version: Event.Version }
           readonly location?:
-            | {
-                readonly directory: AbsolutePath
-                readonly workspaceID?: (string & Brand.Brand<"Workspace.ID">) | undefined
-              }
+            | { readonly directory: AbsolutePath; readonly workspaceID?: Workspace.ID | undefined }
             | undefined
           readonly data: {
             readonly sessionID: Session.ID
@@ -1050,10 +959,7 @@ export type SessionLogOutput =
           readonly type: "session.text.ended"
           readonly durable: { readonly aggregateID: string; readonly seq: Event.Seq; readonly version: Event.Version }
           readonly location?:
-            | {
-                readonly directory: AbsolutePath
-                readonly workspaceID?: (string & Brand.Brand<"Workspace.ID">) | undefined
-              }
+            | { readonly directory: AbsolutePath; readonly workspaceID?: Workspace.ID | undefined }
             | undefined
           readonly data: {
             readonly sessionID: Session.ID
@@ -1070,10 +976,7 @@ export type SessionLogOutput =
           readonly type: "session.reasoning.started"
           readonly durable: { readonly aggregateID: string; readonly seq: Event.Seq; readonly version: Event.Version }
           readonly location?:
-            | {
-                readonly directory: AbsolutePath
-                readonly workspaceID?: (string & Brand.Brand<"Workspace.ID">) | undefined
-              }
+            | { readonly directory: AbsolutePath; readonly workspaceID?: Workspace.ID | undefined }
             | undefined
           readonly data: {
             readonly sessionID: Session.ID
@@ -1089,10 +992,7 @@ export type SessionLogOutput =
           readonly type: "session.reasoning.ended"
           readonly durable: { readonly aggregateID: string; readonly seq: Event.Seq; readonly version: Event.Version }
           readonly location?:
-            | {
-                readonly directory: AbsolutePath
-                readonly workspaceID?: (string & Brand.Brand<"Workspace.ID">) | undefined
-              }
+            | { readonly directory: AbsolutePath; readonly workspaceID?: Workspace.ID | undefined }
             | undefined
           readonly data: {
             readonly sessionID: Session.ID
@@ -1109,10 +1009,7 @@ export type SessionLogOutput =
           readonly type: "session.tool.input.started"
           readonly durable: { readonly aggregateID: string; readonly seq: Event.Seq; readonly version: Event.Version }
           readonly location?:
-            | {
-                readonly directory: AbsolutePath
-                readonly workspaceID?: (string & Brand.Brand<"Workspace.ID">) | undefined
-              }
+            | { readonly directory: AbsolutePath; readonly workspaceID?: Workspace.ID | undefined }
             | undefined
           readonly data: {
             readonly sessionID: Session.ID
@@ -1128,10 +1025,7 @@ export type SessionLogOutput =
           readonly type: "session.tool.input.ended"
           readonly durable: { readonly aggregateID: string; readonly seq: Event.Seq; readonly version: Event.Version }
           readonly location?:
-            | {
-                readonly directory: AbsolutePath
-                readonly workspaceID?: (string & Brand.Brand<"Workspace.ID">) | undefined
-              }
+            | { readonly directory: AbsolutePath; readonly workspaceID?: Workspace.ID | undefined }
             | undefined
           readonly data: {
             readonly sessionID: Session.ID
@@ -1147,10 +1041,7 @@ export type SessionLogOutput =
           readonly type: "session.tool.called"
           readonly durable: { readonly aggregateID: string; readonly seq: Event.Seq; readonly version: Event.Version }
           readonly location?:
-            | {
-                readonly directory: AbsolutePath
-                readonly workspaceID?: (string & Brand.Brand<"Workspace.ID">) | undefined
-              }
+            | { readonly directory: AbsolutePath; readonly workspaceID?: Workspace.ID | undefined }
             | undefined
           readonly data: {
             readonly sessionID: Session.ID
@@ -1168,10 +1059,7 @@ export type SessionLogOutput =
           readonly type: "session.tool.success"
           readonly durable: { readonly aggregateID: string; readonly seq: Event.Seq; readonly version: Event.Version }
           readonly location?:
-            | {
-                readonly directory: AbsolutePath
-                readonly workspaceID?: (string & Brand.Brand<"Workspace.ID">) | undefined
-              }
+            | { readonly directory: AbsolutePath; readonly workspaceID?: Workspace.ID | undefined }
             | undefined
           readonly data: {
             readonly sessionID: Session.ID
@@ -1209,10 +1097,7 @@ export type SessionLogOutput =
           readonly type: "session.tool.failed"
           readonly durable: { readonly aggregateID: string; readonly seq: Event.Seq; readonly version: Event.Version }
           readonly location?:
-            | {
-                readonly directory: AbsolutePath
-                readonly workspaceID?: (string & Brand.Brand<"Workspace.ID">) | undefined
-              }
+            | { readonly directory: AbsolutePath; readonly workspaceID?: Workspace.ID | undefined }
             | undefined
           readonly data: {
             readonly sessionID: Session.ID
@@ -1258,10 +1143,7 @@ export type SessionLogOutput =
           readonly type: "session.retry.scheduled"
           readonly durable: { readonly aggregateID: string; readonly seq: Event.Seq; readonly version: Event.Version }
           readonly location?:
-            | {
-                readonly directory: AbsolutePath
-                readonly workspaceID?: (string & Brand.Brand<"Workspace.ID">) | undefined
-              }
+            | { readonly directory: AbsolutePath; readonly workspaceID?: Workspace.ID | undefined }
             | undefined
           readonly data: {
             readonly sessionID: Session.ID
@@ -1283,10 +1165,7 @@ export type SessionLogOutput =
           readonly type: "session.compaction.started"
           readonly durable: { readonly aggregateID: string; readonly seq: Event.Seq; readonly version: Event.Version }
           readonly location?:
-            | {
-                readonly directory: AbsolutePath
-                readonly workspaceID?: (string & Brand.Brand<"Workspace.ID">) | undefined
-              }
+            | { readonly directory: AbsolutePath; readonly workspaceID?: Workspace.ID | undefined }
             | undefined
           readonly data: {
             readonly sessionID: Session.ID
@@ -1302,10 +1181,7 @@ export type SessionLogOutput =
           readonly type: "session.compaction.ended"
           readonly durable: { readonly aggregateID: string; readonly seq: Event.Seq; readonly version: Event.Version }
           readonly location?:
-            | {
-                readonly directory: AbsolutePath
-                readonly workspaceID?: (string & Brand.Brand<"Workspace.ID">) | undefined
-              }
+            | { readonly directory: AbsolutePath; readonly workspaceID?: Workspace.ID | undefined }
             | undefined
           readonly data: {
             readonly sessionID: Session.ID
@@ -1328,7 +1204,7 @@ export type SessionLogOutput =
               | undefined
             readonly text: string
             readonly recent: string
-            readonly cost?: (number & Brand.Brand<"Money.USD">) | undefined
+            readonly cost?: Money.USD | undefined
             readonly tokens?:
               | {
                   readonly input: number
@@ -1346,10 +1222,7 @@ export type SessionLogOutput =
           readonly type: "session.compaction.failed"
           readonly durable: { readonly aggregateID: string; readonly seq: Event.Seq; readonly version: Event.Version }
           readonly location?:
-            | {
-                readonly directory: AbsolutePath
-                readonly workspaceID?: (string & Brand.Brand<"Workspace.ID">) | undefined
-              }
+            | { readonly directory: AbsolutePath; readonly workspaceID?: Workspace.ID | undefined }
             | undefined
           readonly data: {
             readonly sessionID: Session.ID
@@ -1361,7 +1234,7 @@ export type SessionLogOutput =
               readonly response?: { readonly body: string } | undefined
             }
             readonly inputID?: SessionMessage.ID | undefined
-            readonly cost?: (number & Brand.Brand<"Money.USD">) | undefined
+            readonly cost?: Money.USD | undefined
             readonly tokens?:
               | {
                   readonly input: number
@@ -1379,10 +1252,7 @@ export type SessionLogOutput =
           readonly type: "session.revert.staged"
           readonly durable: { readonly aggregateID: string; readonly seq: Event.Seq; readonly version: Event.Version }
           readonly location?:
-            | {
-                readonly directory: AbsolutePath
-                readonly workspaceID?: (string & Brand.Brand<"Workspace.ID">) | undefined
-              }
+            | { readonly directory: AbsolutePath; readonly workspaceID?: Workspace.ID | undefined }
             | undefined
           readonly data: { readonly sessionID: Session.ID; readonly revert: Session.Revert }
         }
@@ -1393,10 +1263,7 @@ export type SessionLogOutput =
           readonly type: "session.revert.cleared"
           readonly durable: { readonly aggregateID: string; readonly seq: Event.Seq; readonly version: Event.Version }
           readonly location?:
-            | {
-                readonly directory: AbsolutePath
-                readonly workspaceID?: (string & Brand.Brand<"Workspace.ID">) | undefined
-              }
+            | { readonly directory: AbsolutePath; readonly workspaceID?: Workspace.ID | undefined }
             | undefined
           readonly data: { readonly sessionID: Session.ID }
         }
@@ -1407,10 +1274,7 @@ export type SessionLogOutput =
           readonly type: "session.revert.committed"
           readonly durable: { readonly aggregateID: string; readonly seq: Event.Seq; readonly version: Event.Version }
           readonly location?:
-            | {
-                readonly directory: AbsolutePath
-                readonly workspaceID?: (string & Brand.Brand<"Workspace.ID">) | undefined
-              }
+            | { readonly directory: AbsolutePath; readonly workspaceID?: Workspace.ID | undefined }
             | undefined
           readonly data: { readonly sessionID: Session.ID; readonly to: SessionMessage.ID }
         }
@@ -1421,15 +1285,12 @@ export type SessionLogOutput =
           readonly type: "session.usage.recorded"
           readonly durable: { readonly aggregateID: string; readonly seq: Event.Seq; readonly version: Event.Version }
           readonly location?:
-            | {
-                readonly directory: AbsolutePath
-                readonly workspaceID?: (string & Brand.Brand<"Workspace.ID">) | undefined
-              }
+            | { readonly directory: AbsolutePath; readonly workspaceID?: Workspace.ID | undefined }
             | undefined
           readonly data: {
             readonly sessionID: Session.ID
             readonly source: "title" | "compaction"
-            readonly cost: number & Brand.Brand<"Money.USD">
+            readonly cost: Money.USD
             readonly tokens: {
               readonly input: number
               readonly output: number
@@ -1445,10 +1306,7 @@ export type SessionLogOutput =
           readonly type: "session.message.content.updated"
           readonly durable: { readonly aggregateID: string; readonly seq: Event.Seq; readonly version: Event.Version }
           readonly location?:
-            | {
-                readonly directory: AbsolutePath
-                readonly workspaceID?: (string & Brand.Brand<"Workspace.ID">) | undefined
-              }
+            | { readonly directory: AbsolutePath; readonly workspaceID?: Workspace.ID | undefined }
             | undefined
           readonly data: {
             readonly sessionID: Session.ID
@@ -1899,8 +1757,9 @@ export interface CredentialApi<E = never> {
   readonly remove: CredentialRemoveOperation<E>
 }
 
+export type ProjectListInput = { readonly archived?: boolean | undefined }
 export type ProjectListOutput = ReadonlyArray<Project.Info>
-export type ProjectListOperation<E = never> = () => Effect.Effect<ProjectListOutput, E>
+export type ProjectListOperation<E = never> = (input?: ProjectListInput) => Effect.Effect<ProjectListOutput, E>
 
 export type ProjectUpdateInput = {
   readonly projectID: Project.ID

@@ -156,7 +156,7 @@ export type ValidationAction = typeof ValidationAction.Type
 export const Validation = Schema.Struct({
   // Laboratory is the only environment until an approval model for other environments exists.
   environment: Schema.Literal("laboratory"),
-  actions: Schema.Array(ValidationAction).check(Schema.isMinLength(1), Schema.isMaxLength(8)),
+  actions: Schema.Array(ValidationAction).check(Schema.isMinLength(1), Schema.isMaxLength(16)),
 })
 
 // Credential identities an engagement may use (fork-cyber-credentials.md). A label names a secret the operator
