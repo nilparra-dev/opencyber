@@ -48,6 +48,40 @@ The `secrets` action reads explicit files the same way `snapshot` does, with the
 
 Each finding reports its rule, file, line, a masked preview (four leading characters and the length) and a 16-character fingerprint, so repeated credentials can be recognized without the value. Values that contain placeholder markers, such as `example`, `changeme`, `your_` or interpolation, are not reported. The output says that an empty result does not prove that no secret exists. Raw matches never appear in the output, the candidates or the decision log. Source artifacts keep the full text in the private archive, as `snapshot` does.
 
+## Static analysis (sast)
+
+`sast` runs the Semgrep 1.178.0 that `fork-kali/Dockerfile` pins in the Kali image (version 6) over up to 16 explicit files. It first captures them with the `snapshot` procedure, so permission checks, limits and source artifacts are the same. The job then receives copies of those exact bytes with network `none`. Semgrep reads only the curated rules in the image (`/opt/opencyber/rules/semgrep`, built from `fork-kali/rules/semgrep`), with `--metrics=off --disable-version-check`.
+
+The job reports its input hashes, rule-file hashes, argument list and network interfaces. The host refuses the result unless the hashes match the snapshot, the SARIF names the pinned version, the arguments are the offline ones and only `lo` exists. `semgrep --version` is not called, because it blocks for minutes in a network-none container; the version comes from the SARIF driver.
+
+Candidates map back to the snapshot paths with `source_identity: "verified_by_job"`. The SARIF is stored as a `code-review.sarif` artifact (`report_artifact`), with a preview and `next_offset` in `report_excerpt`. The output also records `rule_pin`, the snapshot execution and output, and the network interfaces. Candidates are observations, not findings. `sast` needs the Kali profile and an explicit engagement. Workers need their task claim, as `snapshot` does. The `sarif` import is unchanged.
+
+Limits: the curated rule set is small, so an empty result does not prove that no weakness exists. Broader rule packs need an operator decision, and are not included.
+
+Laboratory: `packages/core/test/fixture/fork-cyber-sast/vulnerable.py` formats a SQL statement from input and gives one candidate, `opencyber.python.sql-string-building`, at line 6. `healthy.py` binds the parameter and gives none. Run from `packages/core` with `OPENCYBER_TEST_KALI_IMAGE` set to the local image ID:
+
+```sh
+bun test test/plugin/fork-cyber-sast.test.ts
+```
+
+Without the variable the real-job case is skipped, and the schema, recipe-pin and decision cases still run.
+
+## Dependency advisories (sca)
+
+The `sca` action matches explicit `package-lock.json` files (npm lockfile version 2 or 3) and `requirements*.txt` files against the pinned advisory snapshot described in [fork-cyber-advisory.md](fork-cyber-advisory.md). Only exact pins are evaluated: `name==version` in requirements, and resolved versions in the npm lockfile. Requirement lines without `==` and option lines such as `-r` or `--index-url` count as `unpinned` and are not evaluated. Other manifests and lockfile formats are refused as `invalid_input`; `package.json` ranges, `bun.lock`, `Cargo.lock` and `go.sum` are not supported yet.
+
+```json
+{ "action": "sca", "files": ["package-lock.json", "requirements.txt"] }
+```
+
+Each file passes the same permission, path, size and UTF-8 checks as `snapshot`. The tool reads only the named files, runs no package manager and contacts no registry. Tests assert zero requests to a reachable registry named inside the lockfile.
+
+The output carries the snapshot identity in `advisory`, a per-file summary in `dependency_files` (packages, unpinned lines, evaluated and unevaluated counts), and `dependency_findings` with `dependency_finding_count`. At most 50 findings appear inline. When more exist, `dependency_next_offset` is 50, and the complete findings and unevaluated entries are in `results_artifact`. Each finding is a candidate for review; it does not establish that the vulnerable code path is reachable.
+
+The `sca` laboratory is `packages/core/test/fixture/fork-cyber-advisory`. Its vulnerable pins (`ocfx-parser` 1.4.2 and `ocfx-py` 0.9.0) report `OCFX-TEST-0001` and `OCFX-TEST-0002`, and its fixed pins (1.4.3 and 0.9.1) report nothing. The fixture snapshot is synthetic. The lab runs offline and needs no Docker.
+
+Lockfiles are read within the 512 KiB per-file limit. Transitive packages that the supplied lockfile does not contain are not visible to this action.
+
 ## Reproducible laboratory
 
 `packages/core/test/fixture/fork-cyber-code-review` contains a vulnerable SQLite query, its bound-parameter control, a local Semgrep rule and a report generated with Semgrep OSS 1.178.0. The rule detects query concatenation in this lab; it is not a general SQL-injection detector or a production rule pack. The tests execute only these controlled fixtures. They verify ordinary lookups in both implementations, demonstrate that the injection changes the vulnerable result set, and show that the control treats the same input as data.

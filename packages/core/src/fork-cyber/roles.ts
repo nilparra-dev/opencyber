@@ -41,13 +41,17 @@ const observe = [
   "http_discover",
   "cyber_services",
   "cyber_artifacts",
+  "cyber_binary",
   "cyber_discover",
+  "cyber_directory",
   "cyber_web_plan",
   "cyber_web_test",
   "cyber_cloud",
   "cyber_container",
   "cyber_database",
 ]
+// Host audits use brokered read-only logins (OC-302), so only enumeration and validation reach them.
+const enumerate = [...observe, "cyber_host"]
 const assess = [
   ...observe,
   "http_replay",
@@ -57,17 +61,19 @@ const assess = [
   "kali_environment",
   "cyber_code_review",
   "cyber_surface",
+  "cyber_host",
 ]
 
 // Exploitation phases split the assessment tools by surface, so each phase gets only its own surface.
 const web = ["http_replay", "cyber_browser", "finding_retest"]
-const network = ["kali_run", "kali_environment", "cyber_surface"]
+const network = ["kali_run", "kali_environment", "cyber_surface", "cyber_directory"]
 
 export function tools(agent: string) {
-  if (agent === "cyber-validate") return [...assess, "cyber_local_validation"]
+  if (agent === "cyber-validate") return [...assess, "cyber_local_validation", "cyber_directory"]
   if (agent === "cyber-report") return read
-  if (agent === "cyber-code-review") return [...read, "cyber_code_review", "cyber_artifacts"]
-  if (agent === "cyber-recon" || agent === "cyber-enum") return observe
+  if (agent === "cyber-code-review") return [...read, "cyber_code_review", "cyber_artifacts", "cyber_binary", "cyber_directory"]
+  if (agent === "cyber-enum") return enumerate
+  if (agent === "cyber-recon") return observe
   if (agent === "cyber-exploit-web") return [...observe, ...web]
   if (agent === "cyber-exploit-net") return [...observe, ...network]
   // No tools until a laboratory VM tier with per-action approval exists (fork-cyber-toolset.md, R-4).
