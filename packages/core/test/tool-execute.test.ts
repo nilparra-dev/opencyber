@@ -350,13 +350,14 @@ describe.each([
     expect(CodeModeTool.catalog(inventory).tools).toHaveLength(1)
     expect<unknown>(results).toEqual(
       ["first", "second"].map((id) => ({
-        output: `${id}:${id}`,
+        // fork: nested Code Mode calls carry their own call identity (F-020).
+        output: `${id}:codemode:0:${id}`,
         progress: [{ toolCalls: [{ tool: "echo", status: "running", input: { value: id } }] }],
       })),
     )
     expect(
       (await runFlagged(codeMode.execute({ code: 'return await tools.echo({ value: "x" })' }, context))).output.output,
-    ).toBe("call_execute:x")
+    ).toBe("call_execute:codemode:0:x")
     expect(conversions).toBe(1)
 
     await runFlagged(

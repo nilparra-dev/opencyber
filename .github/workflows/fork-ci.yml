@@ -70,9 +70,9 @@ jobs:
           # take about half of the typecheck time; every other package,
           # including ones upstream adds later, falls into the "rest" group.
           HEAVY: |-
-            @opencode/www
+            @opencode/app
             @opencode/cli
-            @opencode/posts
+            @opencode/desktop
             @opencode/sdk
         run: |
           filters() { if [ -n "$1" ]; then sed 's/^/--filter=/' <<< "$1" | paste -sd' '; fi; }
