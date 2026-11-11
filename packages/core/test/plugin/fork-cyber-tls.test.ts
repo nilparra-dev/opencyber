@@ -18,6 +18,7 @@ probeTest(
   async () => {
     const directory = await mkdtemp(path.join(os.tmpdir(), "opencyber-tls-"))
     const certificate = path.resolve(import.meta.dir, "../fixture/fork-cyber-tls-cert.pem")
+    const expiredCertificate = path.resolve(import.meta.dir, "../fixture/fork-cyber-tls-expired.pem")
     const key = path.resolve(import.meta.dir, "../fixture/fork-cyber-tls-key.pem")
     const command = async (args: string[]) => {
       const child = Bun.spawn([openssl!, ...args], { cwd: directory, stdout: "pipe", stderr: "pipe" })
@@ -30,7 +31,6 @@ probeTest(
     }
     try {
       const wrong = path.join(directory, "wrong.pem")
-      const expired = path.join(directory, "expired.pem")
       await command([
         "req",
         "-new",
@@ -44,12 +44,19 @@ probeTest(
         "-days",
         "1",
       ])
-      await command(["x509", "-in", certificate, "-signkey", key, "-days", "-1", "-out", expired])
+      // The expired certificate is a fixed fixture: newer OpenSSL versions reject `-days -1`, and the
+      // certificate must stay expired as the wall clock moves.
       for (const fixture of [
         { certificate, trust: certificate, chain: "verified", hostname: "verified", valid: true },
         { certificate, trust: wrong, chain: "rejected", hostname: "verified", valid: true },
         { certificate: wrong, trust: wrong, chain: "verified", hostname: "rejected", valid: true },
-        { certificate: expired, trust: expired, chain: "rejected", hostname: "verified", valid: false },
+        {
+          certificate: expiredCertificate,
+          trust: expiredCertificate,
+          chain: "rejected",
+          hostname: "verified",
+          valid: false,
+        },
       ] as const) {
         const server = Bun.serve({
           hostname: "127.0.0.1",
