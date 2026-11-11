@@ -542,7 +542,9 @@ Upstream tests or checks that fail in `fork-ci` because of the environment, not 
 
 | Test / check | Reason | Since |
 | ------------ | ------ | ----- |
-| _(none)_     |        |       |
+| `@opencode/patchmark` slow-input linear-time bounds and differential fuzzing | Hosted runners exceed the fixed 200–250 ms latency budgets and the 15 s timeout; the same tests pass locally. `fork-ci` filters these by name. | v2.2.7 |
+| `@opencode/codemode` large default sort native-step bound | The native-step budget is exceeded on hosted runners. `fork-ci` filters this test by name. | v2.2.7 |
+| `@opencode/tui` session wheel focus at each width | The rendered-width matrix exceeds the CI timing budget. `fork-ci` filters this test by name. | v2.2.7 |
 
 ---
 
