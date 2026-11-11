@@ -1,5 +1,6 @@
 import { expect } from "bun:test"
-import { LanguageModel, LLM, LLMEvent } from "@opencode/ai"
+import { LanguageModel, LLMEvent } from "@opencode/ai"
+import { ai } from "@opencode/ai/effect"
 import { OpenAIChat } from "@opencode/ai/protocols/openai-chat"
 import { TestLLM } from "@opencode/ai/testing"
 import { Agent } from "@opencode/core/agent"
@@ -134,12 +135,12 @@ for (const fixture of [
             model,
             prepared: {
               retry: () => Effect.void,
-              request: LLM.request({
+              request: ai.request({
                 model: model.model,
                 prompt: "Run one tool",
                 toolChoice: fixture.toolChoice,
                 providerOptions: { fixture: { apiKey: "synthetic-request-secret", reasoningEffort: "chosen" } },
-                generation: { temperature: 0.2 },
+                temperature: 0.2,
               }),
               options: {},
               executeTool: () =>
@@ -189,7 +190,10 @@ for (const fixture of [
         expect(attempts[0]!.content).not.toContain("synthetic-request-secret")
         expect(JSON.parse(attempts[0]!.result!)).toMatchObject(
           fixture.usage
-            ? { usage: { inputTokens: 15, outputTokens: 6 }, normalized_usage: { input: 10, output: 4, reasoning: 2 } }
+            ? {
+                usage: { inputTokens: 15, outputTokens: 6 },
+                normalized_usage: { inputTokens: 15, outputTokens: 6, reasoningTokens: 2 },
+              }
             : { usage: null, normalized_usage: null },
         )
         expect(captures).toBe(2)

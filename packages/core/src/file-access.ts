@@ -5,6 +5,7 @@ import { FSUtil } from "@opencode/util/fs-util"
 import { Global } from "@opencode/util/global"
 import { Array, Context, Effect, Layer, Schema } from "effect"
 import path from "path"
+import { Environment } from "./environment/index.js"
 import { Location } from "./location.js"
 import { Permission } from "./permission.js"
 import { Project } from "./project.js"
@@ -49,19 +50,19 @@ export interface ReadOptions {
 
 export interface Interface {
   /** Resolve a lexical path and its permission resources, without requesting approval. */
-  readonly resolve: (input: ResolveInput) => Effect.Effect<Target, FSUtil.Error | Error>
+  readonly resolve: (input: ResolveInput) => Effect.Effect<Target, Environment.Failed | Tool.Error>
   /** Approve external directories in one batch, preserving first-seen resource order. */
   readonly authorizeExternal: (
     targets: readonly Target[],
     context: Invocation,
     metadata?: Permission.AssertInput["metadata"],
-  ) => Effect.Effect<void, Error | SessionErrors.NotFoundError>
+  ) => Effect.Effect<void, Permission.Error | SessionErrors.NotFoundError>
   /** Resolve a read target and obtain external-directory approval before read approval. */
   readonly authorizeRead: (
     file: string,
     context: Invocation,
     options?: ReadOptions,
-  ) => Effect.Effect<Target, FSUtil.Error | Error | SessionErrors.NotFoundError>
+  ) => Effect.Effect<Target, Environment.Failed | Permission.Error | SessionErrors.NotFoundError | Tool.Error>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/FileAccess") {}
@@ -80,16 +81,13 @@ export const resolvePath = (directory: string, input: string, home = Global.Path
 }
 
 const slash = (value: string) => value.replaceAll("\\", "/")
-const invocation = (context: Invocation) => ({
-  sessionID: context.sessionID,
-  agent: context.agent,
-  source: { type: "tool" as const, messageID: context.messageID, id: context.id },
-})
 
 const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
+    const { files } = yield* Environment.Service
     const fs = yield* FSUtil.Service
+    const exists = (file: string) => Environment.exists(files, file)
     const location = yield* Location.Service
     const permission = yield* Permission.Service
     const cyberMode = yield* ForkCyberPolicy.Service
@@ -98,10 +96,13 @@ const layer = Layer.effect(
       const absolute = AbsolutePath.make(resolvePath(location.directory, input.path))
       const worktree = path.resolve(location.project.directory)
       if (cyberMode !== "development") {
-        const resolved = yield* fs.resolve(absolute)
+        const resolved = yield* fs
+          .resolve(absolute)
+          .pipe(Effect.mapError((cause) => new Environment.Failed({ path: absolute, cause })))
         const roots = yield* Effect.forEach(
           [location.directory, ...(worktree === path.parse(worktree).root ? [] : [worktree])],
-          fs.resolve,
+          (root) =>
+            fs.resolve(root).pipe(Effect.mapError((cause) => new Environment.Failed({ path: root, cause }))),
         )
         if (!roots.some((root) => FSUtil.contains(root, resolved)))
           return yield* Effect.fail(
@@ -129,13 +130,11 @@ const layer = Layer.effect(
         } satisfies Target
       }
       const type =
-        input.kind === "directory"
-          ? "Directory"
-          : input.kind === "file"
-            ? "File"
-            : (yield* fs.stat(absolute).pipe(Effect.catchReason("PlatformError", "NotFound", () => Effect.undefined)))
-                ?.type
-      const directory = AbsolutePath.make(type === "Directory" ? absolute : path.dirname(absolute))
+        input.kind ??
+        (yield* Environment.typeFollowing(files, absolute).pipe(
+          Effect.catchTag("Environment.NotFound", () => Effect.undefined),
+        ))
+      const directory = AbsolutePath.make(type === "directory" ? absolute : path.dirname(absolute))
       return {
         absolute,
         resource: slash(absolute),
@@ -143,7 +142,7 @@ const layer = Layer.effect(
           action: "external_directory",
           directory,
           resource: slash(path.join(directory, "*")),
-          save: slash(path.join((yield* Project.root(fs, directory)) ?? directory, "*")),
+          save: slash(path.join((yield* Project.root({ exists }, directory)) ?? directory, "*")),
         },
       } satisfies Target
     })
@@ -163,7 +162,7 @@ const layer = Layer.effect(
         resources: external.map((item) => item.resource),
         save: external.map((item) => item.save),
         ...(metadata === undefined ? {} : { metadata }),
-        ...invocation(context),
+        ...Permission.invocation(context),
       })
     })
 
@@ -181,7 +180,7 @@ const layer = Layer.effect(
         action: "read",
         resources: [target.resource],
         save: ["*"],
-        ...invocation(context),
+        ...Permission.invocation(context),
       })
       return target
     })
@@ -193,5 +192,5 @@ const layer = Layer.effect(
 export const node = makeLocationNode({
   service: Service,
   layer,
-  deps: [FSUtil.node, Location.node, Permission.node, ForkCyberPolicy.node],
+  deps: [Environment.node, FSUtil.node, Location.node, Permission.node, ForkCyberPolicy.node],
 })
