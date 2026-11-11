@@ -3,6 +3,8 @@ export * as ForkCyberCodeReview from "./code-review.js"
 import { Effect, Schema } from "effect"
 import { realpath } from "node:fs/promises"
 import path from "node:path"
+import { ForkCyberAdvisory } from "./advisory.js"
+import { ForkCyberDependencyInventory } from "./dependency-inventory.js"
 import { ForkCyberRoles } from "./roles.js"
 import { ForkCyberSecretScan } from "./secret-scan.js"
 import { ForkCyberStore } from "./store.js"
@@ -14,7 +16,7 @@ const location = Schema.Struct({
   index: Schema.optional(Schema.Number.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))),
   uriBaseId: Schema.optional(Schema.String),
 })
-const Report = Schema.Struct({
+export const Report = Schema.Struct({
   version: Schema.Literal("2.1.0"),
   runs: Schema.Array(
     Schema.Struct({
@@ -75,11 +77,15 @@ export const Action = Schema.Union([
     action: Schema.Literal("secrets"),
     files: Schema.Array(filename).check(Schema.isMinLength(1), Schema.isMaxLength(25)),
   }),
+  Schema.Struct({
+    action: Schema.Literal("sca"),
+    files: Schema.Array(filename).check(Schema.isMinLength(1), Schema.isMaxLength(25)),
+  }),
   Schema.Struct({ action: Schema.Literal("sarif"), report: filename }),
 ])
 export type Action = typeof Action.Type
 type Store = Effect.Success<ReturnType<typeof ForkCyberStore.open>>
-type Assessment = {
+export type Assessment = {
   owner: string
   session: string
   agent: string
@@ -109,12 +115,14 @@ export const run = Effect.fn("ForkCyberCodeReview.run")(function* (
   store: Store,
   assessment: Assessment,
   input: Action,
+  environment = process.env,
 ) {
   const role = assessment.agent
   if (!ForkCyberRoles.allowed(role, "cyber_code_review"))
     return yield* Effect.fail(new Error(`Phase ${role} cannot execute cyber_code_review`))
   if (input.action === "procedures") return procedures
   if (ForkCyberRoles.worker(assessment.agent)) yield* store.coordination.requireClaim(assessment)
+  const snapshot = input.action === "sca" ? yield* ForkCyberAdvisory.configured(environment) : undefined
   const root = yield* Effect.tryPromise(() => realpath(assessment.directory))
   const identity = yield* Effect.forEach(["commit", "dirty"] as const, (kind) =>
     Effect.tryPromise(async () => {
@@ -159,6 +167,13 @@ export const run = Effect.fn("ForkCyberCodeReview.run")(function* (
     input.action === "secrets"
       ? ForkCyberSecretScan.scan(sources.map((source) => ({ file: source.file, text: source.bytes.toString("utf8") })))
       : undefined
+  const dependencies =
+    snapshot === undefined
+      ? undefined
+      : yield* Effect.try({
+          try: () => dependencyScan(snapshot, sources),
+          catch: (error) => (error instanceof Error ? error : new Error(String(error))),
+        })
   const observations = yield* Effect.try(() =>
     candidates.map((candidate) => {
       const source = sources.find((source) => source.file === candidate.file)!
@@ -189,6 +204,15 @@ export const run = Effect.fn("ForkCyberCodeReview.run")(function* (
   const result = yield* Effect.gen(function* () {
     const reportArtifact = report
       ? yield* store.artifact(assessment.owner, id, "code-review.sarif", report.bytes, "application/sarif+json")
+      : undefined
+    const dependencyArtifact = dependencies
+      ? yield* store.artifact(
+          assessment.owner,
+          id,
+          "code-review.advisory",
+          Buffer.from(dependencies.complete),
+          "application/json",
+        )
       : undefined
     const files = yield* Effect.forEach(sources, (source) =>
       Effect.gen(function* () {
@@ -227,6 +251,19 @@ export const run = Effect.fn("ForkCyberCodeReview.run")(function* (
               "Offline credential patterns for common formats. Findings are redacted; an empty result does not prove that no secret exists.",
           }
         : {}),
+      ...(dependencies
+        ? {
+            advisory: dependencies.advisory,
+            dependency_files: dependencies.files,
+            dependency_findings: dependencies.findings.items,
+            dependency_finding_count: dependencies.finding_count,
+            dependency_next_offset: dependencies.findings.next_offset,
+            unevaluated_count: dependencies.unevaluated_count,
+            results_artifact: dependencyArtifact?.[0]?.id ?? null,
+            coverage:
+              "Exact npm lock and requirements pins only, matched offline against the snapshot named in advisory. Unpinned, unparsed and unsupported entries are unevaluated, and the full list is in results_artifact. An empty result does not prove that no advisory applies.",
+          }
+        : {}),
       report_artifact: reportArtifact?.[0]?.id ?? null,
       files,
       candidates: observations.map((candidate) => ({
@@ -261,7 +298,42 @@ export const run = Effect.fn("ForkCyberCodeReview.run")(function* (
   return yield* Effect.fail(result.failure)
 })
 
-function parseReport(report: typeof Report.Type) {
+function dependencyScan(
+  snapshot: ForkCyberAdvisory.Loaded,
+  sources: readonly { file: string; text: string; sha256: string }[],
+) {
+  const reviewed = sources.map((source) => {
+    const inventory = ForkCyberDependencyInventory.parse(source.file, source.text)
+    return {
+      file: source.file,
+      sha256: source.sha256,
+      packages: inventory.packages.length,
+      unpinned: inventory.unpinned,
+      ...ForkCyberAdvisory.match(snapshot, inventory.packages),
+    }
+  })
+  const findings = reviewed.flatMap((file) => file.findings.map((finding) => ({ file: file.file, ...finding })))
+  const unevaluated = reviewed.flatMap((file) => file.unevaluated.map((item) => ({ file: file.file, ...item })))
+  const advisory = ForkCyberAdvisory.identity(snapshot)
+  const files = reviewed.map((file) => ({
+    file: file.file,
+    sha256: file.sha256,
+    packages: file.packages,
+    unpinned: file.unpinned,
+    evaluated: file.evaluated,
+    unevaluated: file.unevaluated.length,
+  }))
+  return {
+    advisory,
+    files,
+    finding_count: findings.length,
+    findings: ForkCyberAdvisory.page(findings),
+    unevaluated_count: unevaluated.length,
+    complete: JSON.stringify({ advisory, files, findings, unevaluated }),
+  }
+}
+
+export function parseReport(report: typeof Report.Type) {
   return report.runs.flatMap((run) => {
     if (run.externalPropertyFileReferences && Object.keys(run.externalPropertyFileReferences).length)
       throw new Error("External SARIF properties are unsupported; produce a self-contained report")

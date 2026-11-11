@@ -23,15 +23,21 @@ import { ForkCyberWebValidation } from "../fork-cyber/web-validation.js"
 import { ForkCyberCloudAnalysis } from "../fork-cyber/cloud-analysis.js"
 import { ForkCyberDatabase } from "../fork-cyber/database.js"
 import { ForkCyberIacScan } from "../fork-cyber/iac-scan.js"
+import { ForkCyberCloudLive } from "../fork-cyber/cloud-live.js"
 import { ForkCyberFindingRetest } from "../fork-cyber/finding-retest.js"
 import { ForkCyberContainerReview } from "../fork-cyber/container-review.js"
+import { ForkCyberBinary } from "../fork-cyber/binary.js"
 import { ForkCyberKali } from "../fork-cyber/kali.js"
 import { ForkCyberKaliAllowlist } from "../fork-cyber/kali-allowlist.js"
 import { ForkCyberBrowser } from "../fork-cyber/browser.js"
 import { ForkCyberCoordination } from "../fork-cyber/coordination.js"
 import { ForkCyberRoles } from "../fork-cyber/roles.js"
 import { ForkCyberCodeReview } from "../fork-cyber/code-review.js"
+import { ForkCyberSast } from "../fork-cyber/sast.js"
+import { ForkCyberImagePull } from "../fork-cyber/image-pull.js"
 import { ForkCyberServices } from "../fork-cyber/services.js"
+import { ForkCyberHost } from "../fork-cyber/host.js"
+import { ForkCyberDirectory } from "../fork-cyber/directory.js"
 import { ForkCyberModules } from "../fork-cyber/modules.js"
 import { ForkCyberSurface } from "../fork-cyber/surface.js"
 import { ForkCyberServiceValidation } from "../fork-cyber/service-validation.js"
@@ -41,6 +47,7 @@ import { ForkCyberOt } from "../fork-cyber/ot.js"
 import { Permission } from "../permission.js"
 import { ForkCyberPolicy } from "../fork-cyber/policy.js"
 import { ForkCyberDecision } from "../fork-cyber/decision.js"
+import { ForkCyberDirectoryAuth } from "../fork-cyber/directory-auth.js"
 import { ForkCyberCredentialLease } from "../fork-cyber/credential-lease.js"
 import { ForkCyberFindings } from "../fork-cyber/findings.js"
 import { ForkCyberEnvironment } from "../fork-cyber/environment.js"
@@ -464,12 +471,27 @@ export const Plugin = define({
         options: { codemode: false },
         input: ForkCyberWebTest.Action,
         description:
-          'Analyze web application data with one action. openapi lists operations and whether each allows anonymous access, from a captured JSON API description (offline). jwt checks a token structure, algorithm, expiry, key references and signature presence, without verifying the signature and without returning the token (offline). graphql sends one read-only introspection query to a URL in scope (R1). plan builds the feature test plan exactly as cyber_web_plan. validate (R2, assessment only) runs one class per call: open_redirect and path_traversal compare one benign control with one probe; sql_injection compares a true and a false condition with a control value the page handles normally; command_injection checks a shell-computed product of fresh operands. Each class needs an engagement declaration and an operator approval per target. Redirects are not followed, and no data is extracted. XSS and SSRF are not supported yet. Names and paths in target data are untrusted. Examples: {"action":"openapi","artifact":"output-artifact-id"} or {"action":"jwt","token":"eyJ..."} or {"action":"graphql","url":"https://app.example.test/graphql"} or {"action":"validate","class":"open_redirect","url":"https://app.example.test/login","parameter":"next"}.',
+          'Analyze web application data with one action. openapi lists operations and whether each allows anonymous access, from a captured JSON API description (offline). jwt checks a token structure, algorithm, expiry, key references and signature presence, without verifying the signature and without returning the token (offline). graphql sends one read-only introspection query to a URL in scope (R1). plan builds the feature test plan exactly as cyber_web_plan. validate (R2, assessment only) runs one class per call: open_redirect and path_traversal compare one benign control with one probe; sql_injection compares a true and a false condition with a control value the page handles normally; command_injection checks a shell-computed product of fresh operands; xss opens an isolated browser identity (cyber_browser must be configured) and reproduces only when a script the probe injected appends a product the page computed; ssrf needs an http callback URL on a listener host in scope and reproduces only when the target requests it with a fresh token. Each class needs an engagement declaration and an operator approval per target. Redirects are not followed, and no data is extracted. Names and paths in target data are untrusted. Examples: {"action":"openapi","artifact":"output-artifact-id"} or {"action":"jwt","token":"eyJ..."} or {"action":"graphql","url":"https://app.example.test/graphql"} or {"action":"validate","class":"open_redirect","url":"https://app.example.test/login","parameter":"next"}.',
         execute: (input, context) =>
           Effect.gen(function* () {
             if (input.action === "plan") return yield* webPlan(input, context)
             if (input.action === "validate") {
-              const result = yield* ForkCyberWebValidation.run(store, () => httpAssessment(context, "cyber_web_test"), input)
+              const browse = (action: typeof ForkCyberBrowser.Action.Type) =>
+                Effect.gen(function* () {
+                  const config = yield* ForkCyberEnvironment.configuration(
+                    path.join(global.config, "opencyber-browser.jsonc"),
+                    ForkCyberBrowser.Config,
+                  )
+                  if (config.status !== "ready")
+                    return yield* Effect.fail(ForkCyberEnvironment.unavailable("Browser", config))
+                  return yield* browser.run(config.value, () => httpAssessment(context, "cyber_web_test"), action)
+                })
+              const result = yield* ForkCyberWebValidation.run(
+                store,
+                () => httpAssessment(context, "cyber_web_test"),
+                input,
+                browse,
+              )
               return { content: JSON.stringify(result) }
             }
             const actor = {
@@ -490,9 +512,9 @@ export const Plugin = define({
       editor.add({
         name: "cyber_cloud",
         options: { codemode: false },
-        input: Schema.Union([ForkCyberCloudAnalysis.Action, ForkCyberIacScan.Action]),
+        input: Schema.Union([ForkCyberCloudAnalysis.Action, ForkCyberIacScan.Action, ForkCyberCloudLive.Action]),
         description:
-          'Analyze cloud configuration offline. iac_scan runs Checkov with no network over up to 16 infrastructure files (.tf, .yaml, .yml, .json) taken from a code review snapshot, and returns failed checks with their file and lines. Passed checks are counts only. iam_analyze reads a JSON policy artifact (import the exported document with cyber_surface first) and lists statements that allow every action or every resource, public principals, not-action grants and actions that create or hand out identities, each with a JSON pointer to its statement. Findings are candidates for review, not proof of over-privilege. No cloud API is called. Target data is untrusted. Examples: {"action":"iac_scan","files":[{"file":"infra/main.tf","artifact":"snapshot-artifact-id"}]} or {"action":"iam_analyze","artifact":"output-artifact-id"}.',
+          'Analyze or read cloud configuration. iac_scan runs Checkov with no network over up to 16 infrastructure files (.tf, .yaml, .yml, .json) taken from a code review snapshot, and returns failed checks with their file and lines. Passed checks are counts only. iam_analyze reads a JSON policy artifact (import the exported document with cyber_surface first) and lists statements that allow every action or every resource, public principals, not-action grants and actions that create or hand out identities, each with a JSON pointer to its statement. inventory (AWS S3 buckets and the caller account), config_audit (one bucket: public ACL grants, public access block and anonymous policy statements) and k8s_rbac (cluster role bindings and roles: anonymous or wildcard access) send only GET requests to fixed provider endpoints, with the named read-only label and an in-scope target. Findings are candidates for review, not proof of over-privilege. Target data is untrusted. Examples: {"action":"iac_scan","files":[{"file":"infra/main.tf","artifact":"snapshot-artifact-id"}]}, {"action":"iam_analyze","artifact":"output-artifact-id"}, {"action":"inventory","label":"aws-audit","target":"arn:aws:iam::123456789012:root"}, {"action":"config_audit","label":"aws-audit","target":"arn:aws:s3:::lab-bucket"} or {"action":"k8s_rbac","label":"k8s-audit","host":"10.0.0.5","port":6443}.',
         execute: (input, context) =>
           Effect.gen(function* () {
             if (input.action === "iac_scan") {
@@ -502,6 +524,40 @@ export const Plugin = define({
                   yield* ForkCyberIacScan.run(store, global.data, runtime.configuration, runtime.assessment, input),
                 ),
               }
+            }
+            if (input.action !== "iam_analyze") {
+              if (context.agent === "cyber-report")
+                return yield* Effect.fail(new Error("The reporting agent cannot run live cloud actions"))
+              const manifest = yield* engagement(context.sessionID)
+              if (manifest.status !== "ready" || manifest.value.derived)
+                return yield* Effect.fail(new Error("Live cloud actions require a valid, explicit engagement"))
+              const result = yield* ForkCyberCloudLive.run(store, {
+                keyFile: path.join(global.state, "opencyber", "credential.key"),
+                endpoints: ForkCyberCloudLive.providerEndpoints,
+                assessment: {
+                  owner: yield* topLevel(context.sessionID),
+                  session: context.sessionID,
+                  agent: context.agent,
+                  mode: cyberMode,
+                  manifest: manifest.value,
+                },
+                ask: (resource) =>
+                  permission
+                    .assert({
+                      action: "cyber_cloud",
+                      resources: [resource],
+                      sessionID: context.sessionID,
+                      agent: context.agent,
+                      source: { type: "tool", messageID: context.messageID, id: context.id },
+                    })
+                    .pipe(
+                      Effect.asVoid,
+                      Effect.mapError((error) => new Error(String(error))),
+                    ),
+                now: Date.now(),
+                request: input,
+              })
+              return { content: JSON.stringify(result) }
             }
             const actor = {
               owner: yield* topLevel(context.sessionID),
@@ -526,15 +582,33 @@ export const Plugin = define({
       editor.add({
         name: "cyber_container",
         options: { codemode: false },
-        input: ForkCyberContainerReview.Action,
+        input: Schema.Union([ForkCyberContainerReview.Action, ForkCyberImagePull.Action]),
         description:
-          'Review container configuration offline. dockerfile_lint reads a captured Dockerfile and reports unpinned or latest base images, root users, remote ADD, pipe-to-shell builds, credential-like build variables, SSH exposure and missing HEALTHCHECK. runtime_review reads an exported docker inspect JSON and reports privileged mode, host network or PID namespaces, the Docker socket, added capabilities, disabled security profiles, writable root filesystems, root users and credential-like environment names. Values are never reported. Findings are candidates; an empty result does not prove the image is hardened. No image is pulled or run. Example: {"action":"dockerfile_lint","artifact":"output-artifact-id"}.',
+          'Review container configuration offline. dockerfile_lint reads a captured Dockerfile and reports unpinned or latest base images, root users, remote ADD, pipe-to-shell builds, credential-like build variables, SSH exposure and missing HEALTHCHECK. runtime_review reads an exported docker inspect JSON and reports privileged mode, host network or PID namespaces, the Docker socket, added capabilities, disabled security profiles, writable root filesystems, root users and credential-like environment names. Values are never reported. Findings are candidates; an empty result does not prove the image is hardened. dockerfile_lint, runtime_review and image_scan never pull or run an image. image_scan matches an offline package inventory artifact (opencyber-package-inventory-v1) for an image referenced by digest against the pinned advisory snapshot, reports the snapshot version, and refuses tag-only references with invalid_input. pull (R1, assessment mode) fetches one image pinned by digest from a registry host and port recorded in the engagement; tag-only references are refused, and the digest and image ID are recorded. Examples: {"action":"dockerfile_lint","artifact":"output-artifact-id"} or {"action":"pull","image":"registry.example.test:5000/team/app@sha256:<64 hex>"}.',
         execute: (input, context) =>
           Effect.gen(function* () {
             const actor = {
               owner: yield* topLevel(context.sessionID),
               session: context.sessionID,
               agent: context.agent,
+            }
+            if (input.action === "pull") {
+              const manifest = yield* engagement(context.sessionID)
+              if (manifest.status !== "ready")
+                return yield* Effect.fail(new Error("Image pulls require a valid, explicitly recorded engagement"))
+              yield* permission.assert({
+                action: "cyber_container",
+                resources: [input.image],
+                save: [input.image],
+                sessionID: context.sessionID,
+                agent: context.agent,
+                source: { type: "tool", messageID: context.messageID, id: context.id },
+              })
+              return {
+                content: JSON.stringify(
+                  yield* ForkCyberImagePull.run(store, { ...actor, manifest: manifest.value }, input),
+                ),
+              }
             }
             return yield* ForkCyberContainerReview.runReview(store, actor, input)
           }).pipe(Effect.mapError((error) => ForkCyberDiagnostics.toolError(error, "cyber_container"))),
@@ -703,6 +777,7 @@ export const Plugin = define({
       "cyber_surface",
       "cyber_capabilities",
       "cyber_artifacts",
+      "cyber_binary",
       "cyber_discover",
       "cyber_report",
       "cyber_credentials",
@@ -1046,11 +1121,72 @@ export const Plugin = define({
           }).pipe(Effect.mapError((error) => ForkCyberDiagnostics.toolError(error, "cyber_tool"))),
       })
       editor.add({
+        name: "cyber_directory",
+        options: { codemode: false },
+        input: Schema.Union([ForkCyberDirectory.Action, ForkCyberDirectoryAuth.Action]),
+        description: `Assess a directory service: ldap_enum reads the rootDSE, then what an anonymous session and an optional brokered credential can see; password_policy reads pwdPolicy objects and lists review candidates; collect returns a bounded, allowlisted read of one subtree. kerberos_config and adcs_templates review an exported JSON artifact offline (R0). Live actions need a scoped engagement with network budgets and, for workers, an active claim. A credential is a registered label only; its value is never returned. Only bind, search, unbind and StartTLS are sent. Example: {"action":"ldap_enum","host":"dc.lab.example.test","port":389}. auth_test (R2, assessment only) makes one LDAP simple bind as the account declared for a credential label, against a host in scope; the password is leased from the operator's registry and is never returned. Three attempts per label and host are allowed in thirty minutes. crack (R2) tests supplied hashes offline against a supplied wordlist and returns per-hash cracked status only; plaintext is withheld. Each R2 action must be declared in rules_of_engagement.validation and approved by the operator for its target. Example: {"action":"auth_test","label":"lab-alice","host":"ldap.lab.test"}.`,
+        execute: (input, context) =>
+          Effect.gen(function* () {
+            if (input.action === "procedures") return { content: JSON.stringify(ForkCyberDirectory.procedures) }
+            if (input.action === "kerberos_config" || input.action === "adcs_templates")
+              return {
+                content: JSON.stringify(
+                  yield* ForkCyberDirectory.offline({
+                    store,
+                    assessment: yield* httpAssessment(context, "cyber_directory"),
+                    request: input,
+                  }),
+                ),
+              }
+            const runtime = yield* kali(context, "cyber_directory")
+            if (input.action === "auth_test")
+              return {
+                content: JSON.stringify(
+                  yield* ForkCyberDirectoryAuth.authTest({
+                    store,
+                    profile: global.data,
+                    keyFile: path.join(global.state, "opencyber", "credential.key"),
+                    config: runtime.configuration,
+                    assessment: { ...runtime.assessment, mode: cyberMode },
+                    request: input,
+                    now: Date.now(),
+                  }),
+                ),
+              }
+            if (input.action === "crack")
+              return {
+                content: JSON.stringify(
+                  yield* ForkCyberDirectoryAuth.crack({
+                    store,
+                    profile: global.data,
+                    config: runtime.configuration,
+                    assessment: { ...runtime.assessment, mode: cyberMode },
+                    request: input,
+                  }),
+                ),
+              }
+            return {
+              content: JSON.stringify(
+                yield* ForkCyberDirectory.live({
+                  store,
+                  profile: global.data,
+                  keyFile: path.join(global.state, "opencyber", "credential.key"),
+                  mode: cyberMode,
+                  config: runtime.configuration,
+                  assessment: runtime.assessment,
+                  request: input,
+                  now: Date.now(),
+                }),
+              ),
+            }
+          }).pipe(Effect.mapError((error) => ForkCyberDiagnostics.toolError(error, "cyber_directory"))),
+      })
+      editor.add({
         name: "cyber_services",
         options: { codemode: false },
         input: ForkCyberServices.Action,
         description:
-          "Read TCP inventory procedures, scan or version-detect one explicit host and up to 32 TCP ports with unprivileged Nmap connect scans in scoped Kali (version adds light detection without scripts), probe one port with one unauthenticated check (redis_info or elasticsearch_root), or report udp_top as not_configured because this workload has no raw sockets. Defaults to IPv4; select IPv6 explicitly. Requires an engagement with network budgets and an active worker claim. Returns port states, service names, original XML and output evidence. No scripts, credentials or arbitrary scanner arguments. Open ports are not confirmed vulnerabilities. Example: {\"action\":\"procedures\"} then {\"action\":\"version\",\"host\":\"app.example.test\",\"ports\":[80,443]}.",
+          "Read TCP inventory procedures, scan or version-detect one explicit host and up to 32 TCP ports with unprivileged Nmap connect scans in scoped Kali (version adds light detection without scripts), probe one port with one unauthenticated check (redis_info, elasticsearch_root, ldap_root_dse, smb_signing, nfs_exports or mongodb_build_info), or report udp_top as not_configured because this workload has no raw sockets. Defaults to IPv4; select IPv6 explicitly. Requires an engagement with network budgets and an active worker claim. Returns port states, service names, original XML and output evidence. No scripts, credentials or arbitrary scanner arguments. Open ports are not confirmed vulnerabilities. Example: {\"action\":\"procedures\"} then {\"action\":\"version\",\"host\":\"app.example.test\",\"ports\":[80,443]}.",
         execute: (input, context) =>
           Effect.gen(function* () {
             if (input.action === "procedures") return { content: JSON.stringify(ForkCyberServices.procedures) }
@@ -1067,6 +1203,47 @@ export const Plugin = define({
               ),
             }
           }).pipe(Effect.mapError((error) => ForkCyberDiagnostics.toolError(error, "cyber_tool"))),
+      })
+      // fork: cyber_host (OC-302) audits one declared host with a brokered read-only login.
+      editor.add({
+        name: "cyber_host",
+        options: { codemode: false },
+        input: ForkCyberHost.Action,
+        description:
+          "Read Linux host audit procedures, or audit one in-scope host or report privilege-escalation conditions over SSH with a declared host_login credential. audit checks SSH daemon settings, login aging and account file modes. privesc_config reports SUID binaries outside the baseline, sudo NOPASSWD rules, file capabilities and group/world-writable cron files. Each remote command is a fixed read-only string; no exploitation or writes. Requires an approved engagement with the host and port in scope, and a credential declared for that action. Findings are observations and candidates. Example: {\"action\":\"audit\",\"host\":\"127.0.0.1\",\"port\":2201,\"label\":\"lab-audit\"}.",
+        execute: (input, context) =>
+          Effect.gen(function* () {
+            if (input.action === "procedures") return { content: JSON.stringify(ForkCyberHost.procedures) }
+            const manifest = yield* engagement(context.sessionID)
+            if (manifest.status !== "ready" || manifest.value.derived)
+              return yield* Effect.fail(new Error("Host audits require a valid, explicit engagement"))
+            const owner = yield* topLevel(context.sessionID)
+            yield* permission.assert({
+              action: "cyber_host",
+              resources: [owner],
+              save: [owner],
+              sessionID: context.sessionID,
+              agent: context.agent,
+              source: { type: "tool", messageID: context.messageID, id: context.id },
+            })
+            return {
+              content: JSON.stringify(
+                yield* ForkCyberHost.run(
+                  store,
+                  {
+                    owner,
+                    session: context.sessionID,
+                    agent: context.agent,
+                    mode: cyberMode,
+                    manifest: manifest.value,
+                    keyFile: path.join(global.state, "opencyber", "credential.key"),
+                    execution: executionID(context),
+                  },
+                  input,
+                ),
+              ),
+            }
+          }).pipe(Effect.mapError((error) => ForkCyberDiagnostics.toolError(error, "cyber_host"))),
       })
       editor.add({
         name: "cyber_database",
@@ -1115,6 +1292,24 @@ export const Plugin = define({
           }).pipe(Effect.mapError((error) => ForkCyberDiagnostics.toolError(error, "cyber_database"))),
       })
       editor.add({
+        name: "cyber_binary",
+        options: { codemode: false },
+        input: ForkCyberBinary.Action,
+        description:
+          'Analyze one engagement artifact offline in a network-disabled Kali job. The sample is never executed. pe parses a Windows PE with pefile (version in tool.version) and returns sections with entropy and hashes, imports, overlay bytes and anomaly candidates. firmware runs a binwalk signature scan with single-level extraction and returns signatures and extracted file hashes, never extracted contents. Import the sample first with cyber_surface (module binary, action import). Needs an engagement and Kali. Page long results with offset and next_offset; the full report is in report_artifact. Anomalies and signatures are candidates, not verdicts. Example: {"action":"pe","artifact":"<artifact ID>"}.',
+        execute: (input, context) =>
+          Effect.gen(function* () {
+            const runtime = yield* kali(context, "cyber_binary")
+            return {
+              content: ForkCyberRedaction.text(
+                JSON.stringify(
+                  yield* ForkCyberBinary.run(store, global.data, runtime.configuration, runtime.assessment, input),
+                ),
+              ),
+            }
+          }).pipe(Effect.mapError((error) => ForkCyberDiagnostics.toolError(error, "cyber_binary"))),
+      })
+      editor.add({
         name: "cyber_local_validation",
         options: { codemode: false },
         input: ForkCyberLocalValidation.Action,
@@ -1141,35 +1336,43 @@ export const Plugin = define({
       editor.add({
         name: "cyber_code_review",
         options: { codemode: false },
-        input: ForkCyberCodeReview.Action,
+        input: Schema.Union([ForkCyberCodeReview.Action, ForkCyberSast.Action]),
         description:
-          "Read local review procedures, snapshot explicit project-relative UTF-8 files with hashes and line counts, scan explicit files offline for credential patterns (secrets; findings are redacted and carry a fingerprint, never the value), or import a local SARIF 2.1.0 report with source evidence. Does not execute a scanner or project code. Imported observations are candidates, not confirmed findings. Workers require an active phase task; each file must pass both review and read permissions.",
+          'Read local review procedures, snapshot explicit project-relative UTF-8 files with hashes and line counts, scan explicit files offline for credential patterns (secrets; findings are redacted and carry a fingerprint, never the value), match explicit package-lock.json or requirements*.txt pins against the pinned advisory snapshot (sca; reports the snapshot version), import a local SARIF 2.1.0 report with source evidence, or run sast: the pinned Semgrep 1.178.0 from the Kali image over up to 16 explicit snapshot files with network none and the curated rules shipped in that image, storing the SARIF as an artifact. sast needs the Kali profile and an explicit engagement. sca executes no scanner or project code. Imported, sast and sca observations are candidates, not confirmed findings. Examples: {"action":"sast","files":["src/accounts.py"]} or {"action":"sca","files":["package-lock.json"]}.',
         execute: (input, context) =>
           Effect.gen(function* () {
-            const result = yield* ForkCyberCodeReview.run(
-              store,
-              {
-                owner: yield* topLevel(context.sessionID),
-                session: context.sessionID,
-                agent: context.agent,
-                directory: ctx.location.directory,
-                permission: (file) =>
-                  Effect.forEach(["cyber_code_review", "read"], (action) =>
-                    permission.assert({
-                      action,
-                      resources: [file],
-                      save: [file],
-                      sessionID: context.sessionID,
-                      agent: context.agent,
-                      source: { type: "tool", messageID: context.messageID, id: context.id },
-                    }),
-                  ).pipe(
-                    Effect.asVoid,
-                    Effect.mapError((error) => new Error(String(error))),
-                  ),
-              },
-              input,
-            )
+            const review = {
+              owner: yield* topLevel(context.sessionID),
+              session: context.sessionID,
+              agent: context.agent,
+              directory: ctx.location.directory,
+              permission: (file: string) =>
+                Effect.forEach(["cyber_code_review", "read"], (action) =>
+                  permission.assert({
+                    action,
+                    resources: [file],
+                    save: [file],
+                    sessionID: context.sessionID,
+                    agent: context.agent,
+                    source: { type: "tool", messageID: context.messageID, id: context.id },
+                  }),
+                ).pipe(
+                  Effect.asVoid,
+                  Effect.mapError((error) => new Error(String(error))),
+                ),
+            }
+            if (input.action === "sast") {
+              const runtime = yield* kali(context, "cyber_code_review")
+              const result = yield* ForkCyberSast.run(
+                store,
+                global.data,
+                runtime.configuration,
+                { ...review, manifest: runtime.assessment.manifest },
+                input,
+              )
+              return { content: ForkCyberRedaction.text(JSON.stringify(result)) }
+            }
+            const result = yield* ForkCyberCodeReview.run(store, review, input)
             return { content: JSON.stringify(result) }
           }).pipe(Effect.mapError((error) => ForkCyberDiagnostics.toolError(error, "cyber_tool"))),
       })

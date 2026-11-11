@@ -1,6 +1,7 @@
 export * as ForkCyberContainerReview from "./container-review.js"
 
 import { Effect, Option, Schema } from "effect"
+import { ForkCyberAdvisory } from "./advisory.js"
 import { ForkCyberDiagnostics } from "./diagnostics.js"
 import { ForkCyberOfflineAnalysis } from "./offline-analysis.js"
 import { ForkCyberStore } from "./store.js"
@@ -10,6 +11,7 @@ const artifact = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(2
 export const Action = Schema.Union([
   Schema.Struct({ action: Schema.Literal("dockerfile_lint"), artifact }),
   Schema.Struct({ action: Schema.Literal("runtime_review"), artifact }),
+  Schema.Struct({ action: Schema.Literal("image_scan"), image: Schema.String.check(Schema.isMaxLength(512)), artifact }),
 ])
 export type Action = typeof Action.Type
 
@@ -17,6 +19,8 @@ type Finding = { rule: string; line?: number; detail: string }
 
 const secretName = /(password|passwd|secret|token|api[_-]?key|credential)/i
 const digest = /@sha256:[a-f0-9]{64}$/
+const digestReference = /^[^\s@]+@sha256:[a-f0-9]{64}$/
+const text = (maximum: number) => Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(maximum))
 
 // Structure-level rules for Dockerfiles. Secret values are never reported; only the variable name is.
 export function dockerfileLint(text: string) {
@@ -160,20 +164,10 @@ export const runReview = Effect.fn(function* (
   store: Store,
   actor: ForkCyberOfflineAnalysis.Actor,
   input: typeof Action.Type,
+  environment = process.env,
 ) {
-  const source = yield* store.readArtifact(actor.owner, input.artifact)
-  if (source.bytes.byteLength > 1024 * 1024)
-    return yield* Effect.fail(
-      new ForkCyberDiagnostics.Failure({
-        category: "input",
-        operation: "cyber_container",
-        message: "Container review inputs larger than 1 MiB are not analyzed",
-        target_started: false,
-        effects: "not_started",
-        recovery: "Select a smaller Dockerfile or inspect export.",
-      }),
-    )
-  const text = source.bytes.toString("utf8")
+  if (input.action === "image_scan") return yield* imageScan(store, actor, input, environment)
+  const text = yield* artifactText(store, actor.owner, input.artifact)
   const output = input.action === "dockerfile_lint" ? dockerfileLint(text) : runtimeReview(text)
   if (output === undefined)
     return yield* Effect.fail(
@@ -187,6 +181,125 @@ export const runReview = Effect.fn(function* (
       }),
     )
   return yield* ForkCyberOfflineAnalysis.record(store, actor, "cyber_container", input, output)
+})
+
+const artifactText = Effect.fn(function* (store: Store, owner: string, artifact: string) {
+  const source = yield* store.readArtifact(owner, artifact)
+  if (source.bytes.byteLength > 1024 * 1024)
+    return yield* Effect.fail(
+      new ForkCyberDiagnostics.Failure({
+        category: "input",
+        operation: "cyber_container",
+        message: "Container review inputs larger than 1 MiB are not analyzed",
+        target_started: false,
+        effects: "not_started",
+        recovery: "Select a smaller Dockerfile or inspect export.",
+      }),
+    )
+  return source.bytes.toString("utf8")
+})
+
+type ImageScan = Extract<typeof Action.Type, { action: "image_scan" }>
+const Inventory = Schema.Struct({
+  format: Schema.Literal("opencyber-package-inventory-v1"),
+  image: Schema.String.check(Schema.isPattern(digestReference)),
+  packages: Schema.Array(Schema.Struct({ ecosystem: text(64), name: text(214), version: text(128) })).check(
+    Schema.isMaxLength(10000),
+  ),
+})
+
+// Matches an exported package inventory against the pinned advisory snapshot. The image is never pulled, run or
+// mounted. The inventory's declared digest must equal the requested reference. This tool cannot verify it without a pull.
+const imageScan = Effect.fn(function* (
+  store: Store,
+  actor: ForkCyberOfflineAnalysis.Actor,
+  input: ImageScan,
+  environment: ForkCyberAdvisory.Environment,
+) {
+  if (!digestReference.test(input.image))
+    return yield* Effect.fail(
+      new ForkCyberDiagnostics.Failure({
+        category: "input",
+        operation: "cyber_container",
+        message: "image_scan requires an image referenced by digest; tag-only references are refused",
+        target_started: false,
+        effects: "not_started",
+        recovery: "Resolve the tag to its digest outside this tool, then retry with repository@sha256:<64 hex digits>.",
+      }),
+    )
+  const text = yield* artifactText(store, actor.owner, input.artifact)
+  const exported = Option.getOrUndefined(Schema.decodeUnknownOption(Schema.fromJsonString(Inventory))(text))
+  if (exported === undefined)
+    return yield* Effect.fail(
+      new ForkCyberDiagnostics.Failure({
+        category: "input",
+        operation: "cyber_container",
+        message: "The artifact is not an opencyber package inventory export",
+        target_started: false,
+        effects: "not_started",
+        recovery:
+          "Write the inventory as opencyber-package-inventory-v1 JSON with the image digest and packages, capture it as an artifact, and select that artifact.",
+      }),
+    )
+  if (exported.image !== input.image)
+    return yield* Effect.fail(
+      new ForkCyberDiagnostics.Failure({
+        category: "input",
+        operation: "cyber_container",
+        message: "The inventory describes a different image digest",
+        target_started: false,
+        effects: "not_started",
+        recovery: "Select the inventory exported for this digest, or request the digest that the inventory describes.",
+      }),
+    )
+  const snapshot = yield* ForkCyberAdvisory.configured(environment)
+  const result = ForkCyberAdvisory.match(snapshot, exported.packages)
+  const execution = crypto.randomUUID()
+  yield* store.start({
+    owner: actor.owner,
+    session: actor.session,
+    agent: actor.agent,
+    id: execution,
+    tool: "cyber_container",
+    input,
+    provenance: { operation_class: "analysis", network: "none" },
+  })
+  const captured = yield* Effect.gen(function* () {
+    const results = yield* store.artifact(
+      actor.owner,
+      execution,
+      "container.advisory",
+      Buffer.from(JSON.stringify({ findings: result.findings, unevaluated: result.unevaluated })),
+      "application/json",
+    )
+    const page = ForkCyberAdvisory.page(result.findings)
+    const capture = {
+      format: "opencyber-image-scan-v1",
+      execution,
+      image: input.image,
+      advisory: ForkCyberAdvisory.identity(snapshot),
+      inventory: {
+        packages: exported.packages.length,
+        evaluated: result.evaluated,
+        unevaluated: result.unevaluated.length,
+      },
+      finding_count: result.findings.length,
+      findings: page.items,
+      next_offset: page.next_offset,
+      results_artifact: results[0]!.id,
+      limitations: [
+        "The inventory is an offline export captured as an artifact. The tool never pulls, runs, mounts or inspects the image.",
+        "The export's declared digest is trusted. Verifying it requires pulling the image, which this tool does not do.",
+        "Only npm and PyPI packages with plain dotted versions are evaluated. Other ecosystems and unparsable versions are unevaluated, not clean.",
+        "Matches use the snapshot named in advisory. An empty result does not prove that the image is free of known vulnerabilities.",
+      ],
+    }
+    const output = yield* store.finish(actor.owner, execution, "completed", capture)
+    return { ...capture, output: output[0]!.id, completion_evidence: [output[0]!.id] }
+  }).pipe(Effect.result)
+  if (captured._tag === "Success") return { content: JSON.stringify(captured.success) }
+  yield* store.finish(actor.owner, execution, "error", { message: String(captured.failure) })
+  return yield* Effect.fail(captured.failure)
 })
 
 type Store = Effect.Success<ReturnType<typeof ForkCyberStore.open>>

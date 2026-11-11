@@ -1,0 +1,69 @@
+# Linux host laboratory. Hosts sit on an internal network with no route out. The edge relay is the only
+# published entry point, bound to loopback, and its output is limited to the two hosts' SSH ports.
+name: opencyber-linux-host
+
+x-lab-label: &lab-label
+  com.opencyber.lab: linux-host
+
+networks:
+  lab-internal:
+    internal: true
+    ipam:
+      config:
+        - subnet: 10.233.77.0/24
+  lab-mgmt:
+    driver: bridge
+
+services:
+  hardened:
+    build:
+      context: ./host
+      args:
+        VARIANT: hardened
+    image: opencyber/lab-linux-host-hardened:1
+    labels: *lab-label
+    volumes:
+      - type: bind
+        source: ${OPENCYBER_LAB_KEY_DIR:?set OPENCYBER_LAB_KEY_DIR to a directory that holds audit.pub}
+        target: /run/lab
+        read_only: true
+    networks:
+      lab-internal:
+        ipv4_address: 10.233.77.10
+
+  vulnerable:
+    build:
+      context: ./host
+      args:
+        VARIANT: vulnerable
+    image: opencyber/lab-linux-host-vulnerable:1
+    labels: *lab-label
+    volumes:
+      - type: bind
+        source: ${OPENCYBER_LAB_KEY_DIR:?set OPENCYBER_LAB_KEY_DIR to a directory that holds audit.pub}
+        target: /run/lab
+        read_only: true
+    networks:
+      lab-internal:
+        ipv4_address: 10.233.77.11
+
+  edge:
+    build:
+      context: ./edge
+    image: opencyber/lab-linux-host-edge:1
+    labels: *lab-label
+    cap_add:
+      - NET_ADMIN
+    environment:
+      HARDENED_ADDR: 10.233.77.10
+      VULNERABLE_ADDR: 10.233.77.11
+    networks:
+      lab-internal:
+        ipv4_address: 10.233.77.2
+      lab-mgmt: {}
+    ports:
+      - "127.0.0.1:${OPENCYBER_LAB_HARDENED_PORT:-2201}:2201"
+      - "127.0.0.1:${OPENCYBER_LAB_VULNERABLE_PORT:-2202}:2202"
+    depends_on:
+      - hardened
+      - vulnerable

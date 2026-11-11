@@ -12,6 +12,14 @@ const integer = (minimum: number, maximum: number) =>
   Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum, maximum }))
 const text = Schema.String.check(Schema.isMaxLength(1024))
 const state = Schema.Literals(["open", "closed", "filtered", "unfiltered", "open|filtered", "closed|filtered"])
+const probeChecks = [
+  "redis_info",
+  "elasticsearch_root",
+  "ldap_root_dse",
+  "smb_signing",
+  "nfs_exports",
+  "mongodb_build_info",
+] as const
 const Targets = {
   host: ForkCyberScope.Host,
   ports: Schema.Array(integer(1, 65535)).check(Schema.isMinLength(1), Schema.isMaxLength(32)),
@@ -28,7 +36,7 @@ export const Action = Schema.Union([
     action: Schema.Literal("probe"),
     host: ForkCyberScope.Host,
     port: integer(1, 65535),
-    check: Schema.Literals(["redis_info", "elasticsearch_root"]),
+    check: Schema.Literals(probeChecks),
     family: Schema.optional(Schema.Literals(["ipv4", "ipv6"])),
     timeout_ms: Schema.optional(integer(1000, 30000)),
   }),
@@ -89,12 +97,13 @@ export const procedures = {
   ],
   probe: {
     // Each probe sends one unauthenticated request per call and no credentials.
-    implemented: ["redis_info", "elasticsearch_root"],
-    // Not run yet. Anonymous FTP login is excluded because it is an authentication attempt.
-    not_implemented: ["ftp_anonymous", "ldap_root_dse", "smb_signing", "nfs_exports", "mongodb_build_info"],
+    implemented: probeChecks,
+    // Not run. Anonymous FTP login is excluded because it is an authentication attempt.
+    not_implemented: ["ftp_anonymous"],
     limits: [
       "One port and one check per call, within the same scope and connection budgets as scans. Checks not listed as implemented were not run.",
       "A probe reports what the service answered to one request. It does not establish a vulnerability.",
+      "ldap_root_dse reads the anonymous root DSE over plaintext LDAP without StartTLS. smb_signing negotiates SMB 2 and 3 only and reports a SMB1-only server as unexpected. nfs_exports must target the mountd TCP port; it does not query the portmapper.",
     ],
   },
 }
@@ -280,7 +289,7 @@ export const probe = Effect.fn("ForkCyberServices.probe")(function* (
 })
 
 const ProbeReport = Schema.Struct({
-  check: Schema.Literals(["redis_info", "elasticsearch_root"]),
+  check: Schema.Literals(probeChecks),
   port: integer(1, 65535),
   state: Schema.Literals(["answered", "auth_required", "closed", "no_response", "unexpected", "error"]),
   fields: Schema.Record(
@@ -358,7 +367,8 @@ with open('services.json','w') as output:
 `
 
 // Each check sends one unauthenticated request and reads a bounded reply. Nothing is retried or followed.
-const PROBE = `import json,socket,sys
+// Checks parse replies strictly: truncated or unexpected bytes raise ValueError, reported as unexpected.
+const PROBE = `import json,socket,struct,sys
 args=json.loads(sys.argv[1])
 def read_all(sock,limit=65536):
     data=b''
@@ -367,6 +377,21 @@ def read_all(sock,limit=65536):
         if not chunk: break
         data+=chunk
     return data
+def read_exact(sock,count):
+    data=b''
+    while len(data)<count:
+        chunk=sock.recv(count-len(data))
+        if not chunk: raise ValueError('Connection closed')
+        data+=chunk
+    return data
+def take(data,pos,count):
+    if pos<0 or count<0 or pos+count>len(data): raise ValueError('Truncated reply')
+    return data[pos:pos+count]
+def le(value,count): return value.to_bytes(count,'little')
+def be(value,count=4): return value.to_bytes(count,'big')
+def le_read(data,pos,count=4,signed=False): return int.from_bytes(take(data,pos,count),'little',signed=signed)
+def be_read(data,pos,count=4): return int.from_bytes(take(data,pos,count),'big')
+def pad(size): return (-size)%4
 def redis_info(sock,host):
     sock.sendall(b'INFO server\\r\\n')
     reply=sock.recv(4096)
@@ -387,7 +412,150 @@ def elasticsearch_root(sock,host):
     version=document.get('version') if isinstance(document,dict) else None
     number=version.get('number') if isinstance(version,dict) else None
     return ('answered' if number else 'unexpected'),{'http_status':status,'elasticsearch_version':None if number is None else str(number)[:64]}
-CHECKS={'redis_info':redis_info,'elasticsearch_root':elasticsearch_root}
+def ber(tag,content):
+    size=len(content)
+    if size<128: return bytes([tag,size])+content
+    count=(size.bit_length()+7)//8
+    return bytes([tag,128|count])+size.to_bytes(count,'big')+content
+def ber_items(data):
+    items=[]
+    pos=0
+    while pos<len(data):
+        tag=take(data,pos,1)[0]
+        first=take(data,pos+1,1)[0]
+        count=first&127 if first&128 else 0
+        if (first&128 and count==0) or count>4: raise ValueError('Unsupported BER length')
+        size=be_read(data,pos+2,count) if count else first
+        start=pos+2+count
+        items.append((tag,take(data,start,size)))
+        pos=start+size
+    return items
+def ber_read(sock):
+    head=read_exact(sock,2)
+    raw=head
+    size=head[1]
+    if head[1]&128:
+        count=head[1]&127
+        if count==0 or count>4: raise ValueError('Unsupported BER length')
+        extra=read_exact(sock,count)
+        raw+=extra
+        size=int.from_bytes(extra,'big')
+    if size>65536: raise ValueError('Oversized LDAP message')
+    return ber_items(raw+read_exact(sock,size))[0]
+def ldap_result(code,entry):
+    if code in (8,50): return 'auth_required',{'result_code':code}
+    if code!=0 or entry is None: return 'unexpected',{'result_code':code}
+    attributes={}
+    for _,partial in ber_items(ber_items(entry)[1][1]):
+        name,values=ber_items(partial)
+        attributes[name[1].decode('utf8','replace')]=[value[1].decode('utf8','replace') for value in ber_items(values[1])]
+    def first(name):
+        values=attributes.get(name,[])
+        return values[0][:200] if values else None
+    return 'answered',{'vendor_name':first('vendorName'),'vendor_version':first('vendorVersion'),'supported_ldap_version':first('supportedLDAPVersion'),'naming_contexts':len(attributes.get('namingContexts',[]))}
+def ldap_root_dse(sock,host):
+    attributes=b''.join(ber(4,name.encode()) for name in ('namingContexts','supportedLDAPVersion','vendorName','vendorVersion'))
+    search=ber(99,ber(4,b'')+ber(10,bytes(1))+ber(10,bytes(1))+ber(2,bytes(1))+ber(2,bytes(1))+ber(1,bytes(1))+ber(135,b'objectClass')+ber(48,attributes))
+    sock.sendall(ber(48,ber(2,bytes([1]))+search))
+    entry=None
+    for _ in range(16):
+        tag,body=ber_read(sock)
+        if tag!=48: raise ValueError('Expected an LDAP message')
+        operation,content=ber_items(body)[1]
+        if operation==100: entry=content
+        if operation==101: return ldap_result(int.from_bytes(ber_items(content)[0][1],'big'),entry)
+    raise ValueError('Too many LDAP messages')
+def smb_negotiate():
+    header=bytes([254])+b'SMB'+le(64,2)+bytes(2)+bytes(4)+le(0,2)+le(1,2)+bytes(4)+bytes(4)+bytes(8)+bytes(4)+bytes(4)+bytes(8)+bytes(16)
+    body=le(36,2)+le(4,2)+le(1,2)+bytes(2)+bytes(4)+bytes(16)+bytes(8)+b''.join(le(dialect,2) for dialect in (514,528,768,770))
+    message=header+body
+    return bytes([0])+len(message).to_bytes(3,'big')+message
+def smb_signing(sock,host):
+    sock.sendall(smb_negotiate())
+    frame=read_exact(sock,4)
+    if frame[0]!=0: raise ValueError('Unexpected NetBIOS frame')
+    reply=read_exact(sock,be_read(frame,1,3))
+    if take(reply,0,4)==bytes([255])+b'SMB': return 'unexpected',{'smb_protocol':'smb1'}
+    if take(reply,0,4)!=bytes([254])+b'SMB': raise ValueError('Expected an SMB2 reply')
+    status=le_read(reply,8)
+    if status!=0: return 'unexpected',{'smb_status':status}
+    mode=le_read(reply,66,2)
+    signing='required' if mode&2 else ('enabled' if mode&1 else 'disabled')
+    return 'answered',{'dialect':le_read(reply,68,2),'signing':signing}
+def xdr_string(data,pos):
+    size=be_read(data,pos)
+    return take(data,pos+4,size).decode('utf8','replace'),pos+4+size+pad(size)
+def xdr_optional(data,pos,item):
+    values=[]
+    while True:
+        flag=be_read(data,pos)
+        pos+=4
+        if flag==0: return values,pos
+        if flag!=1: raise ValueError('Unsupported XDR optional value')
+        value,pos=item(data,pos)
+        values.append(value)
+def export_node(data,pos):
+    directory,pos=xdr_string(data,pos)
+    _,pos=xdr_optional(data,pos,xdr_string)
+    return directory,pos
+def nfs_exports(sock,host):
+    call=be(1)+be(0)+be(2)+be(100005)+be(3)+be(5)+bytes(16)
+    sock.sendall(be(2147483648|len(call))+call)
+    mark=be_read(read_exact(sock,4),0)
+    if (mark&2147483648)==0 or (mark&2147483647)>65536: raise ValueError('Unsupported RPC record')
+    reply=read_exact(sock,mark&2147483647)
+    if be_read(reply,4)!=1: raise ValueError('Expected an RPC reply')
+    if be_read(reply,8)==1:
+        reject=be_read(reply,12)
+        return ('auth_required' if reject==1 else 'unexpected'),{'reject_stat':reject}
+    if be_read(reply,8)!=0: raise ValueError('Unsupported RPC reply status')
+    verifier=be_read(reply,16)
+    accept_at=20+verifier+pad(verifier)
+    accept=be_read(reply,accept_at)
+    if accept!=0: return 'unexpected',{'accept_stat':accept}
+    exports,_=xdr_optional(reply,accept_at+4,export_node)
+    return 'answered',{'export_count':len(exports),'exports':';'.join(exports)[:200]}
+BSON_FIXED={7:12,8:1,9:8,10:0,17:8,18:8}
+def bson_values(data):
+    if le_read(data,0)!=len(data) or take(data,len(data)-1,1)!=bytes(1): raise ValueError('Malformed BSON document')
+    values={}
+    pos=4
+    while take(data,pos,1)!=bytes(1):
+        kind=take(data,pos,1)[0]
+        end=data.index(bytes(1),pos+1)
+        name=data[pos+1:end].decode('utf8','replace')
+        pos=end+1
+        if kind==2:
+            size=le_read(data,pos)
+            values[name]=take(data,pos+4,size-1).decode('utf8','replace')
+            pos+=4+size
+        elif kind in (3,4):
+            pos+=le_read(data,pos)
+        elif kind==5:
+            pos+=5+le_read(data,pos)
+        elif kind==1:
+            values[name]=struct.unpack('<d',take(data,pos,8))[0]
+            pos+=8
+        elif kind==16:
+            values[name]=le_read(data,pos,4,True)
+            pos+=4
+        elif kind in BSON_FIXED: pos+=BSON_FIXED[kind]
+        else: raise ValueError('Unsupported BSON type')
+    return values
+def mongodb_build_info(sock,host):
+    command=bytes([16])+b'buildInfo'+bytes([0])+le(1,4)+bytes([2])+b'$db'+bytes([0])+le(6,4)+b'admin'+bytes([0])
+    document=le(len(command)+5,4)+command+bytes([0])
+    sock.sendall(le(21+len(document),4)+le(1,4)+bytes(4)+le(2013,4)+bytes(4)+bytes([0])+document)
+    header=read_exact(sock,16)
+    size=le_read(header,0)
+    if le_read(header,12)!=2013 or size<21 or size>65536: raise ValueError('Expected an OP_MSG reply')
+    body=read_exact(sock,size-16)
+    if take(body,4,1)!=bytes(1): raise ValueError('Unsupported OP_MSG section')
+    values=bson_values(body[5:])
+    if values.get('ok')==1 and isinstance(values.get('version'),str): return 'answered',{'version':values['version'][:64]}
+    if values.get('code')==13: return 'auth_required',{'code':13}
+    return 'unexpected',{}
+CHECKS={'redis_info':redis_info,'elasticsearch_root':elasticsearch_root,'ldap_root_dse':ldap_root_dse,'smb_signing':smb_signing,'nfs_exports':nfs_exports,'mongodb_build_info':mongodb_build_info}
 out={'check':args['check'],'port':args['port']}
 try:
     sock=socket.create_connection((args['host'],args['port']),timeout=args['timeout'])
@@ -401,6 +569,8 @@ else:
             state,fields=CHECKS[args['check']](sock,args['host'])
         except socket.timeout:
             state,fields='no_response',{}
+        except ValueError:
+            state,fields='unexpected',{}
         out.update(state=state,fields=fields)
 with open('probe.json','w') as output:
     json.dump(out,output)

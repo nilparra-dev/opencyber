@@ -37,7 +37,10 @@ export const NetworkBudget = Schema.Struct({
   Schema.makeFilter((value) => value.bytes_per_job <= value.bytes_total || "bytes_per_job must not exceed bytes_total"),
 )
 
-const S3Arn = Schema.String.check(Schema.isPattern(/^arn:aws:s3:::[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/))
+export const S3Arn = Schema.String.check(Schema.isPattern(/^arn:aws:s3:::[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/))
+// An AWS account is named by its root principal ARN. It is the target of account-level live reads.
+export const AccountArn = Schema.String.check(Schema.isPattern(/^arn:aws:iam::\d{12}:root$/))
+const CloudResource = Schema.Union([S3Arn, AccountArn])
 export const Domain = Schema.String.check(
   Schema.makeFilter<string>(
     (value) =>
@@ -55,7 +58,12 @@ const Url = Schema.String.check(
   }),
 )
 const RepoPath = Text.check(Schema.makeFilter<string>((value) => !value.includes("\0") || "Must not contain NUL bytes"))
-const ImageDigest = Schema.String.check(Schema.isPattern(/^[^\s@]+@sha256:[a-f0-9]{64}$/))
+const ImageDigest = Schema.String.check(
+  Schema.makeFilter<string>(
+    (value) =>
+      imageReference(value) !== undefined || "Expected a registry host, repository and sha256 digest, without a tag",
+  ),
+)
 const DirectoryName = Text.check(Schema.isMaxLength(255))
 
 // Typed targets name what an engagement may touch. Each kind is validated here; `enforcement` says where it is enforced.
@@ -65,7 +73,7 @@ const Typed = {
   cidr: Schema.Struct({ type: Schema.Literal("cidr"), value: Cidr }),
   url: Schema.Struct({ type: Schema.Literal("url"), value: Url }),
   service: Schema.Struct({ type: Schema.Literal("service"), value: Service }),
-  cloud_resource: Schema.Struct({ type: Schema.Literal("cloud_resource"), value: S3Arn }),
+  cloud_resource: Schema.Struct({ type: Schema.Literal("cloud_resource"), value: CloudResource }),
   repo_path: Schema.Struct({ type: Schema.Literal("repo_path"), value: RepoPath }),
   container_image: Schema.Struct({ type: Schema.Literal("container_image"), value: ImageDigest }),
   device: Schema.Struct({ type: Schema.Literal("device"), value: Host }),
@@ -81,9 +89,11 @@ export const enforcement = {
   cidr: "Kali egress policy and HTTP address matching.",
   url: "HTTP scheme, host and port; the path is not enforced. Recorded as a service entry.",
   service: "Kali egress policy per protocol and port.",
-  cloud_resource: "Exact S3 ARN before cyber_surface and identity-cloud calls. Live API filtering arrives with OC-304.",
+  cloud_resource:
+    "Exact S3 bucket or AWS account ARN. cyber_surface and identity-cloud check it before each call; cyber_cloud live actions check it before any request.",
   repo_path: "Code-review snapshot boundary. Refused by manifests until OC-205 records it.",
-  container_image: "Pull by digest only. Refused by manifests until OC-206 records it.",
+  container_image:
+    "Explicit registry host and port, pinned by digest. Recorded as a service entry; pulls outside it are refused before Docker runs.",
   device: "Host policy under the simulator-by-default rule. Refused by manifests until OC-301 records it.",
   directory: "Bounded read-only directory account. Refused by manifests until OC-303 records it.",
 } satisfies Record<keyof typeof Typed, string>
@@ -95,6 +105,7 @@ const ManifestTarget = Schema.Union([
   Typed.url,
   Typed.service,
   Typed.cloud_resource,
+  Typed.container_image,
 ])
 
 const Inclusions = Schema.Struct({
@@ -103,7 +114,7 @@ const Inclusions = Schema.Struct({
   excluded: Schema.Array(Target),
   services: Schema.optional(Schema.Array(Service).check(Schema.isMaxLength(64))),
   excluded_services: Schema.optional(Schema.Array(Service).check(Schema.isMaxLength(64))),
-  resources: Schema.optional(Schema.Array(S3Arn).check(Schema.isMaxLength(64))),
+  resources: Schema.optional(Schema.Array(CloudResource).check(Schema.isMaxLength(64))),
 })
 
 // Typed entries are recorded into the legacy lists while decoding, so every enforcement path reads one shape.
@@ -113,7 +124,7 @@ const Scope = Schema.Struct({
   targets: Schema.optional(
     Schema.Array(ManifestTarget).check(Schema.isMaxLength(128)).annotate({
       description:
-        "Typed scope entries: host, domain, cidr, url, service or cloud_resource (S3 bucket ARN). Exclusions stay in scope.excluded and scope.excluded_services.",
+        "Typed scope entries: host, domain, cidr, url, service or cloud_resource (S3 bucket or AWS account ARN). Exclusions stay in scope.excluded and scope.excluded_services.",
     }),
   ),
 }).pipe(
@@ -132,16 +143,20 @@ export const ValidationAction = Schema.Literals([
   "cyber_surface.binary.execute",
   "cyber_web_test.validate.open_redirect",
   "cyber_web_test.validate.path_traversal",
-  "cyber_database.auth_test",
   "cyber_web_test.validate.sql_injection",
   "cyber_web_test.validate.command_injection",
+  "cyber_web_test.validate.xss",
+  "cyber_web_test.validate.ssrf",
+  "cyber_database.auth_test",
+  "cyber_directory.auth_test",
+  "cyber_directory.crack",
 ])
 export type ValidationAction = typeof ValidationAction.Type
 
 export const Validation = Schema.Struct({
   // Laboratory is the only environment until an approval model for other environments exists.
   environment: Schema.Literal("laboratory"),
-  actions: Schema.Array(ValidationAction).check(Schema.isMinLength(1), Schema.isMaxLength(8)),
+  actions: Schema.Array(ValidationAction).check(Schema.isMinLength(1), Schema.isMaxLength(16)),
 })
 
 // Credential identities an engagement may use (fork-cyber-credentials.md). A label names a secret the operator
@@ -149,14 +164,30 @@ export const Validation = Schema.Struct({
 export const CredentialTarget = Schema.Union([Typed.host, Typed.domain, Typed.cidr, Typed.cloud_resource])
 export type CredentialTarget = typeof CredentialTarget.Type
 // `tool` or `tool.action`, the same identifiers that approvals and risk declarations use.
-const CredentialAction = Schema.String.check(Schema.isPattern(/^[a-z_]+(\.[a-z_]+)?$/))
+const CredentialAction = Schema.String.check(Schema.isPattern(/^[a-z_][a-z0-9_]*(\.[a-z_][a-z0-9_]*)?$/))
+// The non-secret account a host login authenticates as. The model cannot choose it; only the approved declaration can.
+const Account = Schema.String.check(Schema.isPattern(/^[a-z_][a-z0-9_-]{0,31}$/))
 export const Credential = Schema.Struct({
   label: Schema.String.check(Schema.isPattern(/^[a-z][a-z0-9-]{0,62}$/)),
   kind: ForkCyberCredentials.Kind,
   read_only: Schema.Literal(true),
   targets: Schema.Array(CredentialTarget).check(Schema.isMinLength(1), Schema.isMaxLength(16)),
   actions: Schema.Array(CredentialAction).check(Schema.isMinLength(1), Schema.isMaxLength(16)),
-})
+  // The account a host_login or directory_bind label authenticates as. It is part of the approved revision, so the
+  // model cannot choose an account the engagement did not declare. Host accounts are simple names; directory accounts may be distinguished names.
+  account: Schema.optional(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(512))),
+}).check(
+  Schema.makeFilter((value) => {
+    if (value.kind === "host_login" && !Schema.is(Account)(value.account)) return "host_login needs a simple account name"
+    if (value.kind !== "host_login" && value.kind !== "directory_bind" && value.account !== undefined)
+      return "account is only for host_login and directory_bind credentials"
+    if (value.kind === "host_login" && value.targets.some((target) => target.type !== "host"))
+      return "host_login targets must be hosts"
+    if (value.kind !== "host_login" && value.actions.some((action) => action.startsWith("cyber_host.")))
+      return "cyber_host actions need a host_login credential"
+    return true
+  }),
+)
 const Credentials = Schema.Array(Credential).check(
   Schema.isMaxLength(16),
   Schema.makeFilter<ReadonlyArray<typeof Credential.Type>>(
@@ -245,10 +276,29 @@ export function webService(value: string) {
   }
 }
 
+// A digest-pinned image reference with an explicit registry host and no tag. Docker treats a first component
+// without a dot, colon or `localhost` as a Docker Hub repository, so such references are refused here.
+export function imageReference(value: string) {
+  const match = /^([^/@\s]+)\/([a-z0-9][a-z0-9._/-]*)@(sha256:[a-f0-9]{64})$/.exec(value)
+  if (!match) return undefined
+  const [, registry = "", repository = "", digest = ""] = match
+  const location = /^([^:]+)(?::(\d{1,5}))?$/.exec(registry)
+  if (!location) return undefined
+  const host = normalize(location[1] ?? "")
+  const port = location[2] === undefined ? 443 : Number(location[2])
+  const explicit = host.includes(".") || host === "localhost" || location[2] !== undefined
+  if (!explicit || !isHost(host) || port < 1 || port > 65535) return undefined
+  return { host, port, repository, digest }
+}
+
 function withTargets(scope: typeof Inclusions.Type, targets: readonly (typeof ManifestTarget.Type)[]) {
   const services = targets.flatMap((target) => {
     if (target.type === "url") return webService(target.value).services
     if (target.type === "service") return [target.value]
+    if (target.type === "container_image") {
+      const image = imageReference(target.value)!
+      return [{ target: image.host, protocol: "tcp" as const, ports: [image.port] }]
+    }
     return []
   })
   return {

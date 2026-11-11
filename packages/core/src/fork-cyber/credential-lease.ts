@@ -25,7 +25,8 @@ export type Request = {
 }
 
 // The plaintext stays a Buffer so release can zero it. Release is the caller's obligation: call it when the execution ends.
-export type Lease = { value: Buffer; release: () => void }
+// `account` is the declared host login name; it is not secret and comes from the approved revision.
+export type Lease = { value: Buffer; release: () => void; account?: string }
 
 type Verdict =
   | { _tag: "Granted"; risk: ForkCyberDecision.Risk; reason: string; lease: Lease }
@@ -67,6 +68,7 @@ export const catalog = Effect.fn("ForkCyberCredentialLease.catalog")(function* (
         return {
           label: item.label,
           kind: item.kind,
+          account: item.account ?? null,
           read_only: item.read_only,
           targets: item.targets,
           actions: item.actions,
@@ -132,7 +134,7 @@ const verify = Effect.fn("ForkCyberCredentialLease.verify")(function* (request: 
     _tag: "Granted",
     risk,
     reason,
-    lease: { value: value.success, release: () => value.success.fill(0) },
+    lease: { value: value.success, release: () => value.success.fill(0), account: declared.account },
   } satisfies Verdict
 })
 
@@ -167,6 +169,22 @@ const grantReason = Effect.fn("ForkCyberCredentialLease.grantReason")(function* 
   )[0]
   if (recent !== undefined)
     return refuse("paced", "budget", "This credential was already tried on this target within the pacing window.", pacingRecovery, risk)
+  const attempts = (
+    yield* request.store.leaseAttempts({
+      owner: request.owner,
+      label: request.label,
+      target: `${request.target.type}:${request.target.value}`,
+      since: request.now - attemptWindow,
+    })
+  )[0]!.attempts
+  if (attempts >= attemptLimit)
+    return refuse(
+      "attempt_limit",
+      "budget",
+      "This credential has used its attempts on this target in the window.",
+      attemptRecovery,
+      risk,
+    )
   return `approved:${active.id}`
 })
 
@@ -228,7 +246,10 @@ function inScope(scope: ForkCyberScope.Manifest["scope"], target: ForkCyberScope
   if (target.type === "cloud_resource") return (scope.resources ?? []).includes(target.value)
   if (target.type === "cidr")
     return scope.cidrs.some((entry) => ForkCyberScope.normalize(entry) === ForkCyberScope.normalize(target.value))
-  return [...scope.domains, ...scope.cidrs].some((entry) => ForkCyberScope.matches(target.value, entry))
+  // A port-scoped service entry also puts its host in scope. The host tool authorizes the port itself.
+  return [...scope.domains, ...scope.cidrs, ...(scope.services ?? []).map((entry) => entry.target)].some((entry) =>
+    ForkCyberScope.matches(target.value, entry),
+  )
 }
 
 // The action's tool owns its risk class. An action of a tool with no declaration has no class, and is refused.
@@ -253,6 +274,12 @@ const validationRecovery =
 // One credential tries one target at most once per window, so repeated attempts cannot outpace an account lockout.
 const pacingWindow = 60_000
 const pacingRecovery = "Wait for the pacing window to pass before trying this credential on this target again."
+// The target's lockout threshold is not known to the harness. Three granted attempts in thirty minutes stays below the
+// common thresholds of five; an engagement-specific threshold is an open decision (fork-cyber-directory-auth.md).
+const attemptWindow = 30 * 60_000
+const attemptLimit = 3
+const attemptRecovery =
+  "Wait until earlier attempts leave the thirty-minute window. Repeated attempts can lock the account; the operator decides whether to continue."
 const approvalRecovery =
   "The operator approves this action on this target in the permission prompt. Approvals expire after ten minutes."
 const roleRecovery = "Use an agent and mode that permit this tool."

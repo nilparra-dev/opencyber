@@ -1,0 +1,25 @@
+{
+  "format": "opencyber-advisory-snapshot-v1",
+  "source": "opencyber-test-fixture",
+  "snapshot_version": "test-fixture-1",
+  "records": [
+    {
+      "ecosystem": "npm",
+      "package": "ocfx-parser",
+      "range": ">=1.0.0 <1.4.3",
+      "id": "OCFX-TEST-0001",
+      "severity": "high",
+      "summary": "Synthetic test fixture: the parser accepts unbounded input before 1.4.3. This is not a real advisory.",
+      "fixed": "1.4.3"
+    },
+    {
+      "ecosystem": "PyPI",
+      "package": "ocfx-py",
+      "range": "<0.9.1",
+      "id": "OCFX-TEST-0002",
+      "severity": "medium",
+      "summary": "Synthetic test fixture: the client skips certificate checks before 0.9.1. This is not a real advisory.",
+      "fixed": "0.9.1"
+    }
+  ]
+}

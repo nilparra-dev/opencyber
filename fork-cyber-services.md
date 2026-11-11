@@ -37,7 +37,17 @@ The input deadline defaults to 30 seconds and is capped by the operator configur
 
 - `version` takes the same input as `scan`. It adds `-sV --version-light`, which is Nmap's light version detection without scripts. Open ports can gain `product`, `version` and `extrainfo` fields with `method: "probed"`.
 - `udp_top` runs nothing and returns `not_configured`. UDP scans need raw sockets, and this workload drops every capability. The action says so instead of failing silently. A UDP profile needs an operator-approved image that grants NET_RAW.
-- `probe` takes one port and one check, `redis_info` (`INFO server`, no credentials) or `elasticsearch_root` (`GET /`). It makes one connection and sends one request. It reports a state (`answered`, `auth_required`, `closed`, `no_response` or `unexpected`), the fields it read, the checks that `ran`, and `not_run`. `not_run` lists the checks the design names but this version does not implement: anonymous FTP, LDAP root DSE, SMB signing, NFS exports and MongoDB build information. Anonymous FTP is excluded for now because logging in is an authentication attempt.
+- `probe` takes one port and one check. It makes one TCP connection, sends one unauthenticated request, reads one bounded reply and sends no credentials. The checks and what each sends:
+  - `redis_info`: `INFO server`.
+  - `elasticsearch_root`: `GET /` over HTTP/1.1.
+  - `ldap_root_dse`: an LDAP searchRequest for the root DSE (base scope, `objectClass` present, four attributes) without a bind, so the session stays anonymous. Plaintext LDAP only, with no StartTLS. Reports the vendor name and version, the supported LDAP version and the number of naming contexts. Anonymous denial is `auth_required`.
+  - `smb_signing`: one SMB2 NEGOTIATE offering dialects 2.0.2 to 3.0.2, with no session setup. Reports the negotiated dialect and whether signing is `required`, `enabled` (offered but not required) or `disabled`. An SMB1-only server is `unexpected`.
+  - `nfs_exports`: one ONC RPC call to MOUNT protocol v3 `EXPORT` (program 100005, procedure 5) with AUTH_NONE. Give the mountd TCP port. The portmapper is not queried because it would be a second, unscoped port. Reports the export count and directory names, not the group lists.
+  - `mongodb_build_info`: one OP_MSG `buildInfo` command against `admin` with no authentication. Reports the server version. A reply with error code 13 is `auth_required`.
+
+  Parsing is strict. A truncated or malformed reply is `unexpected`, not an answer.
+
+- A probe reports a state (`answered`, `auth_required`, `closed`, `no_response`, `unexpected` or `error`), the fields it read, the checks that `ran`, and `not_run`. `not_run` lists the checks the design names but this version does not implement: anonymous FTP. Anonymous FTP is excluded because logging in is an authentication attempt: it would send `USER anonymous` and a password, which the probe contract (no credentials) does not allow. Adding it needs an explicit operator decision on its risk class and approval, so it stays pending.
 
 ## Evidence and interpretation
 
@@ -60,13 +70,24 @@ Collapsed XML groups remain aggregate counts; ports without explicit rows are li
 
 The lab creates an internal Docker network with a synthetic TCP management listener on port 8000 and a closed control on 8001. It verifies listener readiness through actual socket reads, runs real Nmap over IPv4 and IPv6, and checks that only the listening port is reported open. No external assessment target is contacted. The positive hypothesis is listener reachability, not a vulnerability claim.
 
+The new probe checks have their own lab in `packages/core/test/plugin/fork-cyber-services-probe-remaining.test.ts`. Each check has a positive and a negative control. The closed port on the LDAP lab's address is a further control:
+
+| Check                | Positive                                         | Negative                              | Known outcome                |
+| -------------------- | ------------------------------------------------ | ------------------------------------- | ---------------------------- |
+| `ldap_root_dse`      | open root DSE on 1389                            | anonymous denied (result 8) on 1390   | `answered` / `auth_required` |
+| `smb_signing`        | SMB2 with signing enabled, not required, on 1445 | signing required on 1446              | `enabled` / `required`       |
+| `nfs_exports`        | one export `/srv/export` on 20048                | no exports on 20049                   | `export_count` 1 / 0         |
+| `mongodb_build_info` | real `mongo:7.0`                                 | closed port 27018 on the same address | version `7.0.*` / `closed`   |
+
+The LDAP, SMB and MOUNT labs are synthetic responders in the Kali image. Their replies follow the protocol layouts, so they check the parser and the state mapping, not any vendor implementation. The MongoDB lab is the only one against a real server. It runs only when `OPENCYBER_TEST_MONGO_IMAGE` is set to the digest-pinned official image, for example `mongo@sha256:1f995ad6fdb93244a1addab1b58f934a0bc2f5643c38e02f5e9d7f0c7d227a7b` (`mongo:7.0` as pulled on 2026-10-10); otherwise it is skipped. Verification against Samba, OpenLDAP and a real NFS export is pending. No images are pinned for the first two yet, and a kernel NFS server needs privileges that this workload does not have.
+
 The parser fixture `packages/core/test/fixture/fork-cyber-services/closed.xml` was emitted by Nmap 7.99 in image version 3 over network-disabled loopback. Negative cases cover scanner errors, truncation, unsupported scans/declarations and oversized ranges; aggregate groups retain their original meaning. A real job with invalid normalization verifies error evidence and cleanup. Location integration checks native tool registration, procedure access without Docker, scope/config prerequisites and permission/claim denials.
 
 Run from `packages/core`:
 
 ```sh
 export OPENCYBER_TEST_KALI_IMAGE="$(docker image inspect opencyber-kali:3 --format '{{.Id}}')"
-bun test test/plugin/fork-cyber-services.test.ts test/plugin/fork-cyber-kali.test.ts test/plugin/fork-cyber-network.test.ts test/plugin/fork-cyber-integration.test.ts
+bun test test/plugin/fork-cyber-services.test.ts test/plugin/fork-cyber-services-probes.test.ts test/plugin/fork-cyber-services-probe-remaining.test.ts test/plugin/fork-cyber-kali.test.ts test/plugin/fork-cyber-network.test.ts test/plugin/fork-cyber-integration.test.ts
 bun build --compile --format=esm --minify --bytecode test/fixture/fork-cyber-services-smoke.ts --outfile /tmp/opencyber-services-smoke
 cd /tmp
 ./opencyber-services-smoke

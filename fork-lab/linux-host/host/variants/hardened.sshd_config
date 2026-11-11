@@ -1,0 +1,20 @@
+Port 22
+HostKey /etc/ssh/ssh_host_ed25519_key
+LogLevel VERBOSE
+PermitRootLogin no
+PubkeyAuthentication yes
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PermitEmptyPasswords no
+UsePAM yes
+AllowUsers audit
+X11Forwarding no
+AllowTcpForwarding no
+AllowAgentForwarding no
+PermitTunnel no
+UseDNS no
+MaxAuthTries 3
+ClientAliveInterval 300
+ClientAliveCountMax 2
+AuthorizedKeysFile .ssh/authorized_keys
+Subsystem sftp /usr/lib/openssh/sftp-server

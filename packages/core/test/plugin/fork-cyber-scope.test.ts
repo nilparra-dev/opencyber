@@ -53,12 +53,24 @@ describe("typed targets", () => {
 
   test.each([
     ["repo_path", "/work/snapshot"],
-    ["container_image", digest],
     ["device", "10.0.0.20"],
     ["directory", "corp.example.test"],
   ] as const)("manifest refuses %s until its work item records it", (type, value) => {
     const input = manifest({ ...empty, targets: [{ type, value }] })
     expect(Option.isNone(Schema.decodeUnknownOption(ForkCyberScope.Manifest)(input))).toBe(true)
+  })
+
+  test("manifest records a digest-pinned container image as its registry service", () => {
+    const input = manifest({ ...empty, targets: [{ type: "container_image", value: digest }] })
+    const decoded = Schema.decodeUnknownSync(ForkCyberScope.Manifest)(input)
+    expect(decoded.scope.services).toEqual([{ target: "registry.example.test", protocol: "tcp", ports: [443] }])
+  })
+
+  test("a container image without an explicit registry or with a tag is refused by manifests", () => {
+    for (const value of [`app@sha256:${"a".repeat(64)}`, `registry.example.test:5000/app:1.0@sha256:${"a".repeat(64)}`]) {
+      const input = manifest({ ...empty, targets: [{ type: "container_image", value }] })
+      expect(Option.isNone(Schema.decodeUnknownOption(ForkCyberScope.Manifest)(input))).toBe(true)
+    }
   })
 })
 
