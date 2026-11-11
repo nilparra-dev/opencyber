@@ -10,6 +10,7 @@ import { FileMutation } from "./file-mutation.js"
 import { Formatter } from "./formatter.js"
 import { Permission } from "./permission.js"
 import type { SessionErrors } from "./session/error.js"
+// fork: a hardened root refusal reaches write targets as a typed policy error (F-019).
 import type { Tool } from "./tool.js"
 import { fileDiff } from "./tool/plugin/file-diff.js"
 
