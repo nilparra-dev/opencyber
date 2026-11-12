@@ -38,7 +38,7 @@ const body = {
 
 const addPlugin = Effect.fn(function* () {
   const plugin = yield* Plugin.Service
-  yield* ForkAnthropicOAuthPlugin.effect(yield* PluginHost.make(plugin))
+  yield* ForkAnthropicOAuthPlugin.effect(yield* PluginHost.make(plugin, "fork-anthropic-oauth"))
 })
 
 const send = Effect.fn(function* () {

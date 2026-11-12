@@ -31,7 +31,6 @@ target
 
 # Local dev files
 opencode-dev
-UPCOMING_CHANGELOG.md
 RELEASE_REVIEW.md
 # fork: local research never leaves the machine (F-012)
 reports/
@@ -40,3 +39,6 @@ logs/
 *.bun-build
 tsconfig.tsbuildinfo
 /artifacts/
+
+# Legal drafts pending review are kept outside the repository; never copy them in.
+legal-drafts-private/

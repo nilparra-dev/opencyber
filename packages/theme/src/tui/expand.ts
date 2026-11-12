@@ -1,5 +1,6 @@
 import type {
   BackgroundDefinition,
+  DialogTokensDefinition,
   ModeDefinition,
   StatefulColorDefinition,
   TextDefinition,
@@ -11,7 +12,14 @@ export function expandTheme<Definition extends ModeDefinition>(definition: Defin
   return {
     ...definition,
     ...expandTokens(definition),
-    ...(definition["@dialog"] ? { "@dialog": expandTokens(definition["@dialog"]) } : {}),
+    ...(definition["@dialog"] ? { "@dialog": expandDialog(definition["@dialog"]) } : {}),
+  }
+}
+
+function expandDialog(definition: DialogTokensDefinition): DialogTokensDefinition {
+  return {
+    ...expandTokens(definition),
+    ...(definition["@footer"] ? { "@footer": expandTokens(definition["@footer"]) } : {}),
   }
 }
 
@@ -43,6 +51,7 @@ function expandText(definition: TextDefinition | undefined): TextDefinition | un
     muted: definition.muted ?? (definition.base ? "$text.base" : undefined),
     // fork: brand color defaults to the theme's own error color, so it stays the theme's red (F-011)
     brand: definition.brand?.base ? definition.brand : { base: "$text.feedback.error.base" },
+    faint: definition.faint ?? (definition.muted || definition.base ? "$text.muted" : undefined),
     action: expandActions(definition.action, "text.action"),
     formfield: expandFormfield(definition.formfield, "text.formfield"),
     feedback: definition.feedback

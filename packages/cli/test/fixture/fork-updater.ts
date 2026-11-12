@@ -68,7 +68,7 @@ await Effect.runPromise(
           run: (command) =>
             Effect.suspend(() => {
               if (command._tag !== "StandardCommand") return Effect.die("Unexpected piped install command")
-              commands.push([command.command, ...command.args])
+              commands.push([String(command.command), ...command.args.map(String)])
               return Effect.succeed({
                 command: command.command,
                 exitCode: 0,

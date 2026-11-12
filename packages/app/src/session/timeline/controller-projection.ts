@@ -33,6 +33,9 @@ function handoffNotices(
   const time = { created: handoff.message.time.created }
   const selection = handoff.selection
 
+  // A held prompt switches nothing until its Location's agents and models load.
+  if (!selection) return []
+
   return [
     ...(session?.agent && session.agent !== selection.agent
       ? [
@@ -49,7 +52,15 @@ function handoffNotices(
     (session.model.providerID !== selection.model.providerID ||
       session.model.id !== selection.model.id ||
       (session.model.variant ?? "default") !== (selection.model.variant ?? "default"))
-      ? [{ id: `${handoff.message.id}_model`, type: "model-switched" as const, model: selection.model, time }]
+      ? [
+          {
+            id: `${handoff.message.id}_model`,
+            type: "model-switched" as const,
+            model: selection.model,
+            previous: session.model,
+            time,
+          },
+        ]
       : []),
   ]
 }

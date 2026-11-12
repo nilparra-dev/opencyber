@@ -223,7 +223,7 @@ describe("Session.create", () => {
         })
         expect(aliasAdopted).toMatchObject({
           projectID: project.id,
-          location: aliased,
+          location: nested,
           subpath: RelativePath.make("packages/app"),
         })
         // Adoption is a project-domain fact; the session log records nothing new.
@@ -936,7 +936,12 @@ describe("Session.create", () => {
       const input = { id, location }
       const created = yield* session.create(input)
 
-      yield* db.update(SessionTable).set({ agent: "build" }).where(eq(SessionTable.id, id)).run().pipe(Effect.orDie)
+      yield* db
+        .update(SessionTable)
+        .set({ agent: Agent.ID.make("build") })
+        .where(eq(SessionTable.id, id))
+        .run()
+        .pipe(Effect.orDie)
 
       expect(yield* session.create(input)).toMatchObject({ id: created.id, agent: "build" })
     }),
@@ -1326,12 +1331,10 @@ describe("SessionTransfer", () => {
               model,
               error,
               retry: { attempt: 1, at: DateTime.makeUnsafe(10), error },
-              providerState: { arbitrary: "synthetic-opaque-secret" },
               content: [
                 {
                   type: "reasoning",
                   text: "synthetic-private-thought",
-                  state: { arbitrary: "synthetic-thought-state" },
                 },
                 {
                   type: "tool",
@@ -1427,9 +1430,7 @@ describe("SessionTransfer", () => {
       for (const secret of [
         "synthetic-export-secret",
         "synthetic-response-secret",
-        "synthetic-opaque-secret",
         "synthetic-private-thought",
-        "synthetic-thought-state",
         "synthetic-authorization-secret",
         "synthetic-cookie-secret",
       ])
@@ -1523,7 +1524,6 @@ describe("SessionTransfer", () => {
       yield* bus.publish(SessionEvent.Compaction.Started, {
         sessionID: source.id,
         reason: "manual",
-        recent: "pending",
       })
 
       expect((yield* transfer.export({ sessionID: source.id })).messages).toMatchObject([Expected.user("Settled")])
@@ -1545,7 +1545,6 @@ describe("SessionTransfer", () => {
       const runningCompactionID = SessionMessage.ID.create()
       const completedCompactionID = SessionMessage.ID.create()
       const model = Model.Ref.make({ id: Model.ID.make("model"), providerID: Provider.ID.make("provider") })
-      const providerState = { responseId: "summary-response" }
 
       yield* transfer.import({
         data: {
@@ -1592,7 +1591,6 @@ describe("SessionTransfer", () => {
               status: "running",
               reason: "manual",
               summary: "pending",
-              recent: "pending",
               time: { created: DateTime.makeUnsafe(8) },
             },
             {
@@ -1601,9 +1599,7 @@ describe("SessionTransfer", () => {
               status: "completed",
               reason: "manual",
               model,
-              providerState,
               summary: "summary",
-              recent: "recent",
               time: { created: DateTime.makeUnsafe(9) },
             },
           ],
@@ -1618,11 +1614,8 @@ describe("SessionTransfer", () => {
         completedCompactionID,
       ])
       expect(yield* Bus.latestSequence(db, sessionID)).toBe(4)
-      expect((yield* transfer.export({ sessionID })).messages.at(-1)).toMatchObject({ model, providerState })
-      expect((yield* transfer.export({ sessionID, sanitize: true })).messages.at(-1)).toMatchObject({
-        model,
-        providerState: { redacted: `compaction-provider-state:${completedCompactionID}` },
-      })
+      expect((yield* transfer.export({ sessionID })).messages.at(-1)).toMatchObject({ model })
+      expect((yield* transfer.export({ sessionID, sanitize: true })).messages.at(-1)).toMatchObject({ model })
     }),
   )
 

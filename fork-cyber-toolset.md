@@ -274,25 +274,14 @@ Each wave ends with the positive and negative laboratory fixtures for its domain
 | OC-302 | `cyber_host`: `audit`, `privesc_config`, `patch_inventory`                                                          | OC-301, OC-307 |
 | OC-303 | `cyber_directory`: `ldap_enum`, `kerberos_config`, `password_policy`, `adcs_templates`, `collect`                   | OC-301, OC-307 |
 | OC-304 | `cyber_cloud` live actions: `inventory`, `config_audit`, `k8s_rbac`                                                 | OC-307         |
+| OC-305 | `cyber_database`: `unauth_check`, `config_review`                                                                   | OC-104         |
 | OC-306 | `cyber_binary`: `pe`, `firmware`                                                                                    | OC-104         |
-| OC-204 | Partial | #67 (closed) and branch `cyber-probes-remaining`: `version`, `probe` (redis_info, elasticsearch_root, ldap_root_dse, smb_signing, nfs_exports, mongodb_build_info), `udp_top` (not_configured, no raw sockets). Open: anonymous FTP, which is an authentication attempt and needs an operator decision on risk class |
-| OC-205 | Partial | #68: `secrets` (PR #92), `sast` (pinned Semgrep 1.178.0 in the Kali image, curated rules, network none), `sca` (pinned advisory snapshot contract). Open: a licensed advisory database and a broader Semgrep rule pack, both decisions |
-| OC-206 | Partial | #69: `dockerfile_lint` and `runtime_review` (PR #96), `pull` (R1, digest only, registry in scope, local registry lab), `image_scan` (advisory snapshot contract). Open: the advisory database decision |
-| OC-207 | Done | #70: `iam_analyze` (PR #93) and `iac_scan` (Checkov 3.3.26 pinned in the Kali image, snapshot files only, network none) |
-| OC-301 | Partial | Linux half in `fork-lab/linux-host/` (base image pinned by digest, egress denied, teardown tested). Open: Windows directory and the VM tier, which need a Windows VM |
-| OC-302 | Partial | `cyber_host` `audit` and `privesc_config` over SSH with a `host_login` lease, tested against the Linux lab. Open: `patch_inventory`, which needs the advisory database decision |
-| OC-303 | Partial | `cyber_directory` `ldap_enum`, `password_policy` and `collect` with an OpenLDAP lab; `kerberos_config` and `adcs_templates` review exported JSON offline. Open: Active Directory labs (Windows VM) and certificate verification for the StartTLS credential bind |
-| OC-304 | Partial | `cyber_cloud` `inventory`, `config_audit` and `k8s_rbac`: read-only GET requests, scope checked before every call. The laboratory is a local fixture. Open: the live-account laboratory, which needs a provisioned account |
-| OC-305 | Done | #76: `cyber_database` `unauth_check` and `config_review`, with redis and elasticsearch laboratories |
-| OC-306 | Done | `cyber_binary` `pe` (pefile) and `firmware` (binwalk), both R0, network none, nothing executed. `dynamic` is deferred (R2) |
 | OC-307 | Credential brokering for cloud and directory identities (R-8)                                                       | OC-101         |
 | **W3** |                                                                                                                     |                |
 | OC-401 | R2 approval flow using the `ask` permission path                                                                    | OC-102, OC-107 |
+| OC-402 | `cyber_web_test` `validate` with per-class oracles                                                                  | OC-401, OC-405 |
 | OC-403 | `cyber_directory` `auth_test` and `crack`; disabled by default                                                      | OC-401, OC-307 |
 | OC-404 | `cyber_database` `auth_test`; disabled by default                                                                   | OC-401, OC-307 |
-| OC-402 | Done, with limits | `validate` for open_redirect, path_traversal, sql_injection, command_injection, xss (browser canary) and ssrf (callback in scope). Limits are named in `fork-cyber-web-validation.md` |
-| OC-403 | Partial | `cyber_directory` `auth_test` (one simple bind per call, 3 attempts per label and host in 30 minutes) and `crack` (supplied hashes only). Open: `john` is not in the image, and operators cannot import hash sets or wordlists yet |
-| OC-404 | Partial | `cyber_database` `auth_test` (R2, disabled by default). Redis is a real lab; elasticsearch is a protocol stand-in. Open: real engine laboratories and a cumulative lockout budget |
 | OC-405 | Validator contract and canary oracles, shared with `cyber_local_validation`                                         | OC-401         |
 
 ## 6. Definition of done for a tool

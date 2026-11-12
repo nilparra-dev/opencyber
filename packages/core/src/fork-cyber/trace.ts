@@ -30,7 +30,7 @@ const layer = Layer.effect(
     const global = yield* Global.Service
     const mode = Option.getOrElse(yield* Effect.serviceOption(ForkCyberPolicy.Service), ForkCyberPolicy.selected)
     const sessions = yield* SessionStore.Service
-    const app = yield* App.Metadata
+    const app = yield* App.Service
     const enabled =
       process.env.OPENCYBER_VANILLA !== "1" && (process.env.OPENCYBER_TRACE === "1" || mode !== "development")
     const store = enabled

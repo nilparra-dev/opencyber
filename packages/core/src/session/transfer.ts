@@ -11,12 +11,15 @@ import { makeGlobalNode } from "@opencode/util/effect/app-node"
 import { App } from "../app.js"
 import { Bus } from "../bus.js"
 import { Database } from "../database/database.js"
+import { DatabaseBatch } from "../database/batch.js"
+import { Instance } from "../instance/service.js"
 import { Location } from "../location.js"
 import { Project } from "../project.js"
 import { upsertProject } from "../project/sql.js"
 import { AbsolutePath, RelativePath } from "../schema.js"
 import { Session } from "../session.js"
 import { Slug } from "../util/slug.js"
+import { SessionBlob } from "./blob.js"
 import { SessionEvent } from "./event.js"
 import { SessionMessage } from "./message.js"
 import { SessionProjector } from "./projector.js"
@@ -57,9 +60,10 @@ export class Service extends Context.Service<Service, Interface>()("@opencode/Se
 const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const app = yield* App.Metadata
+    const app = yield* App.Service
     const bus = yield* Bus.Service
     const { db } = yield* Database.Service
+    const instances = yield* Instance.Service
     const projects = yield* Project.Service
     const sessions = yield* Session.Service
     const global = yield* Global.Service
@@ -244,6 +248,9 @@ const layer = Layer.effect(
         const project = yield* projects.resolve(input.location.directory)
         yield* upsertProject(db, project).pipe(Effect.orDie)
         const importedAt = yield* Clock.currentTimeMillis
+        const subpath = RelativePath.make(
+          path.relative(project.directory, input.location.directory).replaceAll("\\", "/"),
+        )
         const messages = input.data.messages.filter(isSettled).map((message, index) => {
           const encoded = encodeMessage(message)
           const { id: _, type, ...data } = encoded
@@ -256,6 +263,17 @@ const layer = Layer.effect(
             data,
           }
         })
+        // Only inline media the import carries becomes blobs, and only its blobs get refs: refs it carried in
+        // could otherwise keep or expose blobs it never held. The destination's config is loaded only when needed.
+        const split = messages.map((message) => SessionBlob.split(message.data))
+        const media =
+          split.some((row) => row.moved) &&
+          (yield* SessionBlob.enabledFor(instances, {
+            ...input.data.info,
+            projectID: project.id,
+            location: input.location,
+            subpath,
+          }))
         yield* bus
           .publish(
             SessionEvent.Created,
@@ -266,9 +284,7 @@ const layer = Layer.effect(
               version: app.version,
               projectID: project.id,
               location: input.location,
-              subpath: RelativePath.make(
-                path.relative(project.directory, input.location.directory).replaceAll("\\", "/"),
-              ),
+              subpath,
               title: input.data.info.title,
               agent: input.data.info.agent,
               model: input.data.info.model,
@@ -280,7 +296,23 @@ const layer = Layer.effect(
               commit: (seq) =>
                 Effect.gen(function* () {
                   if (messages.length > 0) {
-                    yield* db.insert(SessionMessageTable).values(messages).run().pipe(Effect.orDie)
+                    if (media) yield* Effect.forEach(split, (row) => SessionBlob.save(db, row.blobs), { discard: true })
+                    const stored = media
+                      ? messages.map((message, i) => ({ ...message, data: split[i]!.data }))
+                      : messages
+                    for (const batch of DatabaseBatch.insertBatches(SessionMessageTable, stored))
+                      yield* db.insert(SessionMessageTable).values(batch).run().pipe(Effect.orDie)
+                    if (media)
+                      yield* Effect.forEach(
+                        stored,
+                        (message, i) =>
+                          SessionBlob.recordHashes(
+                            db,
+                            { sessionID, messageID: message.id, seq: message.seq },
+                            new Set(split[i]!.blobs.map((blob) => blob.hash)),
+                          ),
+                        { discard: true },
+                      )
                     yield* Bus.reserveSequence(db, sessionID, seq + messages.length)
                   }
                   yield* db
@@ -294,6 +326,13 @@ const layer = Layer.effect(
                       tokens_cache_write: input.data.info.tokens.cache.write,
                       time_created: DateTime.toEpochMillis(input.data.info.time.created),
                       time_updated: importedAt,
+                      time_busy:
+                        input.data.info.time.idle && input.data.info.time.busy
+                          ? Math.min(
+                              DateTime.toEpochMillis(input.data.info.time.idle),
+                              DateTime.toEpochMillis(input.data.info.time.busy),
+                            )
+                          : null,
                       time_idle: input.data.info.time.idle ? DateTime.toEpochMillis(input.data.info.time.idle) : null,
                       time_viewed:
                         input.data.info.time.idle && input.data.info.time.viewed
@@ -329,7 +368,7 @@ const layer = Layer.effect(
 export const node = makeGlobalNode({
   service: Service,
   layer,
-  deps: [App.node, Bus.node, Database.node, Project.node, Session.node, Global.node],
+  deps: [App.node, Bus.node, Database.node, Global.node, Instance.node, Project.node, Session.node],
 })
 
 function isSettled(message: SessionMessage.Info) {
@@ -435,7 +474,6 @@ function sanitizeMessage(message: SessionMessage.Info): SessionMessage.Info {
     return {
       ...message,
       metadata: meta,
-      providerState: metadata("assistant-provider-state", message.id, message.providerState),
       error: message.error ? sanitizeError(message.id, message.error) : undefined,
       retry: message.retry ? { ...message.retry, error: sanitizeError(message.id, message.retry.error) } : undefined,
       content: message.content.map((content) => {
@@ -443,20 +481,17 @@ function sanitizeMessage(message: SessionMessage.Info): SessionMessage.Info {
           return {
             ...content,
             text: redact("text", message.id, content.text),
-            state: content.state ? { redacted: `text-state:${message.id}` } : undefined,
+            native: content.native ? { redacted: `text-native:${message.id}` } : undefined,
           }
         if (content.type === "reasoning")
           return {
             ...content,
             text: redact("reasoning", message.id, content.text),
-            state: content.state ? { redacted: `reasoning-state:${message.id}` } : undefined,
+            native: content.native ? { redacted: `reasoning-native:${message.id}` } : undefined,
           }
         return {
           ...content,
-          providerState: content.providerState ? { redacted: `tool-provider-state:${message.id}` } : undefined,
-          providerResultState: content.providerResultState
-            ? { redacted: `tool-provider-result-state:${message.id}` }
-            : undefined,
+          native: content.native ? { redacted: `tool-native:${message.id}` } : undefined,
           state: sanitizeToolState(message.id, content.state),
         }
       }),
@@ -472,10 +507,7 @@ function sanitizeMessage(message: SessionMessage.Info): SessionMessage.Info {
       ...message,
       metadata: meta,
       summary: redact("compaction-summary", message.id, message.summary),
-      recent: redact("compaction-recent", message.id, message.recent),
-      ...(message.status === "completed"
-        ? { providerState: metadata("compaction-provider-state", message.id, message.providerState) }
-        : {}),
+      ...(message.status === "completed" ? { native: metadata("compaction-native", message.id, message.native) } : {}),
     }
   }
   return { ...message, metadata: meta }
@@ -634,26 +666,18 @@ function exportMessage(message: SessionMessage.Info): SessionMessage.Info {
   if (message.type === "assistant")
     return {
       ...message,
-      providerState: message.providerState ? { redacted: "opaque-provider-state" } : undefined,
       content: message.content.map((item) => {
-        if (item.type === "text" || item.type === "reasoning")
-          return { ...item, state: item.state ? { redacted: "opaque-provider-state" } : undefined }
+        if (item.type === "text" || item.type === "reasoning") return item
         const state =
           item.state.status === "completed"
             ? { ...item.state, content: map(item.state.content, exportContent) }
             : item.state.status === "error"
               ? { ...item.state, content: item.state.content ? map(item.state.content, exportContent) : undefined }
               : item.state
-        return {
-          ...item,
-          state,
-          providerState: item.providerState ? { redacted: "opaque-provider-state" } : undefined,
-          providerResultState: item.providerResultState ? { redacted: "opaque-provider-state" } : undefined,
-        }
+        return { ...item, state }
       }),
     }
-  if (message.type === "compaction" && message.status === "completed")
-    return { ...message, providerState: message.providerState ? { redacted: "opaque-provider-state" } : undefined }
+  if (message.type === "compaction" && message.status === "completed") return message
   return message
 }
 
