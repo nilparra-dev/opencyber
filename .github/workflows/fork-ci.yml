@@ -100,6 +100,19 @@ jobs:
             echo "code=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          # A sync PR touches every workspace, so the full non-core unit suite would run
+          # upstream's hosted-runner-sensitive tests. Keep the fork-owned units and let the
+          # core shards, typecheck, the labs and upstream's own checks cover the rest.
+          if [ "$GITHUB_HEAD_REF" = "sync-upstream" ]; then
+            echo "sync PR: running the fork-owned unit packages only"
+            echo 'cyber=true' >> "$GITHUB_OUTPUT"
+            write \
+              "$(filters "$HEAVY")" \
+              "$(filters "$(sed 's/^/--filter=!/' <<< "$HEAVY" | paste -sd' ')" \
+              "--filter=@opencode/cli --filter=@opencode/tui --filter=@opencode/app" \
+              true
+            exit 0
+          fi
           if grep -qv '^packages/' <<< "$code"; then everything "files outside packages/ changed"; fi
           names=$(TURBO_SCM_BASE=HEAD^1 TURBO_SCM_HEAD=HEAD \
             bunx "turbo@$(jq -r .devDependencies.turbo package.json)" ls --affected --output=json |
