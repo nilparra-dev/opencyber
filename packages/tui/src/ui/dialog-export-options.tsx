@@ -60,21 +60,21 @@ export function DialogExportOptions(props: DialogExportOptionsProps) {
     if (store.active === "copy" || store.active === "export") confirm(store.active)
   }
 
+  const order = (): Active[] =>
+    store.format === "markdown"
+      ? ["markdown", "json", "profile", "thinking", "tools", "sanitize", "copy", "export"]
+      : ["markdown", "json", "profile", "thinking", "sanitize", "copy", "export"]
+
+  const move = (step: number) => {
+    const items = order()
+    setStore("active", items[(items.indexOf(store.active) + step + items.length) % items.length])
+  }
+
   Keymap.createLayer(() => ({
     mode: "modal",
     commands: [
-      {
-        bind: "tab",
-        title: "Next export option",
-        group: "Dialog",
-        run: () => {
-          const order: Active[] =
-            store.format === "markdown"
-              ? ["markdown", "json", "profile", "thinking", "tools", "sanitize", "copy", "export"]
-              : ["markdown", "json", "profile", "thinking", "sanitize", "copy", "export"]
-          setStore("active", order[(order.indexOf(store.active) + 1) % order.length])
-        },
-      },
+      { bind: "tab", title: "Next export option", group: "Dialog", run: () => move(1) },
+      { bind: "shift+tab", title: "Previous export option", group: "Dialog", run: () => move(-1) },
       {
         bind: "return",
         title: "Select export option",

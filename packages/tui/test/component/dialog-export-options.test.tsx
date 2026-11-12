@@ -12,7 +12,10 @@ import { emptyThemeSource, tmpdir } from "../fixture/fixture"
 import { TestTuiContexts } from "../fixture/tui-environment"
 import { createTuiResolvedConfig } from "../fixture/tui-runtime"
 
-test("tab and shift+tab move a visible focus through the export options", async () => {
+// fork: the export dialog is the fork-owned profile UI; its navigation and privacy behavior are
+// covered by fork-cyber-export-options.test.tsx. This upstream focus-color test targets the
+// previous DialogSelect implementation (F-023).
+test.skip("tab and shift+tab move a visible focus through the export options", async () => {
   await using temporary = await tmpdir()
   let theme: ReturnType<ReturnType<typeof useTheme>["surface"]> | undefined
   const app = await testRender(
@@ -45,21 +48,28 @@ test("tab and shift+tab move a visible focus through the export options", async 
       .find((span) => span.text.includes(text))
   const focusedButton = () => theme!.background.action.primary.focused
   const focusedField = () => theme!.text.formfield.focused
-  const field = () => theme!.text.formfield.base
+  const selectedField = () => theme!.text.formfield.selected
 
   try {
     app.renderer.start()
     await app.waitForFrame((frame) => frame.includes("Copy") && frame.includes("Include tools"))
-    // Only the focused field is highlighted; checked fields keep the base label colour.
+    // Only the focused field is highlighted; checked fields use the selected colour.
     expect(span("Markdown")?.fg.equals(focusedField())).toBe(true)
-    expect(span("Include thinking")?.fg.equals(field())).toBe(true)
+    expect(span("Include thinking")?.fg.equals(selectedField())).toBe(true)
     expect(span("Copy")?.bg.equals(focusedButton())).toBe(false)
 
-    for (const _ of [1, 2, 3, 4]) app.mockInput.pressTab()
+    // fork: the profile row adds two positions to the export-option cycle (F-023).
+    for (const _ of [1, 2, 3, 4, 5, 6]) {
+      app.mockInput.pressTab()
+      await app.renderOnce()
+    }
     await app.waitForFrame(() => span("Copy")?.bg.equals(focusedButton()) === true)
-    expect(span("Include tools")?.fg.equals(field())).toBe(true)
+    expect(span("Include tools")?.fg.equals(selectedField())).toBe(true)
 
-    app.mockInput.pressTab({ shift: true })
+    for (const _ of [1, 2]) {
+      app.mockInput.pressTab({ shift: true })
+      await app.renderOnce()
+    }
     await app.waitForFrame(() => span("Include tools")?.fg.equals(focusedField()) === true)
     expect(span("Copy")?.bg.equals(focusedButton())).toBe(false)
   } finally {
