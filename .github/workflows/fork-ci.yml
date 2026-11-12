@@ -108,7 +108,7 @@ jobs:
             echo 'cyber=true' >> "$GITHUB_OUTPUT"
             write \
               "$(filters "$HEAVY")" \
-              "$(filters "$(sed 's/^/--filter=!/' <<< "$HEAVY" | paste -sd' ')")" \
+              "$(sed 's/^/--filter=!/' <<< "$HEAVY" | paste -sd' ')" \
               "--filter=@opencode/cli --filter=@opencode/tui --filter=@opencode/app" \
               true
             exit 0
