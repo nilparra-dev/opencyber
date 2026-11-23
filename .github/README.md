@@ -5,7 +5,7 @@ OpenCyber is an AI agent for authorized security assessments. It runs in the ter
 It is a fork of [OpenCode](https://github.com/anomalyco/opencode) V2. The assessment layer is a built-in plugin, so sessions, models, permissions and the TUI work as they do upstream.
 
 > [!IMPORTANT]
-> Use OpenCyber only against systems you are authorized to test. It enforces the scope you give it, but it cannot verify that the authorization is real. Evidence is not encrypted at rest yet and the assessment modes are policy, not a process sandbox, so it is meant for labs and your own systems for now. The [known gaps](../docs/architecture.md#known-gaps) list what is missing before client data.
+> Use OpenCyber only against systems you are authorized to test. It enforces the scope you give it, but it cannot verify that the authorization is real.
 
 ## What it does
 
@@ -48,7 +48,7 @@ Log in to a model provider, record the engagement scope, and describe the work. 
 ## Documentation
 
 - [Getting started](../docs/getting-started.md): install, profiles, modes, scope and exports.
-- [Architecture](../docs/architecture.md): how the policy, backends and data fit together, and the known gaps.
+- [Architecture](../docs/architecture.md): how the policy, backends and data fit together.
 - [Tool reference](../docs/tools.md): every tool with its risk class.
 - [All guides and design records](../docs/README.md).
 - [`FORK.md`](../FORK.md): how the fork follows upstream releases, the ledger of upstream changes, CI and releases.

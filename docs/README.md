@@ -4,11 +4,11 @@ Start with [getting started](getting-started.md) if you want to run an assessmen
 
 ## Overview
 
-| Document                              | What it covers                                                                     |
-| ------------------------------------- | ---------------------------------------------------------------------------------- |
-| [Getting started](getting-started.md) | Install, isolated profiles, modes, recording scope, optional backends and exports  |
-| [Architecture](architecture.md)       | Runtime, the cyber layer, the decision chain, roles, data ownership and known gaps |
-| [Tool reference](tools.md)            | The 31 native tools with their risk class per action and the guide for each        |
+| Document                              | What it covers                                                                    |
+| ------------------------------------- | --------------------------------------------------------------------------------- |
+| [Getting started](getting-started.md) | Install, isolated profiles, modes, recording scope, optional backends and exports |
+| [Architecture](architecture.md)       | Runtime, the cyber layer, the decision chain, roles, data ownership               |
+| [Tool reference](tools.md)            | The 31 native tools with their risk class per action and the guide for each       |
 
 ## Guides
 

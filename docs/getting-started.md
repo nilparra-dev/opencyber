@@ -25,8 +25,6 @@ curl -fsSL https://raw.githubusercontent.com/nilparra-dev/opencyber/custom/scrip
 
 The script installs `opencyber` into `~/.opencyber/bin` and adds it to `PATH`. Set `OPENCYBER_VERSION` (for example `2.2.7-cyber.1`) to pin a release. The binary checks this repository's releases on start and shows an `/update` notice when there is a newer one. It never installs on its own. Run `opencyber upgrade` or use the notice to update.
 
-The installer does not verify `SHA256SUMS` yet (see [known gaps](architecture.md#known-gaps)). If that matters to you, download the archive from the release page and check it by hand.
-
 ## Pick a profile and a mode
 
 By default `opencyber` shares the official `opencode` install's sessions, logins and configuration, and starts in `development` mode. That is fine for labs and for coding. For anything with client data, start an isolated profile in `assessment` mode. From the repository root:
