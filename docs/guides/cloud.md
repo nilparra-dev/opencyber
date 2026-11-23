@@ -45,11 +45,11 @@ Example:
 
 `inventory`, `config_audit` and `k8s_rbac` read a live provider. Each is R1 and needs an engagement that declares its credential label for that action and target. The label is a brokered read-only identity from OC-307 (see [credentials.md](credentials.md)). The model never sees the value.
 
-| Action | Target | Requests (all GET) | Checks |
-| --- | --- | --- | --- |
-| `inventory` | AWS account ARN, `arn:aws:iam::<12 digits>:root` | STS GetCallerIdentity, S3 ListBuckets | Bucket names and creation dates. The caller account must equal the target. |
-| `config_audit` | S3 bucket ARN | S3 GetBucketAcl, GetPublicAccessBlock, GetBucketPolicy | Public ACL grants to AllUsers or AuthenticatedUsers; a public access block with all four flags; Allow statements for anonymous principals without a condition (candidates). |
-| `k8s_rbac` | Cluster API server, `host` and `port` in scope | ClusterRoleBindings and ClusterRoles, first 500 of each | Bindings to `system:anonymous` or `system:unauthenticated` (`anonymous_cluster_admin` when bound to cluster-admin); roles with `*` verbs on `*` resources, excluding cluster-admin and `system:*`. |
+| Action         | Target                                           | Requests (all GET)                                      | Checks                                                                                                                                                                                             |
+| -------------- | ------------------------------------------------ | ------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `inventory`    | AWS account ARN, `arn:aws:iam::<12 digits>:root` | STS GetCallerIdentity, S3 ListBuckets                   | Bucket names and creation dates. The caller account must equal the target.                                                                                                                         |
+| `config_audit` | S3 bucket ARN                                    | S3 GetBucketAcl, GetPublicAccessBlock, GetBucketPolicy  | Public ACL grants to AllUsers or AuthenticatedUsers; a public access block with all four flags; Allow statements for anonymous principals without a condition (candidates).                        |
+| `k8s_rbac`     | Cluster API server, `host` and `port` in scope   | ClusterRoleBindings and ClusterRoles, first 500 of each | Bindings to `system:anonymous` or `system:unauthenticated` (`anonymous_cluster_admin` when bound to cluster-admin); roles with `*` verbs on `*` resources, excluding cluster-admin and `system:*`. |
 
 Examples:
 

@@ -47,7 +47,7 @@ To preserve a generated file, copy an input artifact to an output name:
 ```json
 {
   "argv": ["cp", "source.txt", "result.txt"],
-  "inputs": [{"name":"source.txt","artifact":"<artifact ID>"}],
+  "inputs": [{ "name": "source.txt", "artifact": "<artifact ID>" }],
   "outputs": ["result.txt"],
   "timeout_ms": 10000
 }

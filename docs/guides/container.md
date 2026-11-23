@@ -12,7 +12,11 @@ Findings from the review actions are candidates. An empty result does not prove 
 ## image_scan
 
 ```json
-{ "action": "image_scan", "image": "registry.example.test/app@sha256:<64 hex digits>", "artifact": "inventory-artifact-id" }
+{
+  "action": "image_scan",
+  "image": "registry.example.test/app@sha256:<64 hex digits>",
+  "artifact": "inventory-artifact-id"
+}
 ```
 
 - `image` must be a digest reference (`repository@sha256:` followed by 64 lowercase hex digits). A tag-only reference is refused with `invalid_input` before the artifact is read. The tool never resolves a tag, because that requires a registry request.

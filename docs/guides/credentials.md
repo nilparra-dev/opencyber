@@ -76,13 +76,13 @@ Schema version 9 becomes 10. The migration adds `engagement_credential` and `cyb
 
 ## Acceptance criteria
 
-| #72 criterion | Test |
-| --- | --- |
-| Credentials are scoped to one engagement | Real SQLite with two owners. The other owner gets `not_configured`. A row copied to another owner fails to authenticate. |
-| Kali receives a credential only for one action | Docker test in `fork-kali.yml`. The value is readable inside the job, a second job cannot read it, and the job container is gone afterwards. |
-| A seeded secret never appears in model-visible output | The seeded value is absent from the tool result, artifacts, the decision log and evidence, in raw and base64 form. |
-| Each use is recorded with identity, action and target | A lease row exists for allowed and refused leases, with label, action, target and execution. |
-| A denied call produces zero network traffic | A refused lease stops before the Kali environment starts. The test asserts that no container is created. |
+| #72 criterion                                         | Test                                                                                                                                         |
+| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Credentials are scoped to one engagement              | Real SQLite with two owners. The other owner gets `not_configured`. A row copied to another owner fails to authenticate.                     |
+| Kali receives a credential only for one action        | Docker test in `fork-kali.yml`. The value is readable inside the job, a second job cannot read it, and the job container is gone afterwards. |
+| A seeded secret never appears in model-visible output | The seeded value is absent from the tool result, artifacts, the decision log and evidence, in raw and base64 form.                           |
+| Each use is recorded with identity, action and target | A lease row exists for allowed and refused leases, with label, action, target and execution.                                                 |
+| A denied call produces zero network traffic           | A refused lease stops before the Kali environment starts. The test asserts that no container is created.                                     |
 
 ## Limits
 
