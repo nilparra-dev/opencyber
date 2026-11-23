@@ -76,3 +76,51 @@ bun test test/plugin/fork-cyber.test.ts test/plugin/fork-cyber-store.test.ts tes
 Tests exercise independent SQLite clients and processes, concurrent first-open initialization, stale revisions, transactional rollback, cross-engagement references, exact binary recovery after closing/reopening, real read-tool success/error capture, report-agent restrictions and retrieval after compaction. They make no external target requests.
 
 Windows/Bun 1.4.2 validation: the final Core regression run passed 95 tests across nine files, with five existing Windows skips. The CLI profile test also passed. Root `bun run check` passed lint and all 35 typecheck tasks. Linux CI and compiled-binary behavior are separate release checks.
+
+## Team review with Neon Postgres
+
+The local SQLite archive stays the source of truth. When a team needs a read-only review copy that several analysts can query, export the session with the `analysis` profile and load it into a private Neon Postgres branch. The analysis profile omits artifact bytes and carries the redacted views. Never import the raw `opencyber-archive-v2` export into a shared database, because it contains original artifact bytes.
+
+Export the engagement:
+
+```bash
+opencyber session export <session-id> --profile analysis > engagement.json
+```
+
+Create a Neon project and a branch per engagement (for example `eng-<session-id>`). The database only needs one staging table, owned by a dedicated read-only review role:
+
+```sql
+create table opencyber_review (
+  id bigint generated always as identity primary key,
+  imported_at timestamptz not null default now(),
+  owner text not null,
+  payload jsonb not null
+);
+```
+
+Import the JSON as a single CSV row. JSONB accepts the JSON text, and `@csv` escapes it correctly:
+
+```bash
+jq -r '[.analysis.evidence.owner, (. | tojson)] | @csv' engagement.json > engagement.csv
+psql "$DATABASE_URL" -c "\copy opencyber_review(owner, payload) from 'engagement.csv' with (format csv)"
+```
+
+Query findings, notes and tasks through the embedded analysis archive:
+
+```sql
+create view opencyber_finding as
+select r.owner,
+       f.id, f.revision, f.title, f.status, f.rationale, f.updated_at
+from opencyber_review r
+cross join lateral jsonb_to_recordset(r.payload->'analysis'->'evidence'->'findings')
+  as f(id text, revision integer, title text, status text, rationale text, updated_at bigint);
+
+select status, count(*) from opencyber_finding group by status;
+```
+
+Use the same pattern for `notes`, `executions`, `tasks`, `task_evidence` and `network_budget` under `payload->'analysis'->'evidence'`. `payload->'analysis'->'children'` carries descendant traces and their redacted transcripts.
+
+Neon is the recommended managed Postgres for this mirror: a branch per engagement or CI review isolates imports, scale-to-zero fits sporadic review, and the serverless driver can back a future read-only dashboard. The branch is disposable; the local archive remains authoritative.
+
+Keep the Neon project private and grant the review role only `select` on the review tables. The analysis export is still sensitive: it contains notes, findings and tool metadata. Do not import raw artifacts, credentials or archives the operator has not approved for sharing, and delete the branch when the review ends.
+
