@@ -1,4 +1,4 @@
-import { expect, setDefaultTimeout } from "bun:test"
+import { describe, expect, setDefaultTimeout, test } from "bun:test"
 import { Duration, Effect, Layer, LayerMap, Schema } from "effect"
 import path from "node:path"
 import { symlink } from "node:fs/promises"
@@ -20,6 +20,7 @@ import { SessionExecution } from "@opencode/core/session/execution"
 import { SessionProjector } from "@opencode/core/session/projector"
 import { SessionStore } from "@opencode/core/session/store"
 import { Tool } from "@opencode/core/tool"
+import { ForkCyberPolicy } from "@opencode/core/fork-cyber/policy"
 import { ForkCyberStore } from "@opencode/core/fork-cyber/store"
 import { Model } from "@opencode/schema/model"
 import { Provider } from "@opencode/schema/provider"
@@ -32,6 +33,84 @@ import { tmpdirScoped } from "../fixture/tmpdir"
 import { testEffect } from "../lib/effect"
 
 setDefaultTimeout(15000)
+
+describe("fork-cyber mode tools", () => {
+  test("development leaves the catalog unrestricted", () => {
+    expect(ForkCyberPolicy.modeTools("development")).toBeUndefined()
+  })
+
+  test("review lists an explicit deduplicated catalog", () => {
+    const tools = ForkCyberPolicy.modeTools("review")!
+    expect(tools).toEqual([
+      "execute",
+      "read",
+      "glob",
+      "grep",
+      "engagement",
+      "notes",
+      "evidence",
+      "findings",
+      "http_compare",
+      "cyber_tasks",
+      "cyber_coverage",
+      "cyber_capabilities",
+      "cyber_credentials",
+      "cyber_report",
+      "cyber_code_review",
+      "cyber_artifacts",
+      "cyber_binary",
+      "cyber_directory",
+    ])
+    expect(new Set(tools).size).toBe(tools.length)
+    expect(tools).not.toContain("http_request")
+    expect(tools).not.toContain("kali_run")
+  })
+
+  test("assessment keeps directory and local validation independent of the cyber-validate role", () => {
+    const tools = ForkCyberPolicy.modeTools("assessment")!
+    expect(tools).toEqual([
+      "subagent",
+      "execute",
+      "read",
+      "glob",
+      "grep",
+      "engagement",
+      "notes",
+      "evidence",
+      "findings",
+      "http_compare",
+      "cyber_tasks",
+      "cyber_coverage",
+      "cyber_capabilities",
+      "cyber_credentials",
+      "cyber_report",
+      "http_request",
+      "http_discover",
+      "cyber_services",
+      "cyber_artifacts",
+      "cyber_binary",
+      "cyber_discover",
+      "cyber_directory",
+      "cyber_web_plan",
+      "cyber_web_test",
+      "cyber_cloud",
+      "cyber_container",
+      "cyber_database",
+      "http_replay",
+      "finding_retest",
+      "cyber_browser",
+      "kali_run",
+      "kali_environment",
+      "cyber_code_review",
+      "cyber_surface",
+      "cyber_host",
+      "cyber_local_validation",
+    ])
+    expect(new Set(tools).size).toBe(tools.length)
+    expect(tools).toContain("cyber_directory")
+    expect(tools).toContain("cyber_local_validation")
+  })
+})
 
 const instances = Layer.effect(
   LocationServiceMap.Service,
