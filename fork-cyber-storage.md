@@ -120,7 +120,13 @@ select status, count(*) from opencyber_finding group by status;
 
 Use the same pattern for `notes`, `executions`, `tasks`, `task_evidence` and `network_budget` under `payload->'analysis'->'evidence'`. `payload->'analysis'->'children'` carries descendant traces and their redacted transcripts.
 
-Neon is the recommended managed Postgres for this mirror: a branch per engagement or CI review isolates imports, scale-to-zero fits sporadic review, and the serverless driver can back a future read-only dashboard. The branch is disposable; the local archive remains authoritative.
+Neon is the recommended managed Postgres for this mirror: a branch per engagement or CI review isolates imports, scale-to-zero fits sporadic review, and the serverless driver is the planned data layer for the team dashboard below. The branch is disposable; the local archive remains authoritative.
 
 Keep the Neon project private and grant the review role only `select` on the review tables. The analysis export is still sensitive: it contains notes, findings and tool metadata. Do not import raw artifacts, credentials or archives the operator has not approved for sharing, and delete the branch when the review ends.
+
+### Roadmap: team web dashboard
+
+The next milestone is a small web dashboard backed by the same schema. A team signs in, selects an engagement and reviews scope, findings, evidence and report status without installing the CLI. The first version is read-only; writes stay in the local operator workflow, and raw artifacts never reach the shared database.
+
+Neon is the planned Postgres backend: one branch per engagement or preview environment, scale-to-zero for idle teams, and the serverless driver for the web runtime. The import path above works today; the dashboard is planned, not shipped. Tracking issue: [#145](https://github.com/nilparra-dev/opencyber/issues/145).
 
