@@ -9,7 +9,7 @@
 | `host_sweep`   | R1   | One IPv4 range, /24 to /32 | Exact declaration in `scope.cidrs`, a scoped Kali network, network budgets, a claim for workers |
 | `fingerprint`  | R1   | One in-scope HTTP(S) URL   | Scope, as for every HTTP request. Shared request rate and evidence                              |
 
-Every action returns execution and evidence IDs, a summary, structured fields and categorized errors (R-6). Refused requests use the categories in `fork-cyber-toolset.md`.
+Every action returns execution and evidence IDs, a summary, structured fields and categorized errors (R-6). Refused requests use the categories in `../design/toolset.md`.
 
 ## passive_dns
 

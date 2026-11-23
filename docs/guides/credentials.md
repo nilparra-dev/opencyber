@@ -1,6 +1,6 @@
 # Credential brokering (OC-307)
 
-Design for issue [#72](https://github.com/nilparra-dev/opencyber/issues/72). Status: all five steps of the build order are built, in #108, #109, #111, #112 and the PR for step 5. One item stays open: decision 4 (web identities), under Limits. Issue #72 closes with the PR that adds the wrapped forms. [fork-cyber-toolset.md](fork-cyber-toolset.md) sets the rules (R-6, D-4) and section 10 records the status.
+Design for issue [#72](https://github.com/nilparra-dev/opencyber/issues/72). Status: all five steps of the build order are built, in #108, #109, #111, #112 and the PR for step 5. One item stays open: decision 4 (web identities), under Limits. Issue #72 closes with the PR that adds the wrapped forms. [toolset.md](../design/toolset.md) sets the rules (R-6, D-4) and section 10 records the status.
 
 ## Problem
 

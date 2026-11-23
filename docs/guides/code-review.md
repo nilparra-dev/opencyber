@@ -68,7 +68,7 @@ Without the variable the real-job case is skipped, and the schema, recipe-pin an
 
 ## Dependency advisories (sca)
 
-The `sca` action matches explicit `package-lock.json` files (npm lockfile version 2 or 3) and `requirements*.txt` files against the pinned advisory snapshot described in [fork-cyber-advisory.md](fork-cyber-advisory.md). Only exact pins are evaluated: `name==version` in requirements, and resolved versions in the npm lockfile. Requirement lines without `==` and option lines such as `-r` or `--index-url` count as `unpinned` and are not evaluated. Other manifests and lockfile formats are refused as `invalid_input`; `package.json` ranges, `bun.lock`, `Cargo.lock` and `go.sum` are not supported yet.
+The `sca` action matches explicit `package-lock.json` files (npm lockfile version 2 or 3) and `requirements*.txt` files against the pinned advisory snapshot described in [advisory.md](advisory.md). Only exact pins are evaluated: `name==version` in requirements, and resolved versions in the npm lockfile. Requirement lines without `==` and option lines such as `-r` or `--index-url` count as `unpinned` and are not evaluated. Other manifests and lockfile formats are refused as `invalid_input`; `package.json` ranges, `bun.lock`, `Cargo.lock` and `go.sum` are not supported yet.
 
 ```json
 { "action": "sca", "files": ["package-lock.json", "requirements.txt"] }

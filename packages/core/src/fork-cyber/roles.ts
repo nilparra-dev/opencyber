@@ -76,13 +76,13 @@ export function tools(agent: string) {
   if (agent === "cyber-recon") return observe
   if (agent === "cyber-exploit-web") return [...observe, ...web]
   if (agent === "cyber-exploit-net") return [...observe, ...network]
-  // No tools until a laboratory VM tier with per-action approval exists (fork-cyber-toolset.md, R-4).
+  // No tools until a laboratory VM tier with per-action approval exists (docs/design/toolset.md, R-4).
   if (agent === "cyber-postex") return []
   if (worker(agent)) return assess
   return undefined
 }
 
-// The highest risk class a phase may use (fork-cyber-toolset.md, R-4). "none" means the phase has no actions.
+// The highest risk class a phase may use (docs/design/toolset.md, R-4). "none" means the phase has no actions.
 // Exploitation phases keep R2 as their ceiling; the decision function still refuses R2 until OC-401 exists.
 const ceilings: Readonly<Record<string, "none" | "R0" | "R1" | "R2">> = {
   "cyber-recon": "R1",

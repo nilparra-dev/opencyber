@@ -1,6 +1,6 @@
 # Directory credential checks (OC-403)
 
-Design for issue [#89](https://github.com/nilparra-dev/opencyber/issues/89). [fork-cyber-toolset.md](fork-cyber-toolset.md) sets the rules (R-2, D-2, OC-403). The approval rules are in [fork-cyber-approval.md](fork-cyber-approval.md) and credential custody in [fork-cyber-credentials.md](fork-cyber-credentials.md).
+Design for issue [#89](https://github.com/nilparra-dev/opencyber/issues/89). [toolset.md](../design/toolset.md) sets the rules (R-2, D-2, OC-403). The approval rules are in [approval.md](approval.md) and credential custody in [credentials.md](credentials.md).
 
 `cyber_directory` gains two R2 actions, `auth_test` and `crack`. Both are disabled by default. The read-only actions of the same tool (#74) live in a separate module.
 
@@ -65,4 +65,4 @@ Errors use the shared categories: `refused_by_policy` (role, mode, declaration, 
 - **Per-engagement lockout threshold.** Declaring the target's threshold in the approved revision would replace the fixed cap. Owner decision.
 - **LDAPS and StartTLS**, and Active Directory sub-codes beyond 775.
 - **Scoped-network path in the laboratory.** A laboratory run through a scoped Kali job needs a directory reachable from that network.
-- **Shared wiring for the integrator.** `packages/core/test/location-layer.test.ts` (upstream, ledger F-014) must list `cyber_directory` among the native cyber tools. `fork-cyber-approval.md` should list the two new validation actions. `.github/workflows/fork-kali.yml` should run the laboratory file. `cyber_capabilities` does not yet report `cyber_directory` as available in the environment list.
+- **Shared wiring for the integrator.** `packages/core/test/location-layer.test.ts` (upstream, ledger F-014) must list `cyber_directory` among the native cyber tools. `approval.md` should list the two new validation actions. `.github/workflows/fork-kali.yml` should run the laboratory file. `cyber_capabilities` does not yet report `cyber_directory` as available in the environment list.

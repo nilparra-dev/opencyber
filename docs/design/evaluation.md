@@ -75,7 +75,7 @@ Usage comes from recorded physical attempts. Uncached input, cache reads, visibl
 
 ## Reproduction
 
-Follow the matrix format in [fork-cyber-harness.md](fork-cyber-harness.md#optional-model-comparison). Supply both compiled executables, an isolated operator configuration with explicit model definitions and credentials through the environment. Run `bun script/fork-cyber-evaluate.ts <absolute-matrix-path>` from `packages/core`. Keep the two repetitions, both environment cases and the settings above unchanged for this comparison.
+Follow the matrix format in [harness.md](harness.md#optional-model-comparison). Supply both compiled executables, an isolated operator configuration with explicit model definitions and credentials through the environment. Run `bun script/fork-cyber-evaluate.ts <absolute-matrix-path>` from `packages/core`. Keep the two repetitions, both environment cases and the settings above unchanged for this comparison.
 
 The evaluator saves `trial.json` before grading, then writes `results.json` and the analysis export. Its deadline owns the actual CLI process. Grading can recover writable WAL state after interruption and retries only the observed `SQLITE_IOERR_TRUNCATE` failure, at most twice. A separate regression kills a real SQLite writer and verifies that committed evidence survives while an uncommitted row does not.
 

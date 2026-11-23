@@ -1,5 +1,5 @@
 #!/bin/sh
-# Known-positive configuration. Each change below is one documented finding in fork-cyber-host.md.
+# Known-positive configuration. Each change below is one documented finding in docs/guides/host.md.
 set -eu
 install -m 0644 /opt/lab/variants/vulnerable.sshd_config /etc/ssh/sshd_config
 sed -i 's/^PASS_MAX_DAYS.*/PASS_MAX_DAYS\t99999/' /etc/login.defs

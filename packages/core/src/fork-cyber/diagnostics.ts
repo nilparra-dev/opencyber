@@ -4,7 +4,7 @@ import { Tool } from "@opencode/schema/tool"
 import { Schema } from "effect"
 import { ForkCyberRedaction } from "./redaction.js"
 
-// The shared vocabulary every cyber tool reports (fork-cyber-toolset.md, R-6). Each category has a recovery step.
+// The shared vocabulary every cyber tool reports (docs/design/toolset.md, R-6). Each category has a recovery step.
 export const Category = Schema.Literals([
   "not_configured",
   "invalid_input",

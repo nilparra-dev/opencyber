@@ -7,7 +7,7 @@ import { ForkCyberPolicy } from "./policy.js"
 import { ForkCyberRoles } from "./roles.js"
 import { ForkCyberScope } from "./scope.js"
 
-// Risk classes from fork-cyber-toolset.md (R-2). R3 is never declared. R2 is reachable only in assessment mode,
+// Risk classes from docs/design/toolset.md (R-2). R3 is never declared. R2 is reachable only in assessment mode,
 // and only for actions the engagement declares; each use then waits for an operator approval (OC-401).
 export const Risk = Schema.Literals(["R0", "R1", "R2", "R3"])
 export type Risk = typeof Risk.Type

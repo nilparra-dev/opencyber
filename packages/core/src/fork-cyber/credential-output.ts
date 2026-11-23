@@ -2,7 +2,7 @@ export * as ForkCyberCredentialOutput from "./credential-output.js"
 
 // Bytes that leave a Kali job must not carry a leased value. A tool prints a value raw, or in base64: on one line, or
 // wrapped at 64 columns (openssl) or 76 columns (coreutils `base64`), with LF or CRLF line ends. A tool that transforms
-// the value some other way is outside this check (fork-cyber-credentials.md).
+// the value some other way is outside this check (docs/guides/credentials.md).
 const marker = Buffer.from("[CREDENTIAL]")
 
 function forms(value: Buffer) {

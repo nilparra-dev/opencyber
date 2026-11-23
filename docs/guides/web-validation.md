@@ -1,6 +1,6 @@
 # Web validation with per-class oracles (OC-402)
 
-`cyber_web_test` with `action: "validate"` runs one R2 validation class per call against one URL parameter. It is the web counterpart of the validator contract in [fork-cyber-toolset.md](fork-cyber-toolset.md) (D3, D12): every run records the pre-state, the action, the oracle decision and cleanup in one validation record (`validation.ts`).
+`cyber_web_test` with `action: "validate"` runs one R2 validation class per call against one URL parameter. It is the web counterpart of the validator contract in [toolset.md](../design/toolset.md) (D3, D12): every run records the pre-state, the action, the oracle decision and cleanup in one validation record (`validation.ts`).
 
 ## Gates
 
@@ -8,7 +8,7 @@ Every class is R2 and passes these gates in order, before any traffic:
 
 1. The agent runs in the `cyber-validate` phase and holds a claimed task (`cyber_tasks`).
 2. The engagement is `laboratory` and declares `cyber_web_test.validate.<class>` in `rules_of_engagement.validation.actions`. An undeclared class is refused with `not_declared`.
-3. The operator approves that class on that endpoint (origin and path, not the query string). Approvals last ten minutes ([fork-cyber-approval.md](fork-cyber-approval.md)).
+3. The operator approves that class on that endpoint (origin and path, not the query string). Approvals last ten minutes ([approval.md](approval.md)).
 4. Each request passes HTTP scope, including the excluded list and the rate limit. Redirects are never followed.
 
 For SSRF, the callback URL is also checked against scope before the listener starts. A refused callback sends no request to the target.

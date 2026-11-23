@@ -23,7 +23,7 @@ The implementation uses synthetic fixtures and loopback services. The external e
 | H15  | Native versus execute catalog; notes use the existing Instructions state and epochs; concise operator policy and selected-module procedures                                 | Unchanged notes produce no additional instruction event or User message. Changes remain chronological and untrusted. Existing fork/compaction instruction tests exercise epoch semantics.                                                                            |
 | H16  | Assessment selected before imports; target extensions/instructions remain data; canonical source roots constrain hardened read/glob/grep                                    | Startup, mode inheritance, external files and escaping symlinks are tested. Development preserves normal coding access.                                                                                                                                              |
 | H17  | Redacted/private/sanitized/analysis profiles shared by CLI, JSON, Markdown and clipboard; descendant traces, request snapshots, activity, available usage and partial state | Parent/two-child/active-work tests redact errors, files and opaque state. Physical-attempt tests preserve chosen settings and distinguish missing usage from zero. TUI tests render the production dialog at 40/100 columns with light/dark themes.                  |
-| H18  | Deterministic regression suite plus an opt-in repeated baseline/candidate model matrix with independent evidence/traffic scoring                                            | The first sixteen-case matrix and narrative review are recorded in [fork-cyber-evaluation.md](fork-cyber-evaluation.md). DeepSeek passes 7/8; MiniMax 0/8. Scope and exact fixture traffic are separate metrics; interrupted WAL recovery and V2 exports are tested. |
+| H18  | Deterministic regression suite plus an opt-in repeated baseline/candidate model matrix with independent evidence/traffic scoring                                            | The first sixteen-case matrix and narrative review are recorded in [evaluation.md](evaluation.md). DeepSeek passes 7/8; MiniMax 0/8. Scope and exact fixture traffic are separate metrics; interrupted WAL recovery and V2 exports are tested. |
 
 ## Operator workflow
 
@@ -57,7 +57,7 @@ bun script/fork-cyber-profile.ts --assessment C:/labs/assessment -- opencyber se
 
 The proposal does not authorize all ports or subdomains. Apply it with `packages/core/script/fork-cyber-authorize.ts` using the current revision. Unspecified operational fields remain labeled defaults. New destinations and scope changes still use the existing approval boundary.
 
-The `analysis` profile includes recorded descendants, effective requests and catalogs, instruction values/events, available attempt usage and evidence references. Original artifact bytes are available through the private archive workflow documented in [fork-cyber-storage.md](fork-cyber-storage.md). Request snapshot hashes describe the exported redacted request; stored original hashes retain an explicit basis. Instruction hashes identify recorded original values, while exported values can be redacted. Missing historical snapshots, exact model revisions, usage and billing stay unknown. Catalog cost remains an estimate.
+The `analysis` profile includes recorded descendants, effective requests and catalogs, instruction values/events, available attempt usage and evidence references. Original artifact bytes are available through the private archive workflow documented in [storage.md](../guides/storage.md). Request snapshot hashes describe the exported redacted request; stored original hashes retain an explicit basis. Instruction hashes identify recorded original values, while exported values can be redacted. Missing historical snapshots, exact model revisions, usage and billing stay unknown. Catalog cost remains an estimate.
 
 The default CLI/TUI profile is `redacted`. Choose `private` explicitly for original transcript content, or `sanitized` to replace transcript content. Reasoning selection also applies to JSON and analysis snapshots. Session creation/update timestamps keep their original meaning; activity metadata measures messages and recorded attempts. Active or omitted work makes an analysis export partial.
 
@@ -65,9 +65,9 @@ Analysis follows the requested Session and its descendants. Child evidence resol
 
 The production dialog test captures its character cells and colors at narrow and wide sizes. These SVG snapshots use the real component; font rasterization depends on the viewer.
 
-![Export dialog at 100 columns with the dark theme](packages/tui/test/fixture/fork-cyber-export-dark.svg)
+![Export dialog at 100 columns with the dark theme](../../packages/tui/test/fixture/fork-cyber-export-dark.svg)
 
-![Export dialog at 40 columns with the light theme](packages/tui/test/fixture/fork-cyber-export-light.svg)
+![Export dialog at 40 columns with the light theme](../../packages/tui/test/fixture/fork-cyber-export-light.svg)
 
 ## Deterministic checks
 
@@ -117,4 +117,4 @@ Run `bun script/fork-cyber-evaluate.ts C:/labs/matrix.json` from `packages/core`
 
 Results are retained per model, environment, repetition and version. `trial.json` saves independent traffic, origin and process outcomes before scoring. Interrupted databases use writable WAL recovery with bounded retries for the observed Windows truncate error; unrelated database errors still fail. Analysis export queries the V2 session table. Wrong fixture paths within the authorized service fail the exact-traffic contract without becoming service-scope violations.
 
-Review unsupported narrative claims and omitted properties against the evidence before aggregating results. Compare cost only when provider accounting is comparable. The [first matched comparison](fork-cyber-evaluation.md) contains sixteen completed trial records, including a timeout and eight incomplete MiniMax workflows. Broader model capability profiles, tuning and held-out comparisons remain pending.
+Review unsupported narrative claims and omitted properties against the evidence before aggregating results. Compare cost only when provider accounting is comparable. The [first matched comparison](evaluation.md) contains sixteen completed trial records, including a timeout and eight incomplete MiniMax workflows. Broader model capability profiles, tuning and held-out comparisons remain pending.

@@ -17,7 +17,7 @@ Version 6 adds pinned analyzers for the typed tools: Semgrep 1.178.0 and Checkov
 
 The Dockerfile pins the official Kali base by digest. Its package repository is rolling, so a rebuild can install newer package versions. The resulting image ID and `/opt/opencyber/packages.txt` identify what actually ran; this is not a claim of bit-for-bit reproducible builds. Keep/export the built image if exact replay matters. The initial selection includes curl, nmap, DNS utilities, sqlmap, Python, jq, ripgrep and OpenSSL. Installed is not the same as allowed: `kali_run` runs only the binaries listed in [Binary allowlist and typed wrappers](#binary-allowlist-and-typed-wrappers). Extend the Dockerfile deliberately; the base image does not contain every Kali tool.
 
-Image version 3 removes Nmap's packaged file capabilities so it can run under the existing capability-free workload. The [TCP inventory module](fork-cyber-services.md) invokes the underlying binary with `--unprivileged`; arbitrary privileged/raw scans remain unavailable.
+Image version 3 removes Nmap's packaged file capabilities so it can run under the existing capability-free workload. The [TCP inventory module](services.md) invokes the underlying binary with `--unprivileged`; arbitrary privileged/raw scans remain unavailable.
 
 Create `opencyber-kali.jsonc` in the service's operator configuration directory, `Global.config`. With the optional profile launcher this is that profile's configuration directory. This file is not loaded from the assessed project's `.opencode` directory. Replace the sample image value with the full local ID printed above:
 
@@ -40,7 +40,7 @@ Record an explicit engagement with the existing `engagement` tool, then call:
 { "argv": ["jq", "--version"] }
 ```
 
-Nmap is not on the allowlist. Its TCP scans run through [`cyber_services`](fork-cyber-services.md), which builds the Nmap command itself.
+Nmap is not on the allowlist. Its TCP scans run through [`cyber_services`](services.md), which builds the Nmap command itself.
 
 To preserve a generated file, copy an input artifact to an output name:
 
@@ -74,7 +74,7 @@ Excluded on purpose:
 
 None of the listed utilities contacts a network. Scoped networking through `kali_run` therefore has no allowlisted binary; network work runs through typed tools.
 
-**Typed wrappers.** A binary outside the list is exposed only as a typed action. The tool validates its own parameters with a schema, builds the argv itself from fixed values, calls the Kali manager directly, and parses the binary's output before it returns anything. The model never supplies the argv. `cyber_services` is the reference implementation. It runs Nmap with fixed connect-scan flags (`--unprivileged -sT`) against one in-scope host and at most 32 declared ports, then parses the XML with a restricted parser that rejects entity declarations and checks the report against the requested ports. See [TCP service inventory](fork-cyber-services.md).
+**Typed wrappers.** A binary outside the list is exposed only as a typed action. The tool validates its own parameters with a schema, builds the argv itself from fixed values, calls the Kali manager directly, and parses the binary's output before it returns anything. The model never supplies the argv. `cyber_services` is the reference implementation. It runs Nmap with fixed connect-scan flags (`--unprivileged -sT`) against one in-scope host and at most 32 declared ports, then parses the XML with a restricted parser that rejects entity declarations and checks the report against the requested ports. See [TCP service inventory](services.md).
 
 To expose a new binary, install it in the Dockerfile, add the typed action with positive and negative fixtures, and bump `org.opencyber.kali.version` and `IMAGE_VERSION` in the same change. Add the binary to the allowlist only if it is offline and cannot run other programs.
 
@@ -105,7 +105,7 @@ For an audit network provisioned by the operator, use the enforced profile:
 }
 ```
 
-The named network must already exist. Built-in `host`, `bridge` and `none` names are rejected. The manager installs manifest-derived nftables rules before creating the workload. A separate manager-only root container owns `NET_ADMIN`; the workload retains UID 1000 and zero capabilities. See [CY-10 network controls](fork-cyber-network.md) for mandatory network budgets, pinned names, evidence and migration. Legacy `operator-managed` configuration is rejected; it cannot silently retain unrestricted networking.
+The named network must already exist. Built-in `host`, `bridge` and `none` names are rejected. The manager installs manifest-derived nftables rules before creating the workload. A separate manager-only root container owns `NET_ADMIN`; the workload retains UID 1000 and zero capabilities. See [CY-10 network controls](network.md) for mandatory network budgets, pinned names, evidence and migration. Legacy `operator-managed` configuration is rejected; it cannot silently retain unrestricted networking.
 
 Workloads do not receive raw-socket capabilities, host networking, USB access or wireless devices. TCP connect scans work within the scoped profile. Raw-packet and device workflows need a separately designed profile. Cyber phase agents cannot use the host shell, even under permissive agent configuration. The ordinary primary agent remains outside this boundary.
 

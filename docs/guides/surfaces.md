@@ -45,7 +45,7 @@ docker build --tag opencyber-kali:4 fork-kali
 docker image inspect opencyber-kali:4 --format '{{.Id}}'
 ```
 
-Configure its immutable ID in `opencyber-kali.jsonc`, following [Kali setup](fork-cyber-kali.md). TLS, SSH and Modbus require `network.kind = "scoped"`. APK, ELF and PCAP jobs always derive `network.kind = "none"` from the configured profile, so the same scoped profile can serve network and offline work without configuration changes. Image 4 adds OpenSSH, binutils, GCC and Android packaging tools for reproducible labs, while retaining unprivileged Nmap. Package inventory records actual versions from the rolling repository.
+Configure its immutable ID in `opencyber-kali.jsonc`, following [Kali setup](kali.md). TLS, SSH and Modbus require `network.kind = "scoped"`. APK, ELF and PCAP jobs always derive `network.kind = "none"` from the configured profile, so the same scoped profile can serve network and offline work without configuration changes. Image 4 adds OpenSSH, binutils, GCC and Android packaging tools for reproducible labs, while retaining unprivileged Nmap. Package inventory records actual versions from the rolling repository.
 
 ELF `execute` explicitly enables an executable `/work` tmpfs for that job. Other jobs default to `noexec`; `/tmp` remains `noexec`. The workload stays non-root with no capabilities, a read-only container filesystem, bounded CPU/memory/files/processes and no network. Docker shares the host kernel. Run controlled reproduction artifacts on a disposable lab host when stronger isolation is needed.
 

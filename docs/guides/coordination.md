@@ -54,7 +54,7 @@ The IDs above are placeholders for actual captured artifacts. Completion require
 
 Outcomes are `observed`, `supported`, `refuted` and `inconclusive`. Supported/refuted require a recorded hypothesis. They record the agent's interpretation and rationale, not an automatic vulnerability verdict. Use the existing `findings` tool for candidate, confirmed and discarded findings; shared artifact references connect findings to task executions. A refuted hypothesis does not establish that an asset is secure.
 
-`release` returns an active claim to pending only if no execution has started. Once work has started, complete it or use `block` with a reason. A blocked task retains its executions, has no successful coverage result and cannot be reclaimed. Completed tasks cannot be reclaimed either. Use `retry` to create an explicitly linked successor for recoverable work, preserving the predecessor and its evidence. It records a reason, declared authorization and effect state, checks read-only operations, and requires completed reconciliation evidence for unknown effects. Claim the successor normally. See [audit corrections](fork-cyber-audit.md).
+`release` returns an active claim to pending only if no execution has started. Once work has started, complete it or use `block` with a reason. A blocked task retains its executions, has no successful coverage result and cannot be reclaimed. Completed tasks cannot be reclaimed either. Use `retry` to create an explicitly linked successor for recoverable work, preserving the predecessor and its evidence. It records a reason, declared authorization and effect state, checks read-only operations, and requires completed reconciliation evidence for unknown effects. Claim the successor normally. See [audit corrections](../design/audit.md).
 
 ```json
 {"action":"release","key":"not-started-yet","revision":2}
@@ -89,7 +89,7 @@ The built-in role permission lists and the tool execution hook share one allowli
 
 The primary retains its real agent identity while its active claim adds phase restrictions. Report-local reads still produce automatic tool audit records, as before; "read-only" concerns requested mutations and assessment effects.
 
-An HTTP method does not classify a security technique. GET can trigger side effects or carry an attack payload; the recon policy bounds tools and methods rather than claiming to understand every request. All cyber phase roles reject the host shell, including under permissive agent configuration. Command-capable roles use Kali's [CY-10 network controls](fork-cyber-network.md). The ordinary primary agent and external plugins remain outside that container boundary.
+An HTTP method does not classify a security technique. GET can trigger side effects or carry an attack payload; the recon policy bounds tools and methods rather than claiming to understand every request. All cyber phase roles reject the host shell, including under permissive agent configuration. Command-capable roles use Kali's [CY-10 network controls](network.md). The ordinary primary agent and external plugins remain outside that container boundary.
 
 ## Storage and verification
 
@@ -106,4 +106,4 @@ The tests use real SQLite clients and competing processes, real Location tool di
 
 Local validation on Windows with Bun 1.4.2 passed 129 tests across 13 Core files, including real Chromium and Kali Docker labs, with five existing Windows skips. Root `bun run check` passed lint and all 35 typecheck tasks. Prettier and `git diff --check` passed. The first regression run, concurrent with typechecking, exceeded the existing vanilla boot test's five-second deadline; that test passed in isolation and the entire regression passed on rerun without changing its timeout.
 
-Linux validation on [PR #30](https://github.com/nilparra-dev/opencyber/pull/30) also passed the complete fork CI, real Docker and Chromium labs, and compiled browser capture smoke. The later [CY-10 live smoke](fork-cyber-network.md) validated compiled-CLI delegation with Fireworks DeepSeek V4.1 Flash: one claimed recon task, one loopback HTTP request and one evidence-linked completion. It does not validate the TUI, release installer/updater or assessment quality.
+Linux validation on [PR #30](https://github.com/nilparra-dev/opencyber/pull/30) also passed the complete fork CI, real Docker and Chromium labs, and compiled browser capture smoke. The later [CY-10 live smoke](network.md) validated compiled-CLI delegation with Fireworks DeepSeek V4.1 Flash: one claimed recon task, one loopback HTTP request and one evidence-linked completion. It does not validate the TUI, release installer/updater or assessment quality.

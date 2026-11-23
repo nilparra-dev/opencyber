@@ -1,6 +1,6 @@
 # Host assessment: `cyber_host` and the Linux host laboratory
 
-Status: `audit` and `privesc_config` are implemented and tested against the Linux laboratory. `patch_inventory` is not implemented. The Windows directory and the VM tier are not built. Work items: OC-301 (Linux half) and OC-302. Rules and the wider catalog are in [fork-cyber-toolset.md](fork-cyber-toolset.md); the brokering design is in [fork-cyber-credentials.md](fork-cyber-credentials.md).
+Status: `audit` and `privesc_config` are implemented and tested against the Linux laboratory. `patch_inventory` is not implemented. The Windows directory and the VM tier are not built. Work items: OC-301 (Linux half) and OC-302. Rules and the wider catalog are in [toolset.md](../design/toolset.md); the brokering design is in [credentials.md](credentials.md).
 
 ## What the tool does
 
