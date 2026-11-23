@@ -65,9 +65,9 @@ Analysis follows the requested Session and its descendants. Child evidence resol
 
 The production dialog test captures its character cells and colors at narrow and wide sizes. These SVG snapshots use the real component; font rasterization depends on the viewer.
 
-![Export dialog at 100 columns with the dark theme](packages/tui/test/fixture/fork-cyber-export-dark.svg)
+![Export dialog at 100 columns with the dark theme](../../packages/tui/test/fixture/fork-cyber-export-dark.svg)
 
-![Export dialog at 40 columns with the light theme](packages/tui/test/fixture/fork-cyber-export-light.svg)
+![Export dialog at 40 columns with the light theme](../../packages/tui/test/fixture/fork-cyber-export-light.svg)
 
 ## Deterministic checks
 

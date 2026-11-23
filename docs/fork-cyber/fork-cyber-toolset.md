@@ -19,9 +19,9 @@ Non-goals:
 - Post-exploitation, persistence, lateral movement and denial of service. These are risk class R3 and are performed by an operator outside the harness.
 - Physical radio and hardware OT testing. These require equipment and a human operator.
 
-## 2. Current state
+## 2. Baseline state when proposed
 
-The plugin registers 22 cyber tools today. The table lists what each one does and where it stops.
+At the proposal baseline (`bc43767fcf`), the plugin registered 22 cyber tools. After W0 to W3 landed on `v2.2.7`, the plugin registers 31 cyber tools. Active planning and triage dispositions moved to [roadmap.md](roadmap.md). The table below records the original baseline and where each tool stopped at proposal time.
 
 | Tool                                                                                                                                          | Current behavior                                                                                      | Verified limit                                         |
 | --------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
