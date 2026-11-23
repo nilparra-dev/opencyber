@@ -69,6 +69,7 @@ for (const width of [40, 100])
         await press("tab")
         if (format === "json") await press("return")
         await press("tab")
+        await press("tab")
         await press("return")
         await app.waitForFrame((frame) => frame.includes("Profile: analysis"))
         await press("tab")
@@ -88,6 +89,7 @@ for (const width of [40, 100])
           (["copy", "export"] as const).map((action) => ({
             action,
             format,
+            location: "project",
             profile: "analysis",
             thinking: false,
             tools: format === "json",
