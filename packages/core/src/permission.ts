@@ -229,7 +229,10 @@ const layer = Layer.effect(
       })
       // A tool invocation is model-owned; a slash command is an explicit user action.
       // Saved grants and generic auto-approval must not enable delegation for a session.
+      const unattended = yield* Unattended
+      // Unattended callers (automation, noninteractive runs) cannot answer a prompt; their rules decide.
       const manual =
+        unattended === undefined &&
         process.env.OPENCYBER_VANILLA !== "1" &&
         input.action === "subagent" &&
         input.source?.type === "tool" &&
@@ -241,7 +244,6 @@ const layer = Layer.effect(
           rules: all,
           manual,
         }
-      const unattended = yield* Unattended
       if (event.effect !== "ask" || unattended === undefined)
         return { effect: event.effect, message: event.message, rules: all, manual }
       const settled = [...all, ...unattended]

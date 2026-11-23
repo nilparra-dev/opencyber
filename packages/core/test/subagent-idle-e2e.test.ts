@@ -24,6 +24,7 @@ import { SessionEvent } from "@opencode/core/session/event"
 import { SessionRestart } from "@opencode/core/session/execution/restart"
 import { SessionInbox } from "@opencode/core/session/inbox"
 import { SessionMessage } from "@opencode/core/session/message"
+import { Delegation } from "@opencode/schema/delegation"
 import { SessionRunnerModel } from "@opencode/core/session/runner/model"
 import { SessionTable } from "@opencode/core/session/sql"
 import { SessionStore } from "@opencode/core/session/store"
@@ -254,6 +255,11 @@ const harness = Effect.fnUntraced(function* (input?: HarnessInput) {
   const parent = yield* app.sessions.create({
     location: base.location,
     model: Model.Ref.make({ id: Model.ID.make("parent"), providerID: Provider.ID.make("test") }),
+  })
+  // fork: these end-to-end fixtures exercise background reports, not manual delegation approval (F-027).
+  yield* app.sessions.setMetadata({
+    sessionID: parent.id,
+    metadata: { ...parent.metadata, [Delegation.MetadataKey]: "automatic" },
   })
   const call = (id: string, input: Record<string, unknown> = {}, sessionID = parent.id) =>
     executeTool(registry, {
@@ -695,6 +701,11 @@ describe("subagent idle reports end to end", () => {
         const parent = yield* first.sessions.create({
           location: base.location,
           model: Model.Ref.make({ id: Model.ID.make("parent"), providerID: Provider.ID.make("test") }),
+        })
+        // fork: this restart fixture exercises background recovery, not manual delegation approval (F-027).
+        yield* first.sessions.setMetadata({
+          sessionID: parent.id,
+          metadata: { [Delegation.MetadataKey]: "automatic" },
         })
         yield* base.llm.serve(
           script({

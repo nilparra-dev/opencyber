@@ -95,6 +95,14 @@ test("streams the parent's response to a subagent report after end_turn", async 
   const acp = fixture.spawn()
   await initialize(acp)
   const { sessionId } = await newSession(acp, fixture.home)
+  // fork: F-027 defaults model-owned delegation to manual; this fixture exercises the background report flow.
+  const delegation = expectOk(
+    await acp.request<PromptResponse>("session/prompt", {
+      sessionId,
+      prompt: [{ type: "text", text: "/subagents automatic" }],
+    }),
+  )
+  expect(delegation.stopReason).toBe("end_turn")
   const response = expectOk(
     await acp.request<PromptResponse>("session/prompt", {
       sessionId,
