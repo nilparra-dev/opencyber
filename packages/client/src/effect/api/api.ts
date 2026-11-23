@@ -565,8 +565,8 @@ export type ExperimentalSessionImportOperation<E = never> = (
 export type ExperimentalSessionExportInput = {
   readonly sessionID: Session.ID
   readonly sanitize?: boolean | undefined
-  readonly profile?: "redacted" | "private" | "sanitized" | "analysis"
-  readonly reasoning?: boolean
+  readonly profile?: "redacted" | "private" | "sanitized" | "analysis" | undefined
+  readonly reasoning?: boolean | undefined
 }
 export type ExperimentalSessionExportOutput = {
   readonly info: Session.Info
