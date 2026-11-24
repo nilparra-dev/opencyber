@@ -2,14 +2,23 @@
 
 OpenCyber records scope, runs bounded tests, stores evidence and writes findings. The [root README](../../README.md) covers install and quick start; [FORK.md](../../FORK.md) covers how the fork is maintained.
 
-Start with the [roadmap](plan.md) and the [tool catalog](toolset.md), then open the guide for the module you need. Every guide states its verified limits. Laboratory fixtures are not capability claims.
+Start with [getting started](getting-started.md) to run a first scoped assessment, or [architecture](architecture.md) to change the code. The [active roadmap](roadmap.md) lists the next tracks; the [implementation plan](plan.md) and [toolset design](toolset.md) are the historical records they replace. Every guide states its verified limits. Laboratory fixtures are not capability claims.
 
-## Foundation
+## Reference
+
+| Document | What it covers |
+| --- | --- |
+| [Getting started](getting-started.md) | Install, isolated profiles, modes, recording scope, optional backends and exports |
+| [Architecture](architecture.md) | Runtime, the cyber layer, the decision chain, roles and data ownership |
+| [Tool reference](tools.md) | The 31 native tools with their risk class per action and the guide for each |
+| [Roadmap](roadmap.md) | Active architecture decisions, triage outcomes and Tracks 0 to 5 |
+
+## Guides
 
 | Guide | What it covers |
 | --- | --- |
-| [Roadmap](plan.md) | Delivery phases, acceptance tests, current limits and migration |
-| [Tool catalog](toolset.md) | Target types, risk classes, design rules and planned work |
+| [Implementation plan](plan.md) | Historical delivery phases, acceptance tests, current limits and migration |
+| [Toolset design](toolset.md) | Historical target catalog, risk classes, design rules and planned work |
 | [Audit corrections](audit.md) | Controlled modes, provenance, findings and remaining backend work |
 | [Harness](harness.md) | Diagnostics, exports, evidence access and the evaluation workflow |
 | [Storage](storage.md) | Evidence archive, schema migrations, export and purge |
