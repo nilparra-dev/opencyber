@@ -1,114 +1,111 @@
-<p align="center">
-  <a href="https://opencode.ai">
-    <picture>
-      <source srcset=".github/assets/logo-ornate-dark.svg" media="(prefers-color-scheme: dark)">
-      <source srcset=".github/assets/logo-ornate-light.svg" media="(prefers-color-scheme: light)">
-      <img src=".github/assets/logo-ornate-light.svg" alt="OpenCode logo">
-    </picture>
-  </a>
-</p>
-<p align="center">The open source AI coding agent.</p>
-<p align="center">
-  <a href="https://opencode.ai/discord"><img alt="Discord" src="https://img.shields.io/discord/1391832426048651334?style=flat-square&label=discord" /></a>
-  <a href="https://www.npmjs.com/package/@opencode/cli"><img alt="npm" src="https://img.shields.io/npm/v/@opencode/cli?style=flat-square" /></a>
-  <a href="https://github.com/anomalyco/opencode/actions/workflows/release.yml"><img alt="Build status" src="https://img.shields.io/github/actions/workflow/status/anomalyco/opencode/release.yml?style=flat-square&branch=dev" /></a>
-</p>
+<h1 align="center">
+  <img src=".github/assets/opencyber.svg" alt="OpenCyber" width="420">
+</h1>
+
+<p align="center"><strong>The open source cybersecurity harness.</strong></p>
 
 <p align="center">
-  <a href="README.md">English</a> |
-  <a href="README.zh.md">简体中文</a> |
-  <a href="README.zht.md">繁體中文</a> |
-  <a href="README.ko.md">한국어</a> |
-  <a href="README.de.md">Deutsch</a> |
-  <a href="README.es.md">Español</a> |
-  <a href="README.fr.md">Français</a> |
-  <a href="README.it.md">Italiano</a> |
-  <a href="README.da.md">Dansk</a> |
-  <a href="README.ja.md">日本語</a> |
-  <a href="README.pl.md">Polski</a> |
-  <a href="README.ru.md">Русский</a> |
-  <a href="README.bs.md">Bosanski</a> |
-  <a href="README.ar.md">العربية</a> |
-  <a href="README.no.md">Norsk</a> |
-  <a href="README.br.md">Português (Brasil)</a> |
-  <a href="README.th.md">ไทย</a> |
-  <a href="README.tr.md">Türkçe</a> |
-  <a href="README.uk.md">Українська</a> |
-  <a href="README.bn.md">বাংলা</a> |
-  <a href="README.gr.md">Ελληνικά</a> |
-  <a href="README.vi.md">Tiếng Việt</a>
+  <a href="https://github.com/nilparra-dev/opencyber/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/nilparra-dev/opencyber?style=flat-square"></a>
+  <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/github/license/nilparra-dev/opencyber?style=flat-square"></a>
+  <a href="https://opencyber.tech"><img alt="Website" src="https://img.shields.io/badge/website-opencyber.tech-b4232d?style=flat-square"></a>
 </p>
 
-[![OpenCode Terminal UI](packages/web/src/assets/lander/screenshot.png)](https://opencode.ai)
+OpenCyber is a terminal agent for authorized security testing. Give it a target you own or have written permission to test: a web app, an API, a server, a cloud account or a codebase. It maps the surface, tests one hypothesis at a time, and writes a report where every confirmed finding carries the request, the response and the steps that reproduce it.
 
----
+It is built on [opencode](https://github.com/anomalyco/opencode), which provides the agent runtime, TUI, model providers and session storage. Scope enforcement, evidence, HTTP testing, isolated browsers, Kali jobs, code review and the assessment workflow are OpenCyber's.
 
-### Installation
+> [!WARNING]
+> Use OpenCyber only against systems you own or have written permission to test. Read the [authorized use policy](https://opencyber.tech/authorized-use) before you start.
+
+## Install
+
+OpenCyber publishes prebuilt binaries for Linux x64 and Windows x64.
 
 ```bash
-# YOLO
-curl -fsSL https://opencode.ai/v2/install | bash
-
-# Package managers
-npm i -g @opencode/cli@latest      # or bun/pnpm/yarn
-brew install anomalyco/tap/opencode-v2 # macOS and Linux (recommended, always up to date)
-brew install opencode              # macOS and Linux (official brew formula, updated less)
-sudo pacman -S opencode            # Arch Linux (Stable)
-paru -S opencode-beta              # Arch Linux (Latest from AUR)
-mise use -g opencode               # Any OS
-nix run github:anomalyco/opencode  # Nix
+# Linux
+curl -fsSL https://opencyber.tech/install | bash
 ```
 
-> [!TIP]
-> Remove versions older than 0.1.x before installing.
+```powershell
+# Windows (PowerShell)
+irm https://opencyber.tech/install.ps1 | iex
+```
 
-### Desktop App (BETA)
-
-OpenCode is also available as a desktop application. Download it from [opencode.ai/download](https://opencode.ai/download).
-
-| Platform              | Download                           |
-| --------------------- | ---------------------------------- |
-| macOS (Apple Silicon) | `opencode-desktop-mac-arm64.dmg`   |
-| macOS (Intel)         | `opencode-desktop-mac-x64.dmg`     |
-| Windows               | `opencode-desktop-win-x64.exe`     |
-| Linux                 | `.deb`, `.rpm`, or `.AppImage`     |
+The installer places `opencyber` in `~/.opencyber/bin`. On Windows it adds that directory to your user `PATH`; on Linux it prints the line to add to your shell profile. To pin a release:
 
 ```bash
-# macOS (Homebrew)
-brew install --cask opencode-desktop
+curl -fsSL https://opencyber.tech/install | OPENCYBER_VERSION=2.4.1-cyber.1 bash
 ```
 
-#### Installation Directory
+```powershell
+$env:OPENCYBER_VERSION = "2.4.1-cyber.1"; irm https://opencyber.tech/install.ps1 | iex
+```
 
-The install script installs OpenCode to `$HOME/.opencode/bin`.
+Prebuilt archives and `SHA256SUMS` are on [Releases](https://github.com/nilparra-dev/opencyber/releases). `opencyber --version` prints the upstream version with the fork marker, for example `2.4.1 (Cyber)`.
 
-### Agents
+## Quick start
 
-OpenCode includes two built-in agents you can switch between with the `Tab` key.
+```bash
+cd /path/to/your/project
+opencyber
+```
 
-- **build** - Default, full-access agent for development work
-- **plan** - Read-only agent for analysis and code exploration
-  - Denies file edits by default
-  - Asks permission before running bash commands
-  - Ideal for exploring unfamiliar codebases or planning changes
+Declare the engagement, then ask for the audit:
 
-Also included is a **general** subagent for complex searches and multistep tasks.
-This is used internally and can be invoked using `@general` in messages.
+```text
+Record an engagement for staging.example.com and api.staging.example.com.
+Exclude admin.staging.example.com. I own this target and authorize testing.
+Map the web app, test one hypothesis at a time, and write the report to ./report.
+```
 
-Learn more about [agents](https://opencode.ai/docs/agents).
+The agent records scope with the built-in `engagement` tool. Intrusive validation requires `assessment` mode and an explicit operator approval; active jobs keep the scope they were admitted with, and credentials are released per action rather than handed to the model. See [controlled modes](docs/cyber/audit.md#controlled-modes), [approvals](docs/cyber/approval.md) and [credentials](docs/cyber/credentials.md).
 
-### Documentation
+## What a run produces
 
-For more info on how to configure OpenCode, [**head over to our docs**](https://opencode.ai/docs).
+- **Scope first.** Hosts, CIDR ranges, services, exclusions and rate limits are structured operator data enforced by the harness, not text in the prompt.
+- **Evidence, not prose.** Executions and artifacts are stored outside the model context, and findings link back to the request and response that proved them.
+- **Hypotheses and coverage.** The report lists what was tested, what was ruled out and what remains unexamined.
+- **Isolation where it matters.** Local code review works without Docker. Kali jobs run in a fresh container, and the browser manager gives each identity its own context.
+- **Your model.** Use any provider opencode supports, including existing logins and configuration.
 
-### Contributing
+A finding in a report looks like this:
 
-If you're interested in contributing to OpenCode, please read our [contributing docs](./CONTRIBUTING.md) before submitting a pull request.
+```text
+HIGH  Broken access control on /api/invoices/{id}
 
-### Building on OpenCode
+GET /api/invoices/1042
+Cookie: session=<user B>
+200 OK  { "customer": "user A", "total": 1840.00 }
 
-If you are working on a project that's related to OpenCode and is using "opencode" as part of its name, for example "opencode-dashboard" or "opencode-mobile", please add a note to your README to clarify that it is not built by the OpenCode team and is not affiliated with us in any way.
+Fix: verify that the invoice belongs to the session's account before returning it.
+```
 
----
+## Documentation
 
-**Join our community** [Discord](https://discord.gg/opencode) | [X.com](https://x.com/opencode)
+| Topic | Guide |
+| --- | --- |
+| All cyber assessment guides | [Cyber assessment guides](docs/cyber/README.md) |
+| Roadmap, phases and acceptance tests | [Roadmap](docs/cyber/plan.md) |
+| Tool catalog and design rules | [Tool catalog](docs/cyber/toolset.md) |
+| Fork maintenance, sync and ledger | [FORK.md](FORK.md) |
+
+Each guide states its verified limits. Some workflows are local and bounded: live cloud accounts, emulators and devices, radio equipment and physical OT validation remain pending. Laboratory fixtures are not capability claims.
+
+## Requirements
+
+- Linux x64 or Windows x64 for the prebuilt binary.
+- A model provider configured in `~/.config/opencode/`, or an interactive login on first run.
+- Docker for Kali jobs and a local Chromium executable for the browser manager. Neither is required for local code review or HTTP testing.
+- Permission to test the target.
+
+## Relationship to opencode
+
+OpenCyber is a fork of [opencode](https://github.com/anomalyco/opencode) that follows its V2 releases. Upstream supplies the session engine, permissions, compaction and provider integrations; every fork change is recorded in [FORK.md](FORK.md). OpenCyber shares configuration and the session database with an official opencode install by default, while running its own background service.
+
+## Contributing
+
+Read [FORK.md](FORK.md) and [AGENTS.md](AGENTS.md) before changing code, then follow [CONTRIBUTING.md](CONTRIBUTING.md). Report vulnerabilities through [SECURITY.md](SECURITY.md), never in a public issue.
+
+## License
+
+MIT. See [LICENSE](LICENSE). The upstream opencode copyright notice is retained.

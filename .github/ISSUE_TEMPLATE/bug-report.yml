@@ -1,28 +1,31 @@
 name: Bug report
-description: Report an issue that should be fixed (avoid pasting giant AI generated summaries or your issue may be closed/ignored)
+description: Report a reproducible issue in OpenCyber
 body:
   - type: textarea
     id: description
     attributes:
       label: Description
-      description: Describe the bug you encountered
+      description: Describe what happened and what you expected instead.
       placeholder: What happened?
     validations:
       required: true
 
   - type: input
-    id: plugins
+    id: version
     attributes:
-      label: Plugins
-      description: What plugins are you using?
+      label: OpenCyber version
+      description: Output of `opencyber --version`, for example `2.4.1 (Cyber)`.
     validations:
-      required: false
+      required: true
 
-  - type: input
-    id: opencode-version
+  - type: dropdown
+    id: install
     attributes:
-      label: OpenCode version
-      description: What version of OpenCode are you using?
+      label: Install method
+      options:
+        - Release installer
+        - Built from source
+        - Other
     validations:
       required: false
 
@@ -30,11 +33,28 @@ body:
     id: reproduce
     attributes:
       label: Steps to reproduce
-      description: How can we reproduce this issue?
+      description: The smallest sequence that shows the problem. Include the target type (web app, API, local project) but remove credentials and client data.
       placeholder: |
         1.
         2.
         3.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or error output
+      description: Paste the relevant lines with secrets and target data removed.
+      render: text
+    validations:
+      required: false
+
+  - type: input
+    id: plugins
+    attributes:
+      label: Plugins
+      description: What plugins, MCP servers or custom agents are enabled?
     validations:
       required: false
 
@@ -42,7 +62,7 @@ body:
     id: screenshot-or-link
     attributes:
       label: Screenshot
-      description: Attach a screenshot or recording
+      description: Attach a screenshot or recording if the problem is visual.
       placeholder: Drag and drop screenshot here
     validations:
       required: false
@@ -51,8 +71,8 @@ body:
     id: os
     attributes:
       label: Operating System
-      description: what OS are you using?
-      placeholder: e.g., macOS 26.0.1, Ubuntu 22.04, Windows 11
+      description: What OS are you using?
+      placeholder: e.g., Ubuntu 24.04, Windows 11
     validations:
       required: false
 
@@ -60,7 +80,7 @@ body:
     id: terminal
     attributes:
       label: Terminal
-      description: what terminal are you using?
-      placeholder: e.g., iTerm2, Ghostty, Alacritty, Windows Terminal
+      description: What terminal are you using?
+      placeholder: e.g., Ghostty, Alacritty, Windows Terminal
     validations:
       required: false
