@@ -332,7 +332,7 @@ export const crack = Effect.fn("ForkCyberDirectoryAuth.crack")(function* (input:
     hashes: results.length,
     cracked,
     results: results.map((item) => ({ index: item.index, status: item.cracked ? "cracked" : "not_cracked" })),
-    // Recovered plaintext never leaves the job. Retrieving it is an operator decision (fork-cyber-directory-auth.md).
+    // Recovered plaintext never leaves the job. Retrieving it is an operator decision (docs/cyber/directory-auth.md).
     plaintext: "withheld",
     execution: result.execution,
     evidence: result.evidence,

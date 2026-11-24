@@ -124,6 +124,11 @@ const make = Effect.gen(function* () {
     if (!(yield* install(version))) return yield* Effect.fail(new Error("Installation method not found"))
   })
 
+  // Upstream's `managed` explains a Volta or mise install. opencyber only updates its own copy.
+  const managed = Effect.fnUntraced(function* (_input?: string) {
+    return undefined
+  })
+
   const check = Effect.fn("cli.updater.check")(function* () {
     if (OPENCODE_LOCAL)
       return {
@@ -161,7 +166,7 @@ const make = Effect.gen(function* () {
     Effect.catch((error) => Effect.logWarning("update check failed", { error }).pipe(Effect.as(undefined))),
   )
 
-  return Updater.Service.of({ run, check, apply, method, latest, upgrade, removal: () => undefined })
+  return Updater.Service.of({ run, check, apply, method, managed, latest, upgrade, removal: () => undefined })
 })
 
 export const layer = Layer.effect(Updater.Service, make)

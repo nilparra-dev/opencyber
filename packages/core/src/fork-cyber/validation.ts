@@ -2,7 +2,7 @@ export * as ForkCyberValidation from "./validation.js"
 
 import { Schema } from "effect"
 
-// Shared record for every validator (fork-cyber-toolset.md, D12 and OC-405): what was observed before acting,
+// Shared record for every validator (docs/cyber/toolset.md, D12 and OC-405): what was observed before acting,
 // what was sent, how the oracle decided, and whether cleanup completed. A reproduction is a measured result of
 // one run; findings are confirmed only through the finding workflow.
 export const Oracle = Schema.Literals(["reproduced", "not_reproduced", "inconclusive"])
