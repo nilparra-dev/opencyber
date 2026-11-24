@@ -542,11 +542,14 @@ describe("LocationServiceMap", () => {
           const blockedState = yield* update(blocked.path, blockedID)
           expect(blockedState.providers.some((provider) => provider.id === blockedID)).toBe(true)
           expect(blockedState.providers.some((provider) => provider.id === allowedID)).toBe(false)
+          // Code Mode and media generation depend on the bundled catalog (usable image and video models), not the location.
+          const media = ["generate_image", "generate_video"]
+          const builtIn = (name: string) => name !== "execute" && !media.includes(name)
           const blockedTools = blockedState.tools.map((tool) => tool.name)
           // fork: cyber native tools have their own integration suite; preserve this upstream provider-isolation assertion (F-014).
           const upstreamTool = (name: string) =>
+            builtIn(name) &&
             ![
-              "execute",
               "engagement",
               "notes",
               "evidence",
@@ -598,6 +601,7 @@ describe("LocationServiceMap", () => {
           expect(allowedState.providers.some((provider) => provider.id === blockedID)).toBe(false)
           const allowedTools = allowedState.tools.map((tool) => tool.name)
           expect(blockedTools.includes("execute")).toBe(allowedTools.includes("execute"))
+          media.forEach((name) => expect(allowedTools.includes(name)).toBe(blockedTools.includes(name)))
           expect(allowedTools.filter(upstreamTool).sort()).toEqual([
             "edit",
             "glob",

@@ -1,4 +1,4 @@
-﻿export * as ForkCyberScope from "./scope.js"
+export * as ForkCyberScope from "./scope.js"
 
 import { Schema, SchemaGetter } from "effect"
 import { BlockList, isIP } from "node:net"
@@ -136,7 +136,7 @@ const Scope = Schema.Struct({
   }),
 )
 
-// R2 actions an engagement may declare (fork-cyber-toolset.md, D-2). Each run still needs a per-action,
+// R2 actions an engagement may declare (docs/cyber/toolset.md, D-2). Each run still needs a per-action,
 // per-target operator approval that expires. The decision function refuses any other identifier.
 export const ValidationAction = Schema.Literals([
   "cyber_local_validation",
@@ -159,7 +159,7 @@ export const Validation = Schema.Struct({
   actions: Schema.Array(ValidationAction).check(Schema.isMinLength(1), Schema.isMaxLength(16)),
 })
 
-// Credential identities an engagement may use (fork-cyber-credentials.md). A label names a secret the operator
+// Credential identities an engagement may use (docs/cyber/credentials.md). A label names a secret the operator
 // registered. Targets are limited to kinds the scope already records; url and service wait for their own work item.
 export const CredentialTarget = Schema.Union([Typed.host, Typed.domain, Typed.cidr, Typed.cloud_resource])
 export type CredentialTarget = typeof CredentialTarget.Type

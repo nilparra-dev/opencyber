@@ -4,7 +4,7 @@ import { Effect, Schema } from "effect"
 import { ForkCyberDiagnostics } from "./diagnostics.js"
 import { ForkCyberStore } from "./store.js"
 
-// A pinned, versioned advisory snapshot for offline matching (fork-cyber-toolset.md, D7 and D8). The operator names the
+// A pinned, versioned advisory snapshot for offline matching (docs/cyber/toolset.md, D7 and D8). The operator names the
 // file and its SHA-256 digest; the digest is checked before any record is read. Results carry the snapshot identity.
 const format = "opencyber-advisory-snapshot-v1"
 const ecosystems = ["npm", "PyPI"] as const
