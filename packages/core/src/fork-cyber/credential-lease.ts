@@ -275,7 +275,7 @@ const validationRecovery =
 const pacingWindow = 60_000
 const pacingRecovery = "Wait for the pacing window to pass before trying this credential on this target again."
 // The target's lockout threshold is not known to the harness. Three granted attempts in thirty minutes stays below the
-// common thresholds of five; an engagement-specific threshold is an open decision (fork-cyber-directory-auth.md).
+// common thresholds of five; an engagement-specific threshold is an open decision (docs/cyber/directory-auth.md).
 const attemptWindow = 30 * 60_000
 const attemptLimit = 3
 const attemptRecovery =

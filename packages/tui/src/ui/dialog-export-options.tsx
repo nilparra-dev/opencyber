@@ -9,12 +9,14 @@ export type ExportFormat = "markdown" | "json"
 // fork: use one privacy selection for JSON, Markdown and clipboard (F-023).
 export type ExportProfile = "redacted" | "analysis" | "private" | "sanitized"
 const profiles: ExportProfile[] = ["redacted", "analysis", "private", "sanitized"]
+export type ExportLocation = "project" | "temp"
 
 export type DialogExportOptionsProps = {
   defaultThinking: boolean
   onConfirm?: (options: {
     action: "copy" | "export"
     format: ExportFormat
+    location?: ExportLocation
     thinking: boolean
     tools: boolean
     sanitize: boolean
@@ -23,13 +25,14 @@ export type DialogExportOptionsProps = {
   onCancel?: () => void
 }
 
-type Active = ExportFormat | "thinking" | "tools" | "sanitize" | "profile" | "copy" | "export"
+type Active = ExportFormat | "location" | "thinking" | "tools" | "sanitize" | "profile" | "copy" | "export"
 
 export function DialogExportOptions(props: DialogExportOptionsProps) {
   const dialog = useDialog()
   const theme = useTheme().surface("dialog")
   const [store, setStore] = createStore({
     format: "markdown" as ExportFormat,
+    location: "project" as ExportLocation,
     thinking: props.defaultThinking,
     tools: true,
     sanitize: false,
@@ -41,6 +44,7 @@ export function DialogExportOptions(props: DialogExportOptionsProps) {
     props.onConfirm?.({
       action,
       format: store.format,
+      location: store.location,
       thinking: store.thinking,
       tools: store.tools,
       sanitize: store.sanitize,
@@ -52,6 +56,8 @@ export function DialogExportOptions(props: DialogExportOptionsProps) {
       setStore("format", store.active)
       return
     }
+    if (store.active === "location")
+      setStore("location", store.location === "project" ? "temp" : "project")
     if (store.active === "thinking") setStore("thinking", !store.thinking)
     if (store.active === "tools") setStore("tools", !store.tools)
     if (store.active === "sanitize") setStore("sanitize", !store.sanitize)
@@ -62,8 +68,8 @@ export function DialogExportOptions(props: DialogExportOptionsProps) {
 
   const order = (): Active[] =>
     store.format === "markdown"
-      ? ["markdown", "json", "profile", "thinking", "tools", "sanitize", "copy", "export"]
-      : ["markdown", "json", "profile", "thinking", "sanitize", "copy", "export"]
+      ? ["markdown", "json", "location", "profile", "thinking", "tools", "sanitize", "copy", "export"]
+      : ["markdown", "json", "location", "profile", "thinking", "sanitize", "copy", "export"]
 
   const move = (step: number) => {
     const items = order()
@@ -131,6 +137,18 @@ export function DialogExportOptions(props: DialogExportOptionsProps) {
             )}
           </For>
         </box>
+      </box>
+      <box
+        flexDirection="row"
+        gap={1}
+        onMouseUp={() => {
+          setStore("active", "location")
+          activate()
+        }}
+      >
+        <text fg={store.active === "location" ? theme.text.formfield.focused : theme.text.formfield.base}>
+          Location: {store.location}
+        </text>
       </box>
       <box
         flexDirection="row"
@@ -294,6 +312,7 @@ DialogExportOptions.show = (dialog: DialogContext, defaultThinking: boolean) => 
   return new Promise<{
     action: "copy" | "export"
     format: ExportFormat
+    location?: ExportLocation
     thinking: boolean
     tools: boolean
     sanitize: boolean

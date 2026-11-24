@@ -1,47 +1,63 @@
 # Security
 
-## IMPORTANT
+OpenCyber runs tools, starts processes and sends traffic. Treat it as production software with the permissions you grant it, not as a sandbox.
 
-We do not accept AI generated security reports. We receive a large number of
-these and we absolutely do not have the resources to review them all. If you
-submit one that will be an automatic ban from the project.
+## Authorized use
 
-## Threat Model
+OpenCyber exists for authorized security testing. Running it against a system without permission is out of scope here and may be illegal. The [authorized use policy](https://opencyber.tech/authorized-use) governs use of the project and the hosted website.
 
-### Overview
+## Threat model
 
-OpenCode is an AI-powered coding assistant that runs locally on your machine. It provides an agent system with access to powerful tools including shell execution, file operations, and web access.
+### The agent is not sandboxed
 
-### No Sandbox
+The permission system is a UX control: it asks before actions, and the operator can deny them. It is not an isolation boundary. An approved shell command, plugin, MCP server or Kali job runs with the permissions of the OpenCyber process.
 
-OpenCode does **not** sandbox the agent. The permission system exists as a UX feature to help users stay aware of what actions the agent is taking - it prompts for confirmation before executing commands, writing files, etc. However, it is not designed to provide security isolation.
+If you need isolation, run OpenCyber in a VM or container, or use the `review` and `assessment` profiles. Those profiles disable target configuration, target plugins, MCP servers, agent discovery and instruction discovery before the Location starts. They still run as your operating-system user; they are a policy boundary, not a process sandbox.
 
-If you need true isolation, run OpenCode inside a Docker container or VM.
+### Kali and browser isolation are bounded
 
-### Server Mode
+Kali jobs run in a fresh container with explicit inputs, outputs and network policy. Docker is the boundary; a container escape or kernel bug is outside the assessment design. The browser manager launches a separate Chromium process with one context per identity and never uses your everyday browser profile. WebSockets, service workers, downloads and popups are not covered capture paths.
 
-Server mode is opt-in only. When enabled, set `OPENCODE_SERVER_PASSWORD` to require HTTP Basic Auth. Without this, the server runs unauthenticated (with a warning). It is the end user's responsibility to secure the server - any functionality it provides is not a vulnerability.
+### Evidence and credentials are sensitive
 
-### Out of Scope
+Executions and artifacts are stored in a local SQLite archive under the OpenCyber data directory. Reports and exports can contain target data, cookies, tokens and personal information. Protect the data directory and review exports before sharing them.
 
-| Category                        | Rationale                                                               |
-| ------------------------------- | ----------------------------------------------------------------------- |
-| **Server access when opted-in** | If you enable server mode, API access is expected behavior              |
-| **Sandbox escapes**             | The permission system is not a sandbox (see above)                      |
-| **LLM provider data handling**  | Data sent to your configured LLM provider is governed by their policies |
-| **MCP server behavior**         | External MCP servers you configure are outside our trust boundary       |
-| **Malicious config files**      | Users control their own config; modifying it is not an attack vector    |
+Credentials are entered by the operator and released to one execution when the approved engagement declares the label for that action and target. They are not part of the model's tool input. A misconfigured manifest or an over-broad label can still expose a credential to a tool: review rules of engagement before approving them.
 
----
+### Model providers see what the model sees
 
-# Reporting Security Issues
+Prompts, tool output and selected evidence are sent to the model provider you configure. That provider's retention and privacy policy applies. OpenCyber does not add a separate data-processing layer.
 
-We appreciate your efforts to responsibly disclose your findings, and will make every effort to acknowledge your contributions.
+### Server mode
 
-To report a security issue, please use the GitHub Security Advisory ["Report a Vulnerability"](https://github.com/anomalyco/opencode/security/advisories/new) tab.
+The local server is opt-in. Set `OPENCODE_SERVER_PASSWORD` to require HTTP Basic Auth. Without it, the server runs unauthenticated with a warning. Securing the network path to that server is the operator's responsibility.
 
-The team will send a response indicating the next steps in handling your report. After the initial reply to your report, the security team will keep you informed of the progress towards a fix and full announcement, and may ask for additional information or guidance.
+### Out of scope
 
-## Escalation
+| Category | Rationale |
+| --- | --- |
+| Using OpenCyber without authorization | The project's purpose is authorized testing; misuse is not a vulnerability |
+| Server access when you enable server mode without authentication | Expected behavior, documented above |
+| Permission-system bypass with an approval you granted | The permission system is not a sandbox |
+| LLM provider data handling | Governed by the provider you choose |
+| MCP servers, plugins and configuration you install | Outside the project's trust boundary |
+| Docker, Chromium or target-side compromise | Depends on the operator's environment and the target |
 
-If you do not receive an acknowledgement of your report within 6 business days, you may send an email to security@anoma.ly
+## Reporting a vulnerability
+
+Report privately through the repository's [GitHub Security Advisory](https://github.com/nilparra-dev/opencyber/security/advisories/new) tab. Do not open a public issue, and do not test against systems you do not own.
+
+Include:
+
+- The OpenCyber version from `opencyber --version`.
+- The mode or profile in use.
+- A minimal reproduction with the exact configuration, command or request.
+- The impact and what an attacker could do.
+
+Reports without a concrete reproduction may be closed. The maintainer will acknowledge a valid report, agree on a disclosure timeline and credit the reporter unless asked otherwise.
+
+If the issue is inherited from upstream opencode rather than introduced by the fork, report it to [anomalyco/opencode](https://github.com/anomalyco/opencode/security/advisories/new) as well.
+
+## Supported versions
+
+Security fixes target the latest OpenCyber release on the `custom` branch. Older `-cyber.N` builds are not maintained separately.

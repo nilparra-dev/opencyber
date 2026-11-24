@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process"
-import { existsSync, readFileSync } from "node:fs"
+import { existsSync, readFileSync, readdirSync } from "node:fs"
 import path from "node:path"
 
 // Verifies that FORK.md section 7 still describes the fork, so the ledger cannot silently rot.
@@ -65,6 +65,11 @@ const checks = [
   {
     label: "every (F-00N) a marker references is defined in section 7",
     offenders: [...new Set(changed.flatMap(markerIds))].filter((id) => !ledger.defined.has(id)),
+  },
+  {
+    // F-032 keeps one English README; an upstream sync can add a translation without a conflict.
+    label: "no upstream README translations are present",
+    offenders: readdirSync(root).filter((file) => /^README\..+\.md$/.test(file)),
   },
 ]
 
