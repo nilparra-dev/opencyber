@@ -1,112 +1,83 @@
-# Contributing to OpenCode
+# Contributing to OpenCyber
 
-The changes most likely to be accepted are:
+OpenCyber is a fork of [opencode](https://github.com/anomalyco/opencode). Read [FORK.md](FORK.md) first: it defines the branch model, the upstream sync, the ledger of every change to upstream code, and the conflict procedure. [AGENTS.md](AGENTS.md) defines the code style and the checks.
 
-- Bug fixes
-- Additional LSPs and formatters
-- LLM performance improvements
-- Environment-specific fixes
-- Missing standard behavior
-- Documentation improvements
+## Before you change anything
 
-UI and core product features require design review before implementation. If you are unsure whether a change fits, ask a maintainer or choose an issue labeled [`help wanted`](https://github.com/anomalyco/opencode/issues?q=is%3Aissue%20state%3Aopen%20label%3Ahelp-wanted), [`good first issue`](https://github.com/anomalyco/opencode/issues?q=is%3Aissue%20state%3Aopen%20label%3A%22good%20first%20issue%22), [`bug`](https://github.com/anomalyco/opencode/issues?q=is%3Aissue%20state%3Aopen%20label%3Abug), or [`perf`](https://github.com/anomalyco/opencode/issues?q=is%3Aopen%20is%3Aissue%20label%3A%22perf%22).
+Use the first option that solves the problem:
 
-Want to take on an issue? Leave a comment and a maintainer may assign it unless it is already being worked on.
+1. **Configuration** in `~/.config/opencode/` or a project's `.opencode/`.
+2. **A new fork-owned file** under `.opencode/` with a `fork-` prefix: plugins, agents, commands, tools, skills, themes or MCP servers.
+3. **A plugin** using the `@opencode/plugin` API.
+4. **A new `fork-` file inside a package**, imported from a single point.
+5. **Editing upstream code**, as a last resort. Record it in `FORK.md` section 7 in the same pull request.
 
-> [!NOTE]
-> PRs that ignore these guardrails will likely be closed.
+Keep the diff against upstream small. Do not reformat or rename code you do not own, and do not edit generated client files by hand.
 
-## Adding Providers
+## Workflow
 
-New providers should rarely require OpenCode changes. Add the provider to [models.dev](https://github.com/anomalyco/models.dev) first.
+```bash
+git fetch origin
+git checkout -b <short-branch> origin/custom
+bun install
+# ... changes ...
+```
+
+- Branch names are at most three words separated by hyphens, with no type prefix or slash: `scan-timeout`, `browser-restore`.
+- Commit messages and pull request titles use `type(scope): summary`, with `feat`, `fix`, `docs`, `chore`, `refactor` or `test`. Example: `fix(core): reject excluded hosts before storage`.
+- Open the pull request against `custom`. Feature pull requests may be squashed.
+- Sync pull requests (`sync-upstream → custom`) are integrated with a merge commit, never with squash or rebase.
+- If an upstream file changed, add or update its section 7 entry and run `bun script/fork-ledger-check.ts --worktree`.
+- If upstream adds something the fork already carried, adopt the upstream version and remove the old ledger entry.
 
 ## Development
 
-OpenCode requires the Bun version in the `packageManager` field of [`package.json`](./package.json) or newer. From the repository root:
+OpenCyber requires the Bun version in `package.json` or newer. From the repository root:
 
 ```bash
 bun install
-bun dev [directory]
+bun run dev          # TUI and CLI from source
+bun run dev:live     # development TUI against the installed service and live sessions
 ```
 
-`bun dev` runs the V2 CLI and TUI. Pass a directory to open another project, or `.` to open this repository.
+The main packages are `core` (domain and persistence), `cli` (entrypoint and service lifecycle), `tui` (terminal interface), `server`, `protocol`, `schema`, `client` (generated), `app` and `desktop`. Follow the `AGENTS.md` next to the package you touch.
 
-To test a development TUI against your installed OpenCode V2 background service and live sessions:
+## Checks
+
+Run tests from the package directory, never from the repository root:
 
 ```bash
-bun run dev:live [directory]
+cd packages/core && bun typecheck && bun test test/plugin/fork-cyber-http.test.ts
 ```
 
-For web development, run the backend and app in separate terminals. Other interfaces have root scripts:
+Run the full repository check before opening a pull request:
 
 ```bash
-bun dev serve --port 4096
-bun run dev:web
-bun run dev:desktop
-bun run dev:site
+bun run check
+cd packages/client && bun run generate   # only after a public Protocol or Server HttpApi change
 ```
 
-### Packages
+Fork CI runs typechecks, unit tests, the ledger check and the optional Cyber labs. Fix failures on the branch; do not disable upstream tests.
 
-- `packages/schema`: shared wire and storage contracts
-- `packages/core`: domain behavior and persistence
-- `packages/protocol`: public API definitions
-- `packages/server`: HTTP server and runtime composition
-- `packages/client`: generated TypeScript clients
-- `packages/cli`: command-line entrypoint and service lifecycle
-- `packages/tui`: terminal interface
-- `packages/app`: shared web interface
-- `packages/desktop`: Electron desktop application
-- `packages/plugin`: plugin API
+## Adding cyber capabilities
 
-### Verification
+- A new surface module goes in `packages/core/src/fork-cyber/`, registers through `packages/core/src/plugin/fork-cyber.ts`, and ships with unit tests plus real or laboratory controls.
+- Every tool declares its target types, risk class, phase and evidence. Scope, rate limits and approvals are enforced in the harness, never in the prompt.
+- Add a `fork-cyber-*.md` guide with the verified workflow and its limits, then link it from `README.md`.
+- A capability is not supported until it has a reproducible workflow and evidence. An installed tool is not a capability claim.
 
-Run typechecks, and tests where defined, from the affected package rather than the repository root:
+## Public face
 
-```bash
-cd packages/core
-bun run test
-bun typecheck
-```
+The README, contribution guide, security policy and GitHub templates are fork-owned. Keep them describing OpenCyber, not upstream. Attribution to opencode belongs in the README and the license, not in the product name.
 
-Follow package-specific instructions in nearby `AGENTS.md` files. After changing the public Protocol or Server `HttpApi`, run `bun run generate` from `packages/client`; never edit generated client files directly.
+## Upstream contributions
 
-Follow the repository [style guide](./AGENTS.md).
+Generic improvements are welcome upstream. Branch from upstream's `v2`, not from `custom`, and follow upstream's `AGENTS.md`. See [FORK.md section 9](FORK.md#9-contributing-upstream).
 
-## Pull Requests
+## Security
 
-### Link Issues When Required
+Do not report vulnerabilities in a public issue. Follow [SECURITY.md](SECURITY.md).
 
-Bug fixes, chores, and tests must reference an existing issue. Documentation, refactor, and feature PRs are exempt from the automated linked-issue check. When required, use `Fixes #123` or `Closes #123` in the PR description.
+## License
 
-Before implementing new functionality, open a feature request describing the problem, why it belongs in OpenCode, and your proposed approach if you have one. Wait for design approval before opening the implementation PR.
-
-Base branches on `dev` and complete the provided pull request template.
-
-### Keep It Focused
-
-- Keep PRs small and focused.
-- Explain the problem and why the change fixes it.
-- Check whether the functionality already exists.
-- For UI changes, include before-and-after screenshots or video.
-- For logic changes, explain what you tested and how a reviewer can verify it.
-
-### Keep It Brief
-
-Long, AI-generated PR descriptions and issues may be ignored. Write a short explanation in your own words. If the change cannot be explained briefly, the PR may be too large.
-
-### Use Conventional Titles
-
-Use `type(scope): summary`. Supported types are `feat`, `fix`, `docs`, `chore`, `refactor`, and `test`. The scope is optional.
-
-Examples:
-
-- `docs: update contributing guide`
-- `fix(tui): restore scroll position`
-- `feat(app): add workspace search`
-
-## Issues
-
-Bug reports and feature requests must use their issue templates. Blank issues are not allowed; ask support and how-to questions in the [Discord community](https://discord.gg/opencode).
-
-Automated checks flag missing templates, placeholder text, AI-generated walls of text, and missing meaningful content. You have two hours to correct a flagged issue before it closes automatically. Ask a maintainer if an issue was flagged incorrectly.
+Contributions are accepted under the MIT license in [LICENSE](LICENSE).

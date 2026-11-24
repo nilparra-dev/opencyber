@@ -1,29 +1,27 @@
-### Issue for this PR
+## What does this change?
+
+<!-- Describe the problem and why this change fixes it. Keep it specific. -->
 
 Closes #
 
-### Type of change
+## Type of change
 
 - [ ] Bug fix
-- [ ] New feature
-- [ ] Refactor / code improvement
+- [ ] New capability
+- [ ] Refactor or code improvement
 - [ ] Documentation
+- [ ] Upstream sync (merge commit, `fork-sync` label)
 
-### What does this PR do?
+## Verification
 
-Please provide a description of the issue, the changes you made to fix it, and why they work. It is expected that you understand why your changes work and if you do not understand why at least say as much so a maintainer knows how much to value the PR.
+<!-- Commands, tests and real workflows you ran. For UI changes, add a screenshot or recording. -->
 
-**If you paste a large clearly AI generated description here your PR may be IGNORED or CLOSED!**
+- [ ] I ran the affected package checks from the package directory.
+- [ ] I ran `bun run check` unless the change is documentation-only.
+- [ ] I updated `FORK.md` section 7 if I changed an upstream file.
+- [ ] I did not edit generated client files by hand.
+- [ ] I did not disable upstream tests to make CI pass.
 
-### How did you verify your code works?
+## Notes for the reviewer
 
-### Screenshots / recordings
-
-_If this is a UI change, please include a screenshot or recording._
-
-### Checklist
-
-- [ ] I have tested my changes locally
-- [ ] I have not included unrelated changes in this PR
-
-_If you do not follow this template your PR will be automatically rejected._
+<!-- Known limits, follow-up work, conflicts with upstream, or anything that needs a decision. -->
