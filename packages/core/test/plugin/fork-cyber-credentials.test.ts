@@ -1,7 +1,9 @@
 import { expect, test } from "bun:test"
 import { Database } from "bun:sqlite"
 import { Effect, Exit } from "effect"
+import { spawnSync } from "node:child_process"
 import { mkdir, stat, writeFile } from "node:fs/promises"
+import { userInfo } from "node:os"
 import path from "node:path"
 import { ForkCyberCredentials } from "@opencode/core/fork-cyber/credentials"
 import { ForkCyberStore } from "@opencode/core/fork-cyber/store"
@@ -48,6 +50,29 @@ test.skipIf(process.platform === "win32")("credential key file is readable by it
         const file = path.join(tmp.path, "state", "credential.key")
         yield* ForkCyberCredentials.loadKey(file)
         expect((yield* Effect.promise(() => stat(file))).mode & 0o777).toBe(0o600)
+      }),
+    ),
+  )
+})
+
+test.skipIf(process.platform !== "win32")("credential key ACL grants the current user only", async () => {
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const tmp = yield* tmpdirScoped()
+        const file = path.join(tmp.path, "state", "credential.key")
+        yield* ForkCyberCredentials.loadKey(file)
+        const acl = spawnSync("icacls", [file], { encoding: "utf8", windowsHide: true })
+        expect(acl.status).toBe(0)
+        const entries = acl.stdout
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .filter((line) => line.includes(":("))
+        expect(entries).toHaveLength(1)
+        expect(entries[0]!.toLowerCase()).toContain(userInfo().username.toLowerCase())
+        expect(acl.stdout).not.toMatch(/Everyone/i)
+        expect(acl.stdout).not.toMatch(/BUILTIN\\Users/i)
+        expect(acl.stdout).not.toMatch(/NT AUTHORITY\\Authenticated Users/i)
       }),
     ),
   )
@@ -130,7 +155,7 @@ test("a row copied into another engagement does not open", async () => {
   )
 })
 
-test("migrates to schema 12, keeps leases append-only and purge removes them", async () => {
+test("migrates to schema 13, keeps leases append-only and purge removes them", async () => {
   await Effect.runPromise(
     Effect.scoped(
       Effect.gen(function* () {
@@ -138,7 +163,7 @@ test("migrates to schema 12, keeps leases append-only and purge removes them", a
         const file = path.join(tmp.path, "evidence.sqlite")
         const store = yield* ForkCyberStore.open(file)
         const db = new Database(file)
-        expect(db.query<{ user_version: number }, []>("PRAGMA user_version").get()?.user_version).toBe(12)
+        expect(db.query<{ user_version: number }, []>("PRAGMA user_version").get()?.user_version).toBe(13)
         db.run(
           "INSERT INTO cyber_credential_lease(owner, label, action, target, execution, outcome, reason, created_at) VALUES ('owner-a', 'ad-reader', 'cyber_directory.ldap_enum', NULL, 'exec-1', 'granted', 'ok', 1)",
         )

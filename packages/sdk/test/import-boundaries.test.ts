@@ -20,6 +20,8 @@ test("bundles the Promise and Effect clients with the in-memory host", async () 
     target: "bun",
     format: "esm",
     packages: "bundle",
+    // fork: externalize Playwright's optional BiDi backend, matching build.ts (F-016)
+    external: ["chromium-bidi/*"],
     metafile: true,
   })
   const outputs = Object.values(result.metafile?.outputs ?? {}).filter((output) => output.entryPoint)
