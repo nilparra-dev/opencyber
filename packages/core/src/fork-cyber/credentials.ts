@@ -1,8 +1,9 @@
 export * as ForkCyberCredentials from "./credentials.js"
 
 import { Effect, Schema } from "effect"
+import { spawnSync } from "node:child_process"
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto"
-import { mkdir, readFile, writeFile } from "node:fs/promises"
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises"
 import path from "node:path"
 
 // Identity kinds an engagement can declare. OC-304 adds kinds when live cloud actions need them.
@@ -18,8 +19,8 @@ const keyBytes = 32
 const nonceBytes = 12
 const tagBytes = 16
 
-// The key lives in the state directory, apart from the evidence database. Its mode is enforced on POSIX only;
-// on Windows the profile's ACL is the protection.
+// The key lives in the state directory, apart from the evidence database. POSIX enforces its mode; Windows has no
+// mode bits, so createKey replaces the inherited ACL with one entry for the current user.
 export const loadKey = Effect.fn("ForkCyberCredentials.loadKey")(function* (file: string) {
   yield* Effect.tryPromise(() => mkdir(path.dirname(file), { recursive: true, mode: 0o700 }))
   const existing = yield* Effect.tryPromise(() => readFile(file)).pipe(Effect.result)
@@ -31,10 +32,35 @@ export const loadKey = Effect.fn("ForkCyberCredentials.loadKey")(function* (file
 const createKey = Effect.fn("ForkCyberCredentials.createKey")(function* (file: string) {
   const key = randomBytes(keyBytes)
   const written = yield* Effect.tryPromise(() => writeFile(file, key, { flag: "wx", mode: 0o600 })).pipe(Effect.result)
-  if (written._tag === "Success") return key
+  if (written._tag === "Success") {
+    if (process.platform === "win32") {
+      const restricted = yield* Effect.try(() => restrict(file)).pipe(Effect.result)
+      if (restricted._tag === "Failure") {
+        // Never leave an unrestricted key behind for a later open to read.
+        yield* Effect.tryPromise(() => unlink(file)).pipe(Effect.ignore)
+        return yield* Effect.fail(restricted.failure)
+      }
+    }
+    return key
+  }
   // Another process created the key between the read and the write. Use the key it wrote.
   return yield* Effect.tryPromise(() => readFile(file))
 })
+
+// `whoami` and `icacls` are part of Windows, so a failure is a real failure. `createKey` removes the file before
+// surfacing it, so a later open cannot use a key whose ACL was never restricted.
+function restrict(file: string) {
+  const who = spawnSync("whoami", ["/user", "/fo", "csv", "/nh"], { encoding: "utf8", windowsHide: true })
+  const sid = who.status === 0 ? /"(S-1-[^"]+)"/.exec(who.stdout)?.[1] : undefined
+  if (sid === undefined)
+    throw new Error(`whoami could not resolve the current user SID: ${(who.stderr || who.stdout).trim()}`)
+  const result = spawnSync("icacls", [file, "/inheritance:r", "/grant:r", `*${sid}:(F)`], {
+    encoding: "utf8",
+    windowsHide: true,
+  })
+  if (result.status !== 0)
+    throw new Error(`icacls could not restrict the credential key: ${(result.stderr || result.stdout).trim()}`)
+}
 
 export function seal(key: Buffer, binding: Binding, value: string): Sealed {
   const nonce = randomBytes(nonceBytes)
