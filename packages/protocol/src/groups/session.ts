@@ -225,8 +225,9 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S, FormI ext
         params: { sessionID: Session.ID },
         query: Schema.Struct({
           sanitize: BooleanFromString.pipe(Schema.optional),
-          profile: SessionTransfer.Profile.pipe(Schema.optionalKey),
-          reasoning: BooleanFromString.pipe(Schema.optionalKey),
+          // fork: generated clients send omitted query fields as undefined (F-023).
+          profile: SessionTransfer.Profile.pipe(Schema.optional),
+          reasoning: BooleanFromString.pipe(Schema.optional),
         }),
         success: Schema.Struct({ data: PublicSessionTransfer }),
         error: [SessionNotFoundError, UnknownError],
