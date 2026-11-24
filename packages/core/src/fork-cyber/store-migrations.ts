@@ -8,17 +8,20 @@ import { ForkCyberCoordination } from "./coordination.js"
 type Coordination = ReturnType<typeof ForkCyberCoordination.make>
 type Migration = { version: number; up: Effect.Effect<void, SqlError> }
 
-const latest = 13
-
 export const migrate = Effect.fn("ForkCyberStoreMigrations.migrate")(function* (
   sql: SqlClient.SqlClient,
   version: number,
   coordination: Coordination,
 ) {
+  const migrations = steps(sql, coordination)
+  const versions = migrations.map((migration) => migration.version)
+  if (versions.some((migration, index) => migration !== index + 1))
+    return yield* Effect.fail(new Error("OpenCyber evidence migrations are not contiguous"))
+  const latest = versions.at(-1) ?? 0
   if (!Number.isInteger(version) || version < 0 || version > latest)
     return yield* Effect.fail(new Error("Unsupported OpenCyber evidence database version"))
   yield* Effect.forEach(
-    steps(sql, coordination).filter((step) => version < step.version),
+    migrations.filter((step) => version < step.version),
     (step) => retryLockTimeout(step.up),
     { discard: true },
   )
