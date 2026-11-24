@@ -10,6 +10,15 @@ import path from "node:path"
 // Usage: bun script/fork-ledger-check.ts [ref] [--worktree]
 
 const CODE_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"])
+const BUDGET_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx"])
+const DEFAULT_UPSTREAM_LINE_BUDGET = 80
+// Existing inline upstream patches Track 1 is shrinking. Each entry caps the file's current changed-line count
+// so no new large patch can grow here while the existing ones move to fork-owned modules.
+const LEGACY_LARGE_UPSTREAM_FILES: Readonly<Record<string, number>> = {
+  "packages/core/src/session/transfer.ts": 338,
+  "packages/tui/src/ui/dialog-export-options.tsx": 440,
+  "packages/tui/src/routes/session/index.tsx": 97,
+}
 const root = path.join(import.meta.dir, "..")
 const ref = process.argv.slice(2).find((arg) => arg !== "--worktree") ?? "HEAD"
 
@@ -45,6 +54,7 @@ const changed = diff.stdout.split("\n").filter(Boolean)
 const existsInTag = (file: string) =>
   spawnSync("git", ["cat-file", "-e", `${tag}:${file}`], { cwd: root, stdio: "ignore" }).status === 0
 const upstreamFiles = changed.filter(existsInTag)
+const changedLines = numstat(process.argv.includes("--worktree") ? tag : `${tag}...${ref}`)
 const ledger = readLedger()
 
 const checks = [
@@ -61,6 +71,16 @@ const checks = [
         !generatedClient(file) &&
         !hasMarker(file),
     ),
+  },
+  {
+    label: `every changed upstream code file stays within its ${DEFAULT_UPSTREAM_LINE_BUDGET}-line diff budget`,
+    offenders: upstreamFiles
+      .filter((file) => BUDGET_EXTENSIONS.has(path.extname(file)) && !generatedCode(file) && !testFile(file))
+      .flatMap((file) => {
+        const total = changedLines.get(file) ?? 0
+        const cap = LEGACY_LARGE_UPSTREAM_FILES[file] ?? DEFAULT_UPSTREAM_LINE_BUDGET
+        return total > cap ? [`${file} (${total} changed lines, cap ${cap})`] : []
+      }),
   },
   {
     label: "every (F-00N) a marker references is defined in section 7",
@@ -145,6 +165,31 @@ function generatedClient(file: string) {
     "packages/client/src/effect/generated/",
     "packages/client/src/effect/api/",
   ].some((prefix) => file.startsWith(prefix))
+}
+
+function generatedCode(file: string) {
+  return generatedClient(file) || file.endsWith(".gen.ts")
+}
+
+function testFile(file: string) {
+  return /\.(test|spec)\.(ts|tsx|js|jsx)$/.test(file) || /(^|\/)(test|tests)\//.test(file)
+}
+
+function numstat(spec: string) {
+  const result = git("diff", "--numstat", spec)
+  if (result.status !== 0) {
+    console.error(result.stderr.trim())
+    process.exit(1)
+  }
+  return new Map(
+    result.stdout
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => {
+        const [added, deleted, file] = line.split("\t")
+        return [file, (Number(added) || 0) + (Number(deleted) || 0)] as const
+      }),
+  )
 }
 
 function markerIds(file: string) {
