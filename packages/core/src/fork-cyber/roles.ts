@@ -69,7 +69,7 @@ const web = ["http_replay", "cyber_browser", "finding_retest"]
 const network = ["kali_run", "kali_environment", "cyber_surface", "cyber_directory"]
 
 export function tools(agent: string) {
-  if (agent === "cyber-validate") return [...assess, "cyber_local_validation", "cyber_directory"]
+  if (agent === "cyber-validate") return [...assess, "cyber_local_validation"]
   if (agent === "cyber-report") return read
   if (agent === "cyber-code-review") return [...read, "cyber_code_review", "cyber_artifacts", "cyber_binary", "cyber_directory"]
   if (agent === "cyber-enum") return enumerate
@@ -83,7 +83,8 @@ export function tools(agent: string) {
 }
 
 // The highest risk class a phase may use (docs/cyber/toolset.md, R-4). "none" means the phase has no actions.
-// Exploitation phases keep R2 as their ceiling; the decision function still refuses R2 until OC-401 exists.
+// Exploitation phases keep R2 as their ceiling. The decision function permits R2 only in assessment mode, only
+// for actions the engagement declares, and each use then waits for operator approval (OC-401).
 const ceilings: Readonly<Record<string, "none" | "R0" | "R1" | "R2">> = {
   "cyber-recon": "R1",
   "cyber-enum": "R1",
