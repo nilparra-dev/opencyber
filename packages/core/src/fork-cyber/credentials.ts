@@ -3,8 +3,7 @@ export * as ForkCyberCredentials from "./credentials.js"
 import { Effect, Schema } from "effect"
 import { spawnSync } from "node:child_process"
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto"
-import { mkdir, readFile, writeFile } from "node:fs/promises"
-import { userInfo } from "node:os"
+import { mkdir, readFile, unlink, writeFile } from "node:fs/promises"
 import path from "node:path"
 
 // Identity kinds an engagement can declare. OC-304 adds kinds when live cloud actions need them.
@@ -34,19 +33,28 @@ const createKey = Effect.fn("ForkCyberCredentials.createKey")(function* (file: s
   const key = randomBytes(keyBytes)
   const written = yield* Effect.tryPromise(() => writeFile(file, key, { flag: "wx", mode: 0o600 })).pipe(Effect.result)
   if (written._tag === "Success") {
-    if (process.platform === "win32") yield* Effect.try(() => restrict(file))
+    if (process.platform === "win32") {
+      const restricted = yield* Effect.try(() => restrict(file)).pipe(Effect.result)
+      if (restricted._tag === "Failure") {
+        // Never leave an unrestricted key behind for a later open to read.
+        yield* Effect.tryPromise(() => unlink(file)).pipe(Effect.ignore)
+        return yield* Effect.fail(restricted.failure)
+      }
+    }
     return key
   }
   // Another process created the key between the read and the write. Use the key it wrote.
   return yield* Effect.tryPromise(() => readFile(file))
 })
 
-// `icacls` is part of Windows, so a failure is a real failure: leave the key untouched but refuse to use it.
+// `whoami` and `icacls` are part of Windows, so a failure is a real failure. `createKey` removes the file before
+// surfacing it, so a later open cannot use a key whose ACL was never restricted.
 function restrict(file: string) {
   const who = spawnSync("whoami", ["/user", "/fo", "csv", "/nh"], { encoding: "utf8", windowsHide: true })
   const sid = who.status === 0 ? /"(S-1-[^"]+)"/.exec(who.stdout)?.[1] : undefined
-  const grant = sid === undefined ? userInfo().username : `*${sid}`
-  const result = spawnSync("icacls", [file, "/inheritance:r", "/grant:r", `${grant}:(F)`], {
+  if (sid === undefined)
+    throw new Error(`whoami could not resolve the current user SID: ${(who.stderr || who.stdout).trim()}`)
+  const result = spawnSync("icacls", [file, "/inheritance:r", "/grant:r", `*${sid}:(F)`], {
     encoding: "utf8",
     windowsHide: true,
   })
