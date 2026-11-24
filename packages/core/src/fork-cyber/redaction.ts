@@ -74,10 +74,8 @@ export function json(value: typeof Schema.Json.Type): typeof Schema.Json.Type {
             ("role" in value || ("type" in value && (value.type === "text" || value.type === "reasoning")))))
       )
         return [key, { redacted: "opaque-provider-state" }]
-      if (
-        (key === "data" && ("mime" in value || "source" in value)) ||
-        (key === "uri" && typeof item === "string" && item.startsWith("data:"))
-      )
+      if (key === "data" && ("mime" in value || "source" in value)) return [key, ""]
+      if (key === "uri" && typeof item === "string" && item.startsWith("data:"))
         return [key, "[FILE CONTENT OMITTED]"]
       return [key, json(item)]
     }),

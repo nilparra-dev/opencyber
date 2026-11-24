@@ -196,7 +196,7 @@ jobs:
           FILTERS: ${{ needs.changes.outputs.unit_filters }}
           # Environment-sensitive upstream tests recorded in FORK.md section 8.
           UNIT_SKIP: '^(?!.*(slow-input linear-time bounds|differential fuzzing against commonmark|a large default sort runs in bounded native steps|session wheel scrolling preserves pane focus|controls arbitrary tools through scoped SDK overlays)).*$'
-        run: GITHUB_ACTIONS=false bun turbo test $FILTERS -- --test-name-pattern "$UNIT_SKIP"
+        run: GITHUB_ACTIONS=false bun turbo test --concurrency=2 $FILTERS -- --test-name-pattern "$UNIT_SKIP"
 
   core:
     name: core (${{ matrix.shard }}/${{ strategy.job-total }})
