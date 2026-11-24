@@ -101,7 +101,7 @@ export const register = Effect.fnUntraced(function* (runtime: ForkCyberToolRunti
             }),
           }
         }).pipe(Effect.mapError((error) => ForkCyberDiagnostics.toolError(error, "cyber_capabilities"))),
-    }),
+    })
 
     editor.add({
       name: "cyber_report",

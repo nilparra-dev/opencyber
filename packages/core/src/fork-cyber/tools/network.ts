@@ -233,6 +233,7 @@ export const register = Effect.fnUntraced(function* (runtime: ForkCyberToolRunti
         }).pipe(Effect.mapError((error) => ForkCyberDiagnostics.toolError(error, "cyber_tool"))),
     })
 
+    // fork: cyber_host (OC-302) audits one declared host with a brokered read-only login.
     editor.add({
       name: "cyber_host",
       options: { codemode: false },
