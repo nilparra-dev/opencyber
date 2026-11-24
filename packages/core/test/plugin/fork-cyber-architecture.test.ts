@@ -6,12 +6,21 @@ import { ForkCyberPolicy } from "@opencode/core/fork-cyber/policy"
 import { ForkCyberRoles } from "@opencode/core/fork-cyber/roles"
 
 const source = path.resolve(import.meta.dir, "../../src/fork-cyber")
+const tools = path.join(source, "tools")
 const plugin = path.resolve(import.meta.dir, "../../src/plugin/fork-cyber.ts")
 
-// Tool names the plugin registers, read from the source so the check covers the real registration order
-// without booting a Location. Command registrations are not tools.
+// Tool names are read from the source so the check covers the real registrations without booting a Location.
+// Command registrations are not tools.
+function sourceFiles(directory: string, prefix = ""): string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    if (entry.isDirectory()) return sourceFiles(path.join(directory, entry.name), `${prefix}${entry.name}/`)
+    return entry.name.endsWith(".ts") ? [`${prefix}${entry.name}`] : []
+  })
+}
+
 function registeredTools() {
-  const text = readFileSync(plugin, "utf8")
+  const files = [plugin, ...sourceFiles(tools, "tools/").map((file) => path.join(source, file))]
+  const text = files.map((file) => readFileSync(file, "utf8")).join("\n")
   const commands = new Set(
     [...text.matchAll(/ctx\.command\.transform[\s\S]*?editor\.add\(\{\s*name: "([^"]+)"/g)].map((match) => match[1]),
   )
@@ -35,8 +44,10 @@ function forkCyberImports(file: string, files: readonly string[]) {
   const text = readFileSync(path.join(source, file), "utf8")
   // Line 1 is each module's own namespace self-export, not a dependency.
   const body = text.replace(/^export \* as \w+ from "\.\/[^"]+"\r?\n/, "")
-  return [...body.matchAll(/from "\.\/([^"]+)"/g)].flatMap((match) => {
-    const target = match[1].replace(/\.js$/, ".ts")
+  return [...body.matchAll(/from "(\.\.?\/[^"]+)"/g)].flatMap((match) => {
+    const target = path.posix.normalize(
+      path.posix.join(path.posix.dirname(file), match[1].replace(/\.js$/, ".ts")),
+    )
     return target === file || !files.includes(target) ? [] : [target]
   })
 }
@@ -88,7 +99,7 @@ describe("fork-cyber architecture", () => {
   })
 
   test("fork-cyber modules have no internal import cycles", () => {
-    const files = readdirSync(source).filter((file) => file.endsWith(".ts"))
+    const files = sourceFiles(source)
     expect(firstCycle(files)).toBeUndefined()
   })
 })
