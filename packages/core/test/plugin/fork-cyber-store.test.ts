@@ -222,6 +222,48 @@ test("version 1 migration preserves archived notes and installs the shared HTTP 
   )
 })
 
+test("schema 12 migrates to 13, keeps credential rows and accepts any non-empty kind", async () => {
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const tmp = yield* tmpdirScoped()
+        const file = path.join(tmp.path, "evidence.sqlite")
+        using database = new Database(file)
+        database.run(`CREATE TABLE engagement_credential (
+      owner TEXT NOT NULL, label TEXT NOT NULL,
+      kind TEXT NOT NULL CHECK (kind IN ('directory_bind', 'cloud_key', 'database_login', 'host_login')),
+      expires_at INTEGER NOT NULL, revoked_at INTEGER, nonce TEXT NOT NULL, ciphertext TEXT NOT NULL,
+      created_at INTEGER NOT NULL, PRIMARY KEY(owner, label))`)
+        database.run(
+          "INSERT INTO engagement_credential VALUES ('owner', 'directory', 'directory_bind', 1, NULL, 'nonce-a', 'cipher-a', 1)",
+        )
+        database.run(
+          "INSERT INTO engagement_credential VALUES ('owner', 'host', 'host_login', 2, NULL, 'nonce-b', 'cipher-b', 2)",
+        )
+        database.run("PRAGMA user_version = 12")
+        const store = yield* ForkCyberStore.open(file)
+        expect(database.query("PRAGMA user_version").get()).toEqual({ user_version: 13 })
+        expect(yield* store.credentials("owner")).toEqual([
+          { label: "directory", kind: "directory_bind", expires_at: 1, revoked_at: null },
+          { label: "host", kind: "host_login", expires_at: 2, revoked_at: null },
+        ])
+        expect(yield* store.credential("owner", "directory")).toEqual([
+          { kind: "directory_bind", expires_at: 1, revoked_at: null, nonce: "nonce-a", ciphertext: "cipher-a" },
+        ])
+        database.run(
+          "INSERT INTO engagement_credential VALUES ('owner', 'cloud', 'cloud_token', 3, NULL, 'nonce-c', 'cipher-c', 3)",
+        )
+        expect((yield* store.credentials("owner")).map((row) => row.label)).toEqual(["cloud", "directory", "host"])
+        expect(() =>
+          database.run(
+            "INSERT INTO engagement_credential VALUES ('owner', 'empty', '', 4, NULL, 'nonce-d', 'cipher-d', 4)",
+          ),
+        ).toThrow()
+      }),
+    ),
+  )
+})
+
 test("operator export refuses overwrite and purge requires the matching owner", async () => {
   await Effect.runPromise(
     Effect.scoped(
