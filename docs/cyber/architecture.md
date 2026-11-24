@@ -62,7 +62,7 @@ The cyber layer is a built-in plugin that hooks into the OpenCode session lifecy
 | Backends    | Isolated, bounded execution: HTTP client, Kali jobs, Chromium identities, cloud APIs |
 | Evidence    | Artifacts, decisions, tasks, coverage and findings, across all planes                |
 
-The code lives in `packages/core/src/fork-cyber/` (one module per domain) and `packages/core/src/plugin/fork-cyber.ts` (registration and hooks). Tests are in `packages/core/test/plugin/fork-cyber*.test.ts`.
+The code lives in `packages/core/src/fork-cyber/` (one module per domain), with tool registrations and the session hooks under `packages/core/src/fork-cyber/tools/`. `packages/core/src/plugin/fork-cyber.ts` is the thin plugin entrypoint. Tests are in `packages/core/test/plugin/fork-cyber*.test.ts`.
 
 What is stored: the input and output of every non-administrative execution, binary artifacts with hashes, provenance, effective scope, allow and deny decisions, approvals, tasks, coverage and findings.
 

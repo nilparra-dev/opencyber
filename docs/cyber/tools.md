@@ -1,6 +1,6 @@
 # Tool reference
 
-OpenCyber registers 31 native tools through `packages/core/src/plugin/fork-cyber.ts`. This page lists each one with its risk class and the guide that explains it. The risk classes come from `packages/core/src/fork-cyber/decision.ts`, and the tool descriptions in the plugin are the source of truth for inputs and outputs.
+OpenCyber registers 31 native tools from `packages/core/src/fork-cyber/tools/` through the `packages/core/src/plugin/fork-cyber.ts` entrypoint. This page lists each one with its risk class and the guide that explains it. The risk classes come from `packages/core/src/fork-cyber/decision.ts`, and the tool descriptions in those modules are the source of truth for inputs and outputs.
 
 Risk classes:
 

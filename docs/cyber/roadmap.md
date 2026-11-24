@@ -2,7 +2,7 @@
 
 This document is the single architectural plan for the next stage of OpenCyber. Active tasks live in GitHub Issues and Milestones. Previous design records (`plan.md`, `toolset.md`, `audit.md`, `harness.md`) stay in `docs/cyber/` as historical reference.
 
-Baseline: `origin/custom` on upstream `v2.4.1` (31 registered cyber tools, 73 modules in `packages/core/src/fork-cyber/`, 0 internal import cycles, 109 modified upstream files covered by `FORK.md` section 7).
+Baseline: `origin/custom` on upstream `v2.4.1` (31 registered cyber tools, 73 modules in `packages/core/src/fork-cyber/`, 0 internal import cycles, 110 modified upstream files covered by `FORK.md` section 7).
 
 ## Architecture decisions
 
