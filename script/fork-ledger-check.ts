@@ -15,7 +15,7 @@ const DEFAULT_UPSTREAM_LINE_BUDGET = 80
 // Existing inline upstream patches Track 1 is shrinking. Each entry caps the file's current changed-line count
 // so no new large patch can grow here while the existing ones move to fork-owned modules.
 const LEGACY_LARGE_UPSTREAM_FILES: Readonly<Record<string, number>> = {
-  "packages/core/src/session/transfer.ts": 338,
+  "packages/core/src/session/transfer.ts": 27,
   "packages/tui/src/ui/dialog-export-options.tsx": 440,
   "packages/tui/src/routes/session/index.tsx": 97,
 }
