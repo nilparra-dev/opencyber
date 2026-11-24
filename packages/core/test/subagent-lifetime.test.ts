@@ -37,6 +37,7 @@ const it = testEffect(
       LayerNodePlatform.llmClient.replace(llmLayer),
       SessionRunnerModel.node.replace(
         Layer.succeed(SessionRunnerModel.Service, {
+          select: (session) => Effect.fail(new SessionRunnerModel.ModelNotSelectedError({ sessionID: session.id })),
           resolve: () =>
             Effect.succeed(
               SessionRunnerModel.resolved(
@@ -109,11 +110,11 @@ describe("subagent observer lifetime", () => {
                 sessionID: child.id,
                 description: "Review fixture",
                 prompt: "Review the fixture",
-                background: true,
               },
             },
           })
           expect(result.status).toBe("completed")
+          expect(result.output).toMatchObject({ status: "running" })
           yield* gate.started
           expect(yield* sessions.context(parent.id)).toEqual([])
           if (evict) {

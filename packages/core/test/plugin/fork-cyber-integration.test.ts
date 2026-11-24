@@ -636,7 +636,6 @@ it.live("exposes English write-boundary guidance while retaining literal evidenc
           prompt: expect.any(Object),
           model: expect.any(Object),
           sessionID: expect.any(Object),
-          background: expect.any(Object),
         },
       })
       expect(snapshot.definitions.find((tool) => tool.name === "cyber_report")?.description).toContain(
