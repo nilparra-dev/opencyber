@@ -294,6 +294,12 @@ function exportProfile(
   reasoning: boolean,
   sanitize: (data: SessionTransfer.Data) => SessionTransfer.Data,
 ): SessionTransfer.Data {
+  if (profile === "private")
+    return reasoning
+      ? data
+      : Schema.decodeUnknownSync(SessionTransfer.Data)(
+          ForkCyberRedaction.withoutReasoning(jsonValue(Schema.encodeSync(SessionTransfer.Data)(data))),
+        )
   const encoded = Schema.encodeSync(SessionTransfer.Data)({
     ...data,
     messages: data.messages.map(exportMessage),
@@ -308,12 +314,6 @@ function exportProfile(
   const result = Schema.decodeUnknownSync(SessionTransfer.Data)(
     reasoning ? json : ForkCyberRedaction.withoutReasoning(json),
   )
-  if (profile === "private")
-    return reasoning
-      ? data
-      : Schema.decodeUnknownSync(SessionTransfer.Data)(
-          ForkCyberRedaction.withoutReasoning(jsonValue(Schema.encodeSync(SessionTransfer.Data)(data))),
-        )
   if (profile === "sanitized") return sanitize(result)
   const redacted = Schema.decodeUnknownSync(SessionTransfer.Data)(
     ForkCyberRedaction.json(jsonValue(Schema.encodeSync(SessionTransfer.Data)(result))),
@@ -346,7 +346,7 @@ function exportMessage(message: SessionMessage.Info): SessionMessage.Info {
   if (message.type === "user")
     return {
       ...message,
-      files: message.files?.map((file) => ({ ...file, data: "[FILE CONTENT OMITTED]", source: { type: "inline" } })),
+      files: message.files?.map((file) => ({ ...file, data: "", source: { type: "inline" } })),
     }
   if (message.type === "assistant")
     return {
