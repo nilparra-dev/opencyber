@@ -1,6 +1,6 @@
 # Directory assessment (OC-303)
 
-Issue [#74](https://github.com/nilparra-dev/opencyber/issues/74). `cyber_directory` assesses a directory service with read-only operations. Its implementation is `packages/core/src/fork-cyber/directory.ts`; the tool is registered in `packages/core/src/plugin/fork-cyber.ts`. Risk classes are declared in `decision.ts` (R-2), and the cyber-code-review and recon/enum phases list the tool in `roles.ts`. Credential binds use the brokering path in [fork-cyber-credentials.md](fork-cyber-credentials.md). The R2 actions `auth_test` and `crack` belong to another module and are documented in `fork-cyber-directory-auth.md` when they land.
+Issue [#74](https://github.com/nilparra-dev/opencyber/issues/74). `cyber_directory` assesses a directory service with read-only operations. Its implementation is `packages/core/src/fork-cyber/directory.ts`; the tool is registered in `packages/core/src/plugin/fork-cyber.ts`. Risk classes are declared in `decision.ts` (R-2), and the cyber-code-review and recon/enum phases list the tool in `roles.ts`. Credential binds use the brokering path in [credentials.md](credentials.md). The R2 actions `auth_test` and `crack` belong to another module and are documented in `directory-auth.md` when they land.
 
 ## Actions
 

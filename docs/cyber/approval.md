@@ -1,6 +1,6 @@
 # R2 approval
 
-R2 actions are intrusive validation: test payloads, exploitability confirmation and similar checks. [fork-cyber-toolset.md](fork-cyber-toolset.md) (R-2, D-2) sets the rules. This guide describes how the harness applies them (OC-401).
+R2 actions are intrusive validation: test payloads, exploitability confirmation and similar checks. [toolset.md](toolset.md) (R-2, D-2) sets the rules. This guide describes how the harness applies them (OC-401).
 
 ## What must be true before an R2 action runs
 

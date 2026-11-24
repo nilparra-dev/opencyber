@@ -58,7 +58,7 @@ Exclude admin.staging.example.com. I own this target and authorize testing.
 Map the web app, test one hypothesis at a time, and write the report to ./report.
 ```
 
-The agent records scope with the built-in `engagement` tool. Intrusive validation requires `assessment` mode and an explicit operator approval; active jobs keep the scope they were admitted with, and credentials are released per action rather than handed to the model. See [controlled modes](fork-cyber-audit.md#controlled-modes), [approvals](fork-cyber-approval.md) and [credentials](fork-cyber-credentials.md).
+The agent records scope with the built-in `engagement` tool. Intrusive validation requires `assessment` mode and an explicit operator approval; active jobs keep the scope they were admitted with, and credentials are released per action rather than handed to the model. See [controlled modes](docs/cyber/audit.md#controlled-modes), [approvals](docs/cyber/approval.md) and [credentials](docs/cyber/credentials.md).
 
 ## What a run produces
 
@@ -84,24 +84,10 @@ Fix: verify that the invoice belongs to the session's account before returning i
 
 | Topic | Guide |
 | --- | --- |
-| How this fork works: branches, sync, ledger | [FORK.md](FORK.md) |
-| Roadmap, phases and acceptance tests | [fork-cyber-plan.md](fork-cyber-plan.md) |
-| Tool catalog and design rules | [fork-cyber-toolset.md](fork-cyber-toolset.md) |
-| HTTP request, replay and compare | [fork-cyber-http.md](fork-cyber-http.md) |
-| Isolated browser sessions and capture | [fork-cyber-browser.md](fork-cyber-browser.md) |
-| Kali jobs and resource limits | [fork-cyber-kali.md](fork-cyber-kali.md) |
-| Code review, SARIF and advisory snapshots | [fork-cyber-code-review.md](fork-cyber-code-review.md), [fork-cyber-advisory.md](fork-cyber-advisory.md) |
-| Intrusive approvals | [fork-cyber-approval.md](fork-cyber-approval.md) |
-| Credential custody | [fork-cyber-credentials.md](fork-cyber-credentials.md) |
-| TCP service inventory | [fork-cyber-services.md](fork-cyber-services.md) |
-| TLS, SSH, identity, cloud, mobile, binaries, wireless and OT | [fork-cyber-surfaces.md](fork-cyber-surfaces.md) |
-| DNS and discovery | [fork-cyber-discovery.md](fork-cyber-discovery.md) |
-| Tasks, coverage and roles | [fork-cyber-coordination.md](fork-cyber-coordination.md) |
-| Evidence storage and archives | [fork-cyber-storage.md](fork-cyber-storage.md) |
-| Network policy and limits | [fork-cyber-network.md](fork-cyber-network.md) |
-| Controlled modes and audit corrections | [fork-cyber-audit.md](fork-cyber-audit.md) |
-| Harness hardening and evaluation workflow | [fork-cyber-harness.md](fork-cyber-harness.md) |
-| Model comparisons | [fork-cyber-evaluation.md](fork-cyber-evaluation.md) |
+| All cyber assessment guides | [Cyber assessment guides](docs/cyber/README.md) |
+| Roadmap, phases and acceptance tests | [Roadmap](docs/cyber/plan.md) |
+| Tool catalog and design rules | [Tool catalog](docs/cyber/toolset.md) |
+| Fork maintenance, sync and ledger | [FORK.md](FORK.md) |
 
 Each guide states its verified limits. Some workflows are local and bounded: live cloud accounts, emulators and devices, radio equipment and physical OT validation remain pending. Laboratory fixtures are not capability claims.
 

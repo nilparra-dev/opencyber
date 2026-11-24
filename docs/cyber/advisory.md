@@ -1,6 +1,6 @@
 # Pinned advisory snapshots
 
-The `sca` action of [`cyber_code_review`](fork-cyber-code-review.md) and the `image_scan` action of [`cyber_container`](fork-cyber-container.md) match package versions against an advisory snapshot. The snapshot is a JSON file that an operator chooses and pins by SHA-256 digest. The tools never download advisory data, never query a registry and never contact a service.
+The `sca` action of [`cyber_code_review`](code-review.md) and the `image_scan` action of [`cyber_container`](container.md) match package versions against an advisory snapshot. The snapshot is a JSON file that an operator chooses and pins by SHA-256 digest. The tools never download advisory data, never query a registry and never contact a service.
 
 ## Snapshot contract
 
@@ -56,6 +56,6 @@ Every `sca` and `image_scan` result includes the snapshot identity:
 
 ## Not pinned
 
-No real advisory database is pinned. Choosing one is an open operator decision. It depends on the licence and redistribution terms, maintenance, size and update cadence, as described in [fork-cyber-toolset.md](fork-cyber-toolset.md) section 8. Until a snapshot is pinned, `sca` and `image_scan` return `not_configured`.
+No real advisory database is pinned. Choosing one is an open operator decision. It depends on the licence and redistribution terms, maintenance, size and update cadence, as described in [toolset.md](toolset.md) section 8. Until a snapshot is pinned, `sca` and `image_scan` return `not_configured`.
 
 The snapshot must be produced outside these tools, from a named source and version. The tools check the file's integrity; they do not check its completeness or freshness.

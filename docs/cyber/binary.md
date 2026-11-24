@@ -1,6 +1,6 @@
 # Binary and firmware analysis
 
-`cyber_binary` implements OC-306 (#77) for two actions, both risk class R0. Nothing is executed on the host, and the sample is never executed in the container. Both actions run as one offline Kali job with `network: "none"`, through the Kali manager described in [fork-cyber-kali.md](fork-cyber-kali.md). The fixed analysis scripts live in `packages/core/src/fork-cyber/binary.ts`; the model supplies only an artifact ID and a page offset.
+`cyber_binary` implements OC-306 (#77) for two actions, both risk class R0. Nothing is executed on the host, and the sample is never executed in the container. Both actions run as one offline Kali job with `network: "none"`, through the Kali manager described in [kali.md](kali.md). The fixed analysis scripts live in `packages/core/src/fork-cyber/binary.ts`; the model supplies only an artifact ID and a page offset.
 
 ## Actions
 

@@ -28,7 +28,7 @@ Findings from the review actions are candidates. An empty result does not prove 
 
 - The inventory's `image` must equal the requested digest; a different digest is refused with `invalid_input`. The declared digest is trusted, because confirming it requires pulling the image.
 - Packages are matched only when the ecosystem is `npm` or `PyPI` and the version is a plain dotted version. Other ecosystems, such as operating-system packages, are counted as `unevaluated`, never as clean.
-- The output records the snapshot identity (`advisory`), inventory counts (`inventory`), `finding_count`, at most 50 `findings` inline, `next_offset` when more exist, and `results_artifact` with the complete list. The advisory data is described in [fork-cyber-advisory.md](fork-cyber-advisory.md).
+- The output records the snapshot identity (`advisory`), inventory counts (`inventory`), `finding_count`, at most 50 `findings` inline, `next_offset` when more exist, and `results_artifact` with the complete list. The advisory data is described in [advisory.md](advisory.md).
 
 Producing the inventory is outside this tool. An operator exports it with an inventory tool that does not run the image's entrypoint. Converting another tool's output into the format above is a manual step.
 
@@ -52,7 +52,7 @@ Refusals happen before any Docker command, and the test suite checks this with a
 - The scope check covers the registry endpoint only. Registries can redirect blob downloads to other hosts, and the daemon performs those requests.
 - The daemon uses whatever credentials the host has configured for that registry. Their values are neither read nor recorded.
 - The image is not run, extracted or scanned by `pull`.
-- Docker performs the pull on the host, not in a Kali workload. The network controls of `fork-cyber-network.md` do not apply to it.
+- Docker performs the pull on the host, not in a Kali workload. The network controls of `network.md` do not apply to it.
 
 ## Laboratory
 

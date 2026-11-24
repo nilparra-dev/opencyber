@@ -63,12 +63,12 @@ Fork CI runs typechecks, unit tests, the ledger check and the optional Cyber lab
 
 - A new surface module goes in `packages/core/src/fork-cyber/`, registers through `packages/core/src/plugin/fork-cyber.ts`, and ships with unit tests plus real or laboratory controls.
 - Every tool declares its target types, risk class, phase and evidence. Scope, rate limits and approvals are enforced in the harness, never in the prompt.
-- Add a `fork-cyber-*.md` guide with the verified workflow and its limits, then link it from `README.md`.
+- Add a guide under `docs/cyber/` with the verified workflow and its limits, link it from `docs/cyber/README.md`, and update the root README only when the entry point changes.
 - A capability is not supported until it has a reproducible workflow and evidence. An installed tool is not a capability claim.
 
 ## Public face
 
-The README, contribution guide, security policy and GitHub templates are fork-owned. Keep them describing OpenCyber, not upstream. Attribution to opencode belongs in the README and the license, not in the product name.
+The README, documentation index, contribution guide, security policy and GitHub templates are fork-owned. Keep them describing OpenCyber, not upstream. Attribution to opencode belongs in the README and the license, not in the product name.
 
 ## Upstream contributions
 

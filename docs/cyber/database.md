@@ -56,12 +56,12 @@ Each finding names its line as `line:N`, so a reviewer can go to it. `no_passwor
 
 ## auth_test
 
-`auth_test` is R2 (`fork-cyber-toolset.md`, D10). A call is refused before any Kali job starts unless all of these hold. Each refusal is recorded in the decision log.
+`auth_test` is R2 (`toolset.md`, D10). A call is refused before any Kali job starts unless all of these hold. Each refusal is recorded in the decision log.
 
 1. **Mode and phase.** The session runs in `assessment` mode, and the agent's ceiling reaches R2: `cyber-exploit-net`, `cyber-exploit-web`, `cyber-validate`, or the primary agent.
 2. **Engagement flag.** `rules_of_engagement.validation.actions` includes `cyber_database.auth_test`.
 3. **Credential declaration.** `rules_of_engagement.credentials` declares the label with `kind: "database_login"`, `read_only: true`, a `host` target that matches the request, and `actions: ["cyber_database.auth_test"]`. The operator registers the value with `script/fork-cyber-credential.ts add … --kind database_login`, reading it from stdin.
-4. **Operator approval (OC-401).** The operator approves the action on the host in the permission prompt. The approval lasts ten minutes (`fork-cyber-approval.md`).
+4. **Operator approval (OC-401).** The operator approves the action on the host in the permission prompt. The approval lasts ten minutes (`approval.md`).
 5. **Pacing.** A label is tried at most once per target within 60 seconds.
 
 ```jsonc

@@ -43,7 +43,7 @@ Example:
 
 ## Live reads
 
-`inventory`, `config_audit` and `k8s_rbac` read a live provider. Each is R1 and needs an engagement that declares its credential label for that action and target. The label is a brokered read-only identity from OC-307 (see [fork-cyber-credentials.md](fork-cyber-credentials.md)). The model never sees the value.
+`inventory`, `config_audit` and `k8s_rbac` read a live provider. Each is R1 and needs an engagement that declares its credential label for that action and target. The label is a brokered read-only identity from OC-307 (see [credentials.md](credentials.md)). The model never sees the value.
 
 | Action | Target | Requests (all GET) | Checks |
 | --- | --- | --- | --- |

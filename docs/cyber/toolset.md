@@ -2,7 +2,7 @@
 
 Status: accepted with the recommendations in section 7 (#81). Implementation status is in section 10. Baseline when proposed: `origin/custom` at `bc43767fcf`.
 
-This document defines the target catalog of tools for authorized security assessments and the rules every tool must follow. It extends the phase plan in [fork-cyber-plan.md](fork-cyber-plan.md): phases 0 to 6 remain the implemented foundation, and new surface modules are planned here. Work items below use stable IDs (`OC-###`) and are tracked as GitHub issues.
+This document defines the target catalog of tools for authorized security assessments and the rules every tool must follow. It extends the phase plan in [plan.md](plan.md): phases 0 to 6 remain the implemented foundation, and new surface modules are planned here. Work items below use stable IDs (`OC-###`) and are tracked as GitHub issues.
 
 ## 1. Goals and non-goals
 
@@ -15,7 +15,7 @@ Goals:
 
 Non-goals:
 
-- Benchmark and evaluation infrastructure. Those are covered by [fork-cyber-evaluation.md](fork-cyber-evaluation.md) and the harness guide.
+- Benchmark and evaluation infrastructure. Those are covered by [evaluation.md](evaluation.md) and the harness guide.
 - Post-exploitation, persistence, lateral movement and denial of service. These are risk class R3 and are performed by an operator outside the harness.
 - Physical radio and hardware OT testing. These require equipment and a human operator.
 
@@ -67,7 +67,7 @@ These rules apply to every tool. They should be in place (W0) before new domain 
 | R2, intrusive validation | Test payloads, credential testing, exploitability confirmation                         | Only with an engagement flag and per-action approval. Laboratory only by default |
 | R3, impact               | Denial of service, writes, persistence, lateral movement, access to real data          | Not implemented in the harness                                                   |
 
-R2 actions are denied in development and review modes. In assessment mode an R2 action is denied unless the engagement declares it under `rules_of_engagement.validation`, and a declared action needs an operator approval for each action and target (OC-401). See [fork-cyber-approval.md](fork-cyber-approval.md).
+R2 actions are denied in development and review modes. In assessment mode an R2 action is denied unless the engagement declares it under `rules_of_engagement.validation`, and a declared action needs an operator approval for each action and target (OC-401). See [approval.md](approval.md).
 
 **R-3. One decision point.** A single function evaluates (action, target type, risk class, phase, engagement flags) and returns `allow`, `ask` or `deny` before `execute()`. Every decision is written to the audit log, including denials. This replaces the repeated checks in `plugin/fork-cyber.ts` (around lines 180, 239–251 and 531), which currently combine `ForkCyberPolicy.allowed` with `ForkCyberRoles.allowed`.
 
@@ -294,7 +294,7 @@ A tool is complete when all of the following hold:
 - It has one positive and one negative laboratory fixture with a known outcome.
 - Its output follows R-6: summary, structured fields, artifact reference, `next_offset` for long results, categorized errors.
 - Model-visible output contains no secret values.
-- It is documented in a `fork-cyber-*.md` guide.
+- It is documented in a guide under `docs/cyber/`.
 - It is fork-owned code, so it needs no ledger entry. Any change to upstream files requires a ledger row under `FORK.md` section 7.
 
 ## 7. Open decisions
@@ -326,7 +326,7 @@ Each decision was accepted with its recommendation (#81). Outcomes:
 - **False positives.** A finding is confirmed only by its deterministic oracle. Tool output alone is an observation.
 - **Scope enforcement.** Network scope is enforced at egress. Cloud and directory scope is enforced by identity and resource filters. Each enforcement point has its own tests.
 - **Reproducibility.** Laboratory targets are built from code and images pinned by digest. A run is reproducible from its recorded configuration, not from its transcript.
-- **Model performance.** Tool count and schema complexity are measured with the repeated model matrix in [fork-cyber-harness.md](fork-cyber-harness.md) before and after each wave.
+- **Model performance.** Tool count and schema complexity are measured with the repeated model matrix in [harness.md](harness.md) before and after each wave.
 
 ## 9. Tracking
 
@@ -345,14 +345,14 @@ Updated with each merge. "Done" means the acceptance criteria in the work item's
 | OC-101 | Done    | #55, PR #83: typed targets in the scope manifest                                                                                        |
 | OC-102 | Done    | #57, PR #84: risk class per action and one decision function                                                                            |
 | OC-103 | Done    | #61, PR #94: phase risk ceilings; exploitation phases split their surfaces; post-exploitation has no tools                              |
-| OC-104 | Done    | #60: `kali_run` admits only allowlisted bare names (`kali-allowlist.ts`, image version 5); refusals are `binary_not_allowlisted` decisions. Wrapper pattern documented in `fork-cyber-kali.md` with `cyber_services` as reference |
+| OC-104 | Done    | #60: `kali_run` admits only allowlisted bare names (`kali-allowlist.ts`, image version 5); refusals are `binary_not_allowlisted` decisions. Wrapper pattern documented in `kali.md` with `cyber_services` as reference |
 | OC-105 | Done    | #58, PR #86 and PR #100: seven shared categories, recovery steps and the `kind` mapping; bounded previews with `next_offset` for `kali_run` and `cyber_services`, tested in `fork-kali.yml`. Tool-specific recovery text is kept by exception (see below) |
 | OC-106 | Done    | #62, PR #95: `finding_retest` (R1) replays a finding's HTTP evidence and links each execution; a separate tool, not an action of `findings` |
 | OC-107 | Done    | #63, PR #85: append-only decision log, including denials                                                                                |
 | OC-108 | Open    | #59. Needs a model budget decision                                                                                                      |
 | OC-201 | Done    | #64, PR #87: `http_discover`                                                                                                             |
 | OC-202 | Done    | #65, PR #88: `cyber_web_test` with openapi, jwt, graphql and plan. `cyber_web_plan` stays registered beside it                         |
-| OC-203 | Done    | #66: `cyber_discover` with `passive_dns` (absorbs `cyber_dns`), `certificates` (declared passive OSINT, D-5), `host_sweep` (scoped Kali) and `fingerprint`. Exception: names beyond 200 in `certificates` stay in the artifact, with no offset action. See `fork-cyber-discovery.md` |
+| OC-203 | Done    | #66: `cyber_discover` with `passive_dns` (absorbs `cyber_dns`), `certificates` (declared passive OSINT, D-5), `host_sweep` (scoped Kali) and `fingerprint`. Exception: names beyond 200 in `certificates` stay in the artifact, with no offset action. See `discovery.md` |
 | OC-204 | Partial | #67 (closed) and branch `cyber-probes-remaining`: `version`, `probe` (redis_info, elasticsearch_root, ldap_root_dse, smb_signing, nfs_exports, mongodb_build_info), `udp_top` (not_configured, no raw sockets). Open: anonymous FTP, which is an authentication attempt and needs an operator decision on risk class |
 | OC-205 | Partial | #68: `secrets` (PR #92), `sast` (pinned Semgrep 1.178.0 in the Kali image, curated rules, network none), `sca` (pinned advisory snapshot contract). Open: a licensed advisory database and a broader Semgrep rule pack, both decisions |
 | OC-206 | Partial | #69: `dockerfile_lint` and `runtime_review` (PR #96), `pull` (R1, digest only, registry in scope, local registry lab), `image_scan` (advisory snapshot contract). Open: the advisory database decision |
@@ -363,9 +363,9 @@ Updated with each merge. "Done" means the acceptance criteria in the work item's
 | OC-304 | Partial | `cyber_cloud` `inventory`, `config_audit` and `k8s_rbac`: read-only GET requests, scope checked before every call. The laboratory is a local fixture. Open: the live-account laboratory, which needs a provisioned account |
 | OC-305 | Done | #76: `cyber_database` `unauth_check` and `config_review`, with redis and elasticsearch laboratories |
 | OC-306 | Done | `cyber_binary` `pe` (pefile) and `firmware` (binwalk), both R0, network none, nothing executed. `dynamic` is deferred (R2) |
-| OC-307 | Done, with one exception | #72: sealed storage and schema 10 (#108), the operator script (#109), the lease decision (#111), Kali delivery and output replacement (#112), `cyber_credentials list` (#113), and wrapped base64 in output replacement (this PR). Exception: web identities (decision 4), named in `fork-cyber-credentials.md` |
-| OC-401 | Done    | #78: engagement declaration, operator approval, approvals that expire after 10 minutes. See fork-cyber-approval.md                      |
-| OC-402 | Done, with limits | `validate` for open_redirect, path_traversal, sql_injection, command_injection, xss (browser canary) and ssrf (callback in scope). Limits are named in `fork-cyber-web-validation.md` |
+| OC-307 | Done, with one exception | #72: sealed storage and schema 10 (#108), the operator script (#109), the lease decision (#111), Kali delivery and output replacement (#112), `cyber_credentials list` (#113), and wrapped base64 in output replacement (this PR). Exception: web identities (decision 4), named in `credentials.md` |
+| OC-401 | Done    | #78: engagement declaration, operator approval, approvals that expire after 10 minutes. See approval.md                      |
+| OC-402 | Done, with limits | `validate` for open_redirect, path_traversal, sql_injection, command_injection, xss (browser canary) and ssrf (callback in scope). Limits are named in `web-validation.md` |
 | OC-403 | Partial | `cyber_directory` `auth_test` (one simple bind per call, 3 attempts per label and host in 30 minutes) and `crack` (supplied hashes only). Open: `john` is not in the image, and operators cannot import hash sets or wordlists yet |
 | OC-404 | Partial | `cyber_database` `auth_test` (R2, disabled by default). Redis is a real lab; elasticsearch is a protocol stand-in. Open: real engine laboratories and a cumulative lockout budget |
 | OC-405 | Done    | #79: one validator record (`validation.ts`) for `cyber_local_validation`: pre-state, action, oracle result, cleanup and effects. Failed runs and cleanup are unknown effects, never a reproduction |
