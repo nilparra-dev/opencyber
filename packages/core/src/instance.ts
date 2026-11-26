@@ -12,6 +12,7 @@ import { LayerNode } from "@opencode/util/effect/layer-node"
 import { Node } from "@opencode/util/effect/app-node"
 import { FileMutation } from "./file-mutation.js"
 import { FileWrite } from "./file-write.js"
+import { Environments } from "./environment/environments.js"
 import { Environment } from "./environment/index.js"
 import { Formatter } from "./formatter.js"
 import { FileSystem } from "./filesystem.js"
@@ -68,6 +69,7 @@ const nodes = [
   ForkCyberPolicy.node,
   LocationLifecycle.node,
   Environment.node,
+  Environments.node,
   Config.node,
   Flag.node,
   Agent.node,

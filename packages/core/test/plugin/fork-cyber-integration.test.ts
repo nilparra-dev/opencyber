@@ -1223,7 +1223,7 @@ it.live("preserves simultaneous phase notes and lets report agents read without 
       const agents = yield* Agent.Service
       const report = yield* agents.get(Agent.ID.make("cyber-report"))
       const tools = yield* Tool.Service
-      const snapshot = yield* tools.snapshot(report?.permissions)
+      const snapshot = yield* tools.snapshot(Permission.Policy.fromRules(report?.permissions ?? []))
       expect(snapshot.definitions.map((tool) => tool.name)).toContain("notes")
     }).pipe(env.provide)
   }),

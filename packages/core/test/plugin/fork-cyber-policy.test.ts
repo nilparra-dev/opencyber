@@ -6,6 +6,8 @@ import { Agent } from "@opencode/core/agent"
 import { Bus } from "@opencode/core/bus"
 import { Database } from "@opencode/core/database/database"
 import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
+import { Environment } from "@opencode/core/environment/index"
+import { FileAccess } from "@opencode/core/file-access"
 import { Watcher } from "@opencode/core/filesystem/watcher"
 import { Instance } from "@opencode/core/instance"
 import { InstructionDiscovery } from "@opencode/core/instruction-discovery"
@@ -233,6 +235,28 @@ it.live("review ignores target plugins, MCP, agents and nested instructions whil
       expect(JSON.stringify(yield* agents.get(Agent.ID.make("build")))).not.toContain("TARGET_AGENT_PAYLOAD")
       const store = yield* SessionStore.Service
       expect(JSON.stringify(yield* store.context(root.id))).not.toContain("TARGET_POLICY_PAYLOAD")
+    }).pipe(Effect.provide(locations.get(root.location)))
+  }),
+)
+
+it.live("review rejects source reads from a session working directory in another environment", () =>
+  Effect.gen(function* () {
+    const tmp = yield* tmpdirScoped()
+    const sessions = yield* Session.Service
+    const root = yield* sessions.create({ location: { directory: AbsolutePath.make(tmp.path) } })
+    const locations = yield* LocationServiceMap.Service
+
+    yield* Effect.gen(function* () {
+      const access = yield* FileAccess.Service
+      const error = yield* access.resolve({ path: "source.txt" }).pipe(
+        Effect.provideService(Environment.CurrentWorkingDirectory, {
+          absolute: AbsolutePath.make("/project"),
+          environment: Environment.unavailable(Environment.ID.make("paired"), new Error("unexpected remote access")),
+        }),
+        Effect.flip,
+      )
+      expect(error).toBeInstanceOf(Tool.Error)
+      expect(String(error)).toContain('"category":"outside_scope"')
     }).pipe(Effect.provide(locations.get(root.location)))
   }),
 )
